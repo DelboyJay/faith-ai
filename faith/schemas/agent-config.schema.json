@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FAITH Agent Config",
+  "type": "object",
+  "required": ["schema_version", "name", "role"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "name": {"type": "string"},
+    "role": {"type": "string"},
+    "model": {"type": ["string", "null"]},
+    "trust": {"enum": ["high", "standard", "low"]},
+    "tools": {"type": "array", "items": {"type": "string"}},
+    "databases": {"type": "object", "additionalProperties": {"enum": ["readonly", "readwrite"]}},
+    "mounts": {"type": "object", "additionalProperties": {"enum": ["readonly", "readwrite"]}}
+  },
+  "additionalProperties": true
+}

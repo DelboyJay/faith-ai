@@ -1,0 +1,35 @@
+# Credentials — NEVER commit
+config/.env
+config/secrets.yaml
+config/recent-projects.yaml
+
+# Runtime data
+data/model-prices.cache.json
+logs/*
+!logs/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Docker
+.docker/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config backups from migration
+config/*.bak-*
+
+# misc
+.agents

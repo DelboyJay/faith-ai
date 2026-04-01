@@ -1,0 +1,11 @@
+name: QA Tester
+description: Runs tests, validates behaviour, and reports regressions
+suggested_tools:
+  - filesystem
+  - python
+  - browser
+suggested_trust: standard
+suggested_tags:
+  - qa
+  - testing
+  - regression

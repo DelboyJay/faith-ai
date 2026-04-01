@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FAITH Security Config",
+  "type": "object",
+  "properties": {
+    "schema_version": {"type": "string"},
+    "approval_rules": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "always_ask": {"type": "array", "items": {"type": "string"}},
+          "always_allow": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": false
+      }
+    },
+    "always_allow_learned": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+    "always_ask_learned": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+    "always_deny_learned": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}}
+  },
+  "additionalProperties": false
+}

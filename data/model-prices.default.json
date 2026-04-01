@@ -1,0 +1,55 @@
+{
+  "generated_date": "2026-03-23",
+  "source": "openrouter.ai/models",
+  "models": {
+    "anthropic/claude-opus-4-6": {
+      "input_cost_per_token": 0.000015,
+      "output_cost_per_token": 0.000075,
+      "context_window": 200000,
+      "privacy_tier": "internal",
+      "training_opt_out": true
+    },
+    "anthropic/claude-sonnet-4-6": {
+      "input_cost_per_token": 0.000003,
+      "output_cost_per_token": 0.000015,
+      "context_window": 200000,
+      "privacy_tier": "internal",
+      "training_opt_out": true
+    },
+    "anthropic/claude-haiku-4-5": {
+      "input_cost_per_token": 0.0000008,
+      "output_cost_per_token": 0.000004,
+      "context_window": 200000,
+      "privacy_tier": "internal",
+      "training_opt_out": true
+    },
+    "google/gemini-2.5-pro": {
+      "input_cost_per_token": 0.00000125,
+      "output_cost_per_token": 0.000005,
+      "context_window": 1000000,
+      "privacy_tier": "public",
+      "training_opt_out": false
+    },
+    "openai/gpt-4o": {
+      "input_cost_per_token": 0.0000025,
+      "output_cost_per_token": 0.00001,
+      "context_window": 128000,
+      "privacy_tier": "internal",
+      "training_opt_out": true
+    },
+    "meta-llama/llama-3-8b-instruct": {
+      "input_cost_per_token": 0.0000001,
+      "output_cost_per_token": 0.0000001,
+      "context_window": 8192,
+      "privacy_tier": "public",
+      "training_opt_out": false
+    },
+    "meta-llama/llama-3-70b-instruct": {
+      "input_cost_per_token": 0.0000008,
+      "output_cost_per_token": 0.0000008,
+      "context_window": 8192,
+      "privacy_tier": "public",
+      "training_opt_out": false
+    }
+  }
+}

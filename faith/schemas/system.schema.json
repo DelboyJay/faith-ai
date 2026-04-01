@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FAITH System Config",
+  "type": "object",
+  "required": ["schema_version", "privacy_profile", "pa", "default_agent_model"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "privacy_profile": {"enum": ["public", "internal", "confidential"]},
+    "default_agent_model": {"type": "string"},
+    "editor": {"type": ["string", "null"]},
+    "pa": {
+      "type": "object",
+      "required": ["model"],
+      "properties": {
+        "model": {"type": "string"},
+        "fallback_model": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "ollama": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "mode": {"enum": ["container", "external"]},
+        "endpoint": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": true
+}

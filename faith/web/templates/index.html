@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>FAITH Web UI</title>
+    <link rel="stylesheet" href="/static/css/theme.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="hero">
+        <p class="eyebrow">FAITH</p>
+        <h1>Web Control Surface</h1>
+        <p class="lede">FastAPI shell with Redis-backed HTTP and WebSocket endpoints for the panel UI.</p>
+      </section>
+      <section class="panels">
+        <article class="panel">
+          <h2>Status</h2>
+          <pre id="status-output">Waiting for /api/status...</pre>
+        </article>
+        <article class="panel">
+          <h2>Notes</h2>
+          <p>GoldenLayout and richer panels are added in later tasks. This task provides the backend transport surface.</p>
+        </article>
+      </section>
+    </main>
+    <script src="/static/js/app.js"></script>
+  </body>
+</html>
