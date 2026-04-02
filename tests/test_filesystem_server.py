@@ -1,4 +1,4 @@
-from faith.tools.filesystem import FilesystemServer
+from faith_mcp.filesystem import FilesystemServer
 
 
 def test_filesystem_server_round_trip(tmp_path):
@@ -26,3 +26,4 @@ def test_filesystem_server_round_trip(tmp_path):
         "workspace", "notes.txt", agent_id="dev", agent_mounts={"workspace": "readwrite"}
     )
     assert payload["content"] == "hello"
+

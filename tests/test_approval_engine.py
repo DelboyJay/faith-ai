@@ -1,7 +1,7 @@
 import textwrap
 from pathlib import Path
 
-from faith.security.approval_engine import ApprovalEngine, ApprovalTier
+from faith_pa.security.approval_engine import ApprovalEngine, ApprovalTier
 
 
 def write_file(path: Path, contents: str) -> None:
@@ -70,3 +70,4 @@ def test_unknown_agent_defaults_to_ask_first(tmp_path):
     decision = engine.evaluate("unknown", "browser:navigate:https://example.com")
     assert decision.tier == ApprovalTier.ASK_FIRST
     assert decision.requires_approval is True
+

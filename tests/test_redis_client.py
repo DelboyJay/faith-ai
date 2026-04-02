@@ -6,7 +6,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from faith.utils import redis_client
+from faith_pa.utils import redis_client
 
 
 class FakeAsyncClient:
@@ -66,3 +66,5 @@ class RedisClientTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+

@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from faith.config.models import PAConfig, PrivacyProfile, SystemConfig
-from faith.pa.intervention import InterventionHandler
-from faith.pa.session import SessionManager
-from faith.protocol.events import EventType, FaithEvent
+from faith_pa.config.models import PAConfig, PrivacyProfile, SystemConfig
+from faith_pa.pa.intervention import InterventionHandler
+from faith_pa.pa.session import SessionManager
+from faith_shared.protocol.events import EventType, FaithEvent
 
 
 class FakeRedis:
@@ -112,3 +112,4 @@ async def test_handle_agent_error_uses_fallback_model(
 
     assert result["fallback_model"] == "gpt-5.4-mini"
     assert redis.published[-1][0] == "pa-user"
+

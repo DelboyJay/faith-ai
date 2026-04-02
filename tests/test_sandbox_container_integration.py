@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from faith.pa.container_manager import ContainerManager, InMemoryContainerRuntime
-from faith.pa.sandbox_manager import SandboxManager
-from faith.pa.sandbox_models import SandboxRequest
+from faith_pa.pa.container_manager import ContainerManager, InMemoryContainerRuntime
+from faith_pa.pa.sandbox_manager import SandboxManager
+from faith_pa.pa.sandbox_models import SandboxRequest
 
 
 @pytest.mark.asyncio
@@ -29,3 +29,4 @@ async def test_sandbox_manager_uses_container_manager() -> None:
     assert info.name == f"faith-sandbox-{allocation.sandbox_id}"
     assert info.status == "running"
     assert info.container_type == "sandbox"
+

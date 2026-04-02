@@ -1,5 +1,11 @@
 # Project Instructions
 
+## Hard Completion Rule
+
+- HARD RULE: Do not report any task as complete unless the full task scope is implemented, verification has been attempted, and the resulting code has been compared against the FRS twice.
+- HARD RULE: If any material gap remains after either FRS comparison pass, report the task as not complete and continue working or describe the exact blocker.
+- HARD RULE: Do not treat partial scaffolding, partial fixes, or inferred future work as task completion.
+
 ## Code Style Reference
 
 When writing or modifying code, load and follow:

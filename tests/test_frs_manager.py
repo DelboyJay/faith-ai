@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from faith.pa.frs_manager import FRSManager, InputClassification
+from faith_pa.pa.frs_manager import FRSManager, InputClassification
 
 
 class FakeRedis:
@@ -18,7 +18,7 @@ class FakeRedis:
 
 @pytest.fixture
 def event_publisher() -> object:
-    from faith.protocol.events import EventPublisher
+    from faith_shared.protocol.events import EventPublisher
 
     return EventPublisher(FakeRedis(), "pa")
 
@@ -73,3 +73,4 @@ async def test_handle_question_records_open_question(tmp_path: Path, event_publi
 
     assert result.entry_id is None
     assert "Should we support SSO?" in manager.read_frs()
+

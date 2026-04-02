@@ -1,1 +1,0 @@
-"""FAITH MCP helper packages."""

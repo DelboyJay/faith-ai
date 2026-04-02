@@ -27,7 +27,7 @@ package_ownership:
 phases:
   - id: 1
     title: 'Foundation'
-    status: 'DONE'
+    status: 'TODO'
     summary: 'Establish the project structure, Docker bootstrap, Redis, and configuration system. Everything else depends on this.'
     task_count: 6
     tasks:
@@ -53,7 +53,7 @@ phases:
         name: 'Configuration System: YAML Loading & Pydantic Models'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'DONE'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-003-configuration-system.md'
         dependencies: ['FAITH-001']
         frs_reference: 'Section 7.1, 7.2, 7.5'
@@ -71,7 +71,7 @@ phases:
         name: 'FAITH CLI (`faith-cli` Package)'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'DONE'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-005-faith-cli.md'
         dependencies: ['FAITH-001', 'FAITH-002']
         frs_reference: 'Section 9.2'
@@ -87,7 +87,7 @@ phases:
         summary: 'Implement schema version detection on startup for all config files (`.faith/system.yaml`, `.faith/security.yaml`, `.faith/tools/*.yaml`, `.faith/agents/*/config.yaml`, `config/secrets.yaml`). If version mismatch: display migration guide, offer auto-migrate with backup (`*.bak-vX.Y`), validate after migration. No silent migrations.'
   - id: 2
     title: 'Compact Protocol & Event System'
-    status: 'DONE'
+    status: 'TODO'
     summary: 'Define the messaging and event data models that underpin all communication.'
     task_count: 3
     tasks:
@@ -104,7 +104,7 @@ phases:
         name: 'Event System Data Models & Publisher'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'DONE'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-008-event-system-publisher.md'
         dependencies: ['FAITH-002']
         frs_reference: 'Section 3.7.1–3.7.4'
@@ -120,15 +120,15 @@ phases:
         summary: 'Implement `EventSubscriber` class that listens on `system-events` and dispatches events to registered handlers by event type. This is the PA''s primary input loop. Include stall detection logic: maintain per-channel last-message timestamps, 60-second background tick, configurable timeout (default 5 min). Tool activity (`tool:call_started`/`tool:call_complete`) resets stall timer. Heartbeat absence detection (3 missed beats = error event). Include `CompletionBatcher` support class: tracks a pending-completions set, buffers incoming `agent:task_complete` results, and only fires a batch-ready callback when all expected completions arrive or a configurable timeout expires (default 10 min). Urgent events (`agent:error`, `channel:stalled`, `channel:loop_detected`, `approval:requested`) always bypass batching and dispatch immediately.'
   - id: 3
     title: 'Base Agent Runtime'
-    status: 'DONE'
+    status: 'TODO'
     summary: 'Build the reusable agent base class that all specialist agents inherit from.'
     task_count: 4
     tasks:
       - id: 'FAITH-010'
         name: 'Base Agent Class'
         complexity: 'L'
-        model: 'Sonnet / GPT-5.4'
-        status: 'DONE'
+        model: 'Opus / GPT-5.4 high reasoning'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-010-base-agent-class.md'
         dependencies: ['FAITH-007', 'FAITH-008']
         frs_reference: 'Section 3.5, 3.6, 3.7.4'
@@ -155,40 +155,40 @@ phases:
         name: 'LLM API Client (Ollama + OpenRouter)'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'DONE'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-013-llm-api-client.md'
         dependencies: ['FAITH-010']
         frs_reference: 'Section 3.6.4, 3.6.5'
         summary: 'Implement unified LLM API client supporting both Ollama (`/api/chat`) and OpenRouter (`/api/v1/chat/completions`) endpoints. Include exponential backoff retry (3 retries, 2s→4s→8s). Classify errors: retry on 429/503/timeout, fail on 400/401/404. Fallback model support. Publish `agent:error` after 3 failures. Model config from `.faith/agents/{id}/config.yaml` with `.faith/system.yaml` defaults.'
   - id: 4
     title: 'PA Core'
-    status: 'DONE'
+    status: 'TODO'
     summary: 'Build the Project Agent — the brain of the system.'
     task_count: 6
     tasks:
       - id: 'FAITH-014'
         name: 'PA Container Setup & Docker SDK Integration'
         complexity: 'M'
-        model: 'Sonnet / GPT-5.4'
-        status: 'DONE'
+        model: 'Opus / GPT-5.4 high reasoning'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-014-pa-container-setup.md'
         dependencies: ['FAITH-001', 'FAITH-002', 'FAITH-010']
         frs_reference: 'Section 4.6.1, 4.6.2'
-        summary: 'Build the PA Dockerfile with Docker Python SDK (docker package). Mount /var/run/docker.sock. Implement container lifecycle methods: start_container(), stop_container(), estart_container(), list_containers(), ttach_to_network(). All managed containers attach to maf-network. After project config validation succeeds, the PA reads .faith/agents/*/config.yaml to discover and start agent containers, starts the required FAITH-owned tool containers, and starts the project-scoped mcp-runtime container when external MCP registrations are present. Credentials resolved from config/secrets.yaml via secret_ref.'
+        summary: 'Build the PA Dockerfile with Docker Python SDK and implement container lifecycle methods for project-scoped agents, FAITH-owned tool containers, disposable sandbox containers, and the project-scoped mcp-runtime container. The PA mounts the Docker socket, but the Docker socket must never be mounted into agent, tool, or sandbox containers. Sandbox containers must not run in privileged mode, must not use host networking, and must receive only approved mounts plus the minimum required Linux capabilities. Credentials are resolved from config/secrets.yaml via secret_ref.'
       - id: 'FAITH-057'
         name: 'Disposable Sandbox Lifecycle & Scheduling'
         complexity: 'L'
-        model: 'Sonnet / GPT-5.4'
-        status: 'DONE'
+        model: 'Opus / GPT-5.4 high reasoning'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-057-disposable-sandbox-lifecycle-scheduling.md'
         dependencies: ['FAITH-014']
         frs_reference: 'Section 2.3, 4.2'
-        summary: 'Implement the PA-managed disposable sandbox runtime used for agent execution. A sandbox is a Linux Docker container fully controlled by the PA, not a restricted Unix user inside a shared runtime. The PA must create, reuse, allocate, reset, and destroy sandboxes; support shared vs isolated allocation; enforce resource quotas; and emit audit/status events for sandbox lifecycle decisions.'
+        summary: 'Implement the PA-managed disposable sandbox runtime used for agent execution. A sandbox is a Linux Docker container fully controlled by the PA, not a restricted Unix user inside a shared runtime. Root access is allowed only inside the disposable sandbox container and only under strict isolation controls: no Docker socket, no privileged mode, no host networking, approved mounts only, and minimal capabilities. The PA must create, reuse, allocate, reset, and destroy sandboxes; support shared vs isolated allocation; enforce resource quotas; and emit audit/status events for sandbox lifecycle decisions.'
       - id: 'FAITH-015'
         name: 'PA Session & Task Management'
         complexity: 'L'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'DONE'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-015-pa-session-task-management.md'
         dependencies: ['FAITH-014', 'FAITH-057', 'FAITH-009']
         frs_reference: 'Section 3.2, 8.4'
@@ -214,7 +214,7 @@ phases:
       - id: 'FAITH-018'
         name: 'Living FRS Management'
         complexity: 'M'
-        model: 'Sonnet / GPT-5.4'
+        model: 'Opus / GPT-5.4 high reasoning'
         status: 'DONE'
         task_doc: 'tasks/FAITH-018-living-frs-management.md'
         dependencies: ['FAITH-015']
@@ -222,15 +222,15 @@ phases:
         summary: 'Implement the PA''s FRS workflow: receive user natural language → classify as new requirement / refinement / correction / question → update `.faith/docs/frs.md` with numbered REQ/DEC entries → publish `file:changed` → determine affected agents/tasks → issue updated instructions. Maintain consistent FRS structure (Requirements, Decisions, Out of Scope, Open Questions).'
   - id: 5
     title: 'Security & Approval System'
-    status: 'DONE'
+    status: 'TODO'
     summary: ''
     task_count: 3
     tasks:
       - id: 'FAITH-019'
         name: 'Security YAML Schema & Regex Approval Engine'
         complexity: 'M'
-        model: 'Sonnet / GPT-5.4'
-        status: 'DONE'
+        model: 'Opus / GPT-5.4 high reasoning'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-019-security-approval-engine.md'
         dependencies: ['FAITH-003']
         frs_reference: 'Section 5.1, 5.3'
@@ -238,8 +238,8 @@ phases:
       - id: 'FAITH-020'
         name: 'Approval Request/Response Flow'
         complexity: 'M'
-        model: 'Sonnet / GPT-5.4'
-        status: 'DONE'
+        model: 'Opus / GPT-5.4 high reasoning'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-020-approval-request-response.md'
         dependencies: ['FAITH-019', 'FAITH-008']
         frs_reference: 'Section 5.6'
@@ -247,8 +247,8 @@ phases:
       - id: 'FAITH-021'
         name: 'Audit Log System'
         complexity: 'M'
-        model: 'Haiku / GPT-5.4-mini'
-        status: 'DONE'
+        model: 'Sonnet / GPT-5.4'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-021-audit-log-system.md'
         dependencies: ['FAITH-008']
         frs_reference: 'Section 5.5'
@@ -262,7 +262,7 @@ phases:
       - id: 'FAITH-022'
         name: 'Filesystem MCP Server'
         complexity: 'L'
-        model: 'Sonnet / GPT-5.4'
+        model: 'Opus / GPT-5.4 high reasoning'
         status: 'TODO'
         task_doc: 'tasks/FAITH-022-filesystem-mcp-server.md'
         dependencies: ['FAITH-003', 'FAITH-008', 'FAITH-057']
@@ -271,7 +271,7 @@ phases:
       - id: 'FAITH-023'
         name: 'Filesystem File History'
         complexity: 'M'
-        model: 'Haiku / GPT-5.4-mini'
+        model: 'Sonnet / GPT-5.4'
         status: 'TODO'
         task_doc: 'tasks/FAITH-023-filesystem-file-history.md'
         dependencies: ['FAITH-022']
@@ -280,12 +280,12 @@ phases:
       - id: 'FAITH-024'
         name: 'Python Execution MCP Server'
         complexity: 'M'
-        model: 'Sonnet / GPT-5.4'
+        model: 'Opus / GPT-5.4 high reasoning'
         status: 'TODO'
         task_doc: 'tasks/FAITH-024-python-execution-mcp.md'
         dependencies: ['FAITH-003', 'FAITH-008', 'FAITH-057']
         frs_reference: 'Section 4.2'
-        summary: 'Implement a FAITH-owned Python execution MCP server. This is a core trust-boundary tool and must enforce FAITH-specific sandboxing, approvals, package policy, audit logging, and filesystem restrictions. Execution is container-first by default, but the PA should route directly to the optional host-worker path when the task clearly requires host-only context or resources. The implementation must include explicit security hardening and security-focused testing, not just functional behavior.'
+        summary: 'Implement a FAITH-owned Python execution MCP server. This is a core trust-boundary tool and must enforce FAITH-specific sandboxing, approvals, package policy, audit logging, and filesystem restrictions. Execution is container-first by default, but the PA should route directly to the optional host-worker path when the task clearly requires host-only context or resources. Sandbox containers may run as root only inside the container and only under strict isolation controls: no Docker socket, no privileged mode, no host networking, and approved mounts only. The implementation must include explicit security hardening and security-focused testing, not just functional behavior.'
       - id: 'FAITH-025'
         name: 'PostgreSQL Database MCP Server'
         complexity: 'M'
@@ -307,7 +307,7 @@ phases:
       - id: 'FAITH-027'
         name: 'Code Index MCP Server (tree-sitter)'
         complexity: 'L'
-        model: 'Sonnet / GPT-5.4'
+        model: 'Opus / GPT-5.4 high reasoning'
         status: 'TODO'
         task_doc: 'tasks/FAITH-027-code-index-mcp.md'
         dependencies: ['FAITH-022']
@@ -325,7 +325,7 @@ phases:
       - id: 'FAITH-029'
         name: 'Git MCP Server'
         complexity: 'M'
-        model: 'Haiku / GPT-5.4-mini'
+        model: 'Sonnet / GPT-5.4'
         status: 'TODO'
         task_doc: 'tasks/FAITH-029-git-mcp-server.md'
         dependencies: ['FAITH-019']
@@ -385,7 +385,7 @@ phases:
       - id: 'FAITH-035'
         name: 'External MCP Server Registration & Lifecycle'
         complexity: 'M'
-        model: 'Sonnet / GPT-5.4'
+        model: 'Opus / GPT-5.4 high reasoning'
         status: 'TODO'
         task_doc: 'tasks/FAITH-035-external-mcp-lifecycle.md'
         dependencies: ['FAITH-014', 'FAITH-003']
@@ -409,7 +409,7 @@ phases:
       - id: 'FAITH-037'
         name: 'GoldenLayout Panel Framework'
         complexity: 'M'
-        model: 'Sonnet / GPT-5.4'
+        model: 'Opus / GPT-5.4 high reasoning'
         status: 'TODO'
         task_doc: 'tasks/FAITH-037-goldenlayout-panels.md'
         dependencies: ['FAITH-036']
@@ -481,7 +481,7 @@ phases:
       - id: 'FAITH-044'
         name: 'Web UI Log Views'
         complexity: 'M'
-        model: 'Sonnet / GPT-5.4'
+        model: 'Opus / GPT-5.4 high reasoning'
         status: 'TODO'
         task_doc: 'tasks/FAITH-044-web-ui-log-views.md'
         dependencies: ['FAITH-037', 'FAITH-021']
@@ -538,12 +538,12 @@ phases:
       - id: 'FAITH-049'
         name: 'First-Run Wizard: Multi-Step UI'
         complexity: 'L'
-        model: 'Sonnet / GPT-5.4'
+        model: 'Opus / GPT-5.4 high reasoning'
         status: 'TODO'
         task_doc: 'tasks/FAITH-049-first-run-wizard.md'
         dependencies: ['FAITH-036', 'FAITH-003', 'FAITH-014', 'FAITH-057']
         frs_reference: 'Section 9.3'
-        summary: 'Implement the 6-step first-run wizard in the Web UI: (1) Docker socket disclosure + acknowledgement, (2) Privacy profile selection with plain-language descriptions plus an Ollama enable/disable choice, (3) PA model selection (OpenRouter vs local Ollama, with bundled containerized Ollama available by default and external-host override for advanced users), (4) Default specialist model selection, (5) First project setup — create `.faith/` directory, generate `system.yaml`, tool configs, and propose agent team, (6) Launch all containers + onboarding overlay. The wizard must also support reopening after setup in an edit mode that preloads current settings and writes changes back through the same config pipeline. For existing codebase: create `.faith/` inside project, warn about write access, auto-generate draft `.faith/docs/frs.md` from codebase analysis. Secrets (API keys, DB passwords) go to framework-level `config/secrets.yaml`, not project config.'
+        summary: 'Implement the 6-step first-run wizard in the Web UI: (1) Docker socket disclosure + acknowledgement, including the distinction between PA host-level Docker control and disposable sandbox root access, (2) Privacy profile selection with plain-language descriptions plus an Ollama enable/disable choice, (3) PA model selection (OpenRouter vs local Ollama, with bundled containerized Ollama available by default and external-host override for advanced users), (4) Default specialist model selection, (5) First project setup — create `.faith/` directory, generate `system.yaml`, tool configs, and propose agent team, (6) Launch all containers + onboarding overlay. The wizard must also support reopening after setup in an edit mode that preloads current settings and writes changes back through the same config pipeline. For existing codebase: create `.faith/` inside project, warn about write access, auto-generate draft `.faith/docs/frs.md` from codebase analysis. Secrets (API keys, DB passwords) go to framework-level `config/secrets.yaml`, not project config.'
       - id: 'FAITH-053'
         name: 'First-Run Wizard: Detailed Specification'
         complexity: 'M'
@@ -565,7 +565,7 @@ phases:
       - id: 'FAITH-051'
         name: 'Ollama Model Download Integration'
         complexity: 'S'
-        model: 'Haiku / GPT-5.4-mini'
+        model: 'Sonnet / GPT-5.4'
         status: 'TODO'
         task_doc: 'tasks/FAITH-051-ollama-model-download.md'
         dependencies: ['FAITH-049', 'FAITH-057']
@@ -589,7 +589,7 @@ phases:
       - id: 'FAITH-055'
         name: 'Skill Definitions & Unattended Execution'
         complexity: 'M'
-        model: 'Sonnet / GPT-5.4'
+        model: 'Opus / GPT-5.4 high reasoning'
         status: 'TODO'
         task_doc: 'tasks/FAITH-055-skill-definitions-unattended-execution.md'
         dependencies: ['FAITH-054', 'FAITH-019']
@@ -598,7 +598,7 @@ phases:
       - id: 'FAITH-056'
         name: 'Built-in Skill Scheduler'
         complexity: 'M'
-        model: 'Sonnet / GPT-5.4'
+        model: 'Opus / GPT-5.4 high reasoning'
         status: 'TODO'
         task_doc: 'tasks/FAITH-056-built-in-skill-scheduler.md'
         dependencies: ['FAITH-055', 'FAITH-004']
@@ -619,6 +619,15 @@ phases:
         dependencies: ['All previous phases']
         frs_reference: 'Section 12'
         summary: 'Adapt FAITH for cloud deployment: Kubernetes orchestration (replace Docker socket with scoped service account), OAuth2/SSO via control plane, per-project namespace isolation, S3-compatible object storage, server-side layout persistence, per-project or shared Redis. Build the FAITH Management Service: user auth, project CRUD, billing integration, licence enforcement. Ensure PA/agent/tool code is identical between local and cloud — only orchestration layer differs.'
+
+
+
+
+
+
+
+
+
 
 
 

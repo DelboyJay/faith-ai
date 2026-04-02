@@ -10,9 +10,9 @@ import pytest_asyncio
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
-import faith.web.app as web_app
-from faith.utils.redis_client import SYSTEM_EVENTS_CHANNEL, USER_INPUT_CHANNEL
-from faith.web.app import APPROVAL_EVENTS_CHANNEL, APPROVAL_RESPONSES_CHANNEL, create_app
+import faith_web.app as web_app
+from faith_pa.utils.redis_client import SYSTEM_EVENTS_CHANNEL, USER_INPUT_CHANNEL
+from faith_web.app import APPROVAL_EVENTS_CHANNEL, APPROVAL_RESPONSES_CHANNEL, create_app
 
 
 class FakePubSub:
@@ -406,3 +406,4 @@ async def test_approval_endpoint_returns_503_when_redis_missing(app) -> None:
         assert response.status_code == 503
     finally:
         web_app.redis_pool = original
+

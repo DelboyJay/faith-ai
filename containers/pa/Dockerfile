@@ -9,11 +9,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY containers/pa/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY faith/ /app/faith/
+COPY src/ /app/src/
+COPY web/ /app/web/
 
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
-CMD ["uvicorn", "faith.pa.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "faith_pa.pa.app:app", "--host", "0.0.0.0", "--port", "8000"]
+
+

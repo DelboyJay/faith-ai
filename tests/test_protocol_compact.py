@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from faith.protocol.compact import (
+from faith_shared.protocol.compact import (
     ChannelMessageStore,
     CompactMessage,
     MessageFilter,
@@ -159,3 +159,4 @@ def test_channel_store_clear_and_counts():
     store.clear()
     assert store.count() == 0
     assert store.next_msg_id == 1
+

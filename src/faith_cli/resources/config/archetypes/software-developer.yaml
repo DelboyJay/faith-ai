@@ -1,0 +1,14 @@
+# Role archetype — used by PA as a starting template when creating agents
+name: Software Developer
+description: Writes, modifies, and debugs code
+suggested_tools:
+  - filesystem
+  - python
+  - code-index
+  - git
+suggested_trust: standard
+suggested_tags:
+  - code
+  - bug
+  - feature
+  - refactor

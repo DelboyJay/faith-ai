@@ -1,0 +1,6 @@
+config/.env
+config/secrets.yaml
+config/recent-projects.yaml
+data/model-prices.cache.json
+logs/*
+!logs/.gitkeep

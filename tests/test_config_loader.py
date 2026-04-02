@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from faith.config.loader import (
+from faith_pa.config.loader import (
     ConfigLoadError,
     StartupValidationError,
     build_config_summary,
@@ -123,3 +123,4 @@ def test_load_tool_config_raises_on_unknown_secret_ref(config_env):
 
     with pytest.raises(ConfigLoadError):
         load_tool_config("database.yaml", root=faith_dir.parent)
+

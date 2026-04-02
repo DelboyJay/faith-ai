@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from faith.pa.loop_detector import ChannelStateTracker, LoopDetectionConfig, LoopDetector, _Snapshot
+from faith_pa.pa.loop_detector import ChannelStateTracker, LoopDetectionConfig, LoopDetector, _Snapshot
 
 
 class FakePublisher:
@@ -63,3 +63,4 @@ def test_reload_config_preserves_recent_snapshots() -> None:
 
     assert detector.config.window_messages == 2
     assert len(detector._channels["chan"].snapshots) == 1
+

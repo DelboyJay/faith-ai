@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 from click.testing import CliRunner
 
+import faith_cli.cli as cli_module
 from faith_cli import paths
 from faith_cli.cli import main
 from faith_cli.docker import compose_command
@@ -26,6 +27,17 @@ def _fake_home(monkeypatch, tmp_path: Path) -> Path:
         paths, "recent_projects_file", lambda: home / "config" / "recent-projects.yaml"
     )
     monkeypatch.setattr(paths, "installed_compose_file", lambda: home / "docker-compose.yml")
+    monkeypatch.setattr(cli_module, "faith_home", lambda: home)
+    monkeypatch.setattr(cli_module, "config_dir", lambda: home / "config")
+    monkeypatch.setattr(cli_module, "data_dir", lambda: home / "data")
+    monkeypatch.setattr(cli_module, "logs_dir", lambda: home / "logs")
+    monkeypatch.setattr(cli_module, "archetypes_dir", lambda: home / "config" / "archetypes")
+    monkeypatch.setattr(cli_module, "env_file", lambda: home / "config" / ".env")
+    monkeypatch.setattr(cli_module, "secrets_file", lambda: home / "config" / "secrets.yaml")
+    monkeypatch.setattr(
+        cli_module, "recent_projects_file", lambda: home / "config" / "recent-projects.yaml"
+    )
+    monkeypatch.setattr(cli_module, "installed_compose_file", lambda: home / "docker-compose.yml")
     return home
 
 
@@ -46,6 +58,7 @@ def test_is_initialised_true_when_required_files_exist(monkeypatch, tmp_path: Pa
     (home / "config" / ".env").write_text("FAITH_ENV=test\n", encoding="utf-8")
     (home / "config" / "secrets.yaml").write_text("api_key: changeme\n", encoding="utf-8")
     (home / "config" / "recent-projects.yaml").write_text("projects: []\n", encoding="utf-8")
+    (home / "docker-compose.yml").write_text("services: {}\n", encoding="utf-8")
     assert paths.is_initialised()
 
 
@@ -58,12 +71,22 @@ def test_is_first_run_detects_template_secret(monkeypatch, tmp_path: Path) -> No
     assert paths.is_first_run()
 
 
-def test_compose_command_uses_repo_project_directory() -> None:
+def test_compose_command_uses_installed_project_directory() -> None:
+    """
+    Description:
+        Verify the compose command resolves against the extracted FAITH home.
+
+    Requirements:
+        - This test is needed to prove CLI Docker operations run against the
+          installed bootstrap bundle rather than the repository checkout.
+        - Verify the compose command points at `~/.faith` and the installed
+          compose file path.
+    """
     command = compose_command("ps")
     assert command[:3] == ["docker", "compose", "--project-name"]
     assert "--project-directory" in command
-    assert str(paths.source_root()) in command
-    assert str(paths.source_compose_file()) in command
+    assert str(paths.faith_home()) in command
+    assert str(paths.compose_file()) in command
 
 
 def test_help_shows_available_commands() -> None:
@@ -94,6 +117,7 @@ def test_init_bootstraps_home(monkeypatch, tmp_path: Path) -> None:
     assert (home / "config" / "secrets.yaml").exists()
     assert (home / "config" / "recent-projects.yaml").exists()
     assert (home / "docker-compose.yml").exists()
+    assert (home / ".gitignore").exists()
 
 
 def test_init_prompts_before_reinitialising(monkeypatch) -> None:
@@ -186,3 +210,51 @@ def test_help_subcommand_prints_group_help() -> None:
     result = runner.invoke(main, ["help"])
     assert result.exit_code == 0
     assert "Usage:" in result.output
+
+
+def test_bundled_cli_resources_exist() -> None:
+    """
+    Description:
+        Verify the CLI package carries the bootstrap assets it must extract for
+        end users.
+
+    Requirements:
+        - This test is needed to prove `faith init` can work from an installed
+          wheel rather than depending on repository-root files.
+        - Verify the bundled compose file, config templates, and data assets
+          exist under the CLI package resources directory.
+    """
+    resources_root = paths.package_resources_root()
+
+    expected_paths = [
+        resources_root / "docker-compose.yml",
+        resources_root / "config" / ".env.template",
+        resources_root / "config" / "secrets.yaml.template",
+        resources_root / "config" / "archetypes" / "software-developer.yaml",
+        resources_root / "data" / "model-prices.default.json",
+        resources_root / "data" / "provider-privacy.json",
+        resources_root / ".gitignore",
+    ]
+
+    missing = [
+        str(path.relative_to(resources_root)) for path in expected_paths if not path.exists()
+    ]
+    assert not missing, f"Missing bundled CLI resources: {missing}"
+
+
+def test_compose_file_uses_installed_bundle(monkeypatch, tmp_path: Path) -> None:
+    """
+    Description:
+        Verify the CLI resolves Docker Compose from the user-owned FAITH home.
+
+    Requirements:
+        - This test is needed to prove `faith init` and later CLI commands use
+          the extracted bootstrap bundle rather than the repository checkout.
+        - Verify `compose_file()` returns the installed compose path.
+    """
+    home = _fake_home(monkeypatch, tmp_path)
+    home.mkdir(parents=True, exist_ok=True)
+    installed = home / "docker-compose.yml"
+    installed.write_text("services: {}\n", encoding="utf-8")
+
+    assert paths.compose_file() == installed

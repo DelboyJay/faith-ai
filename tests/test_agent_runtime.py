@@ -1,6 +1,6 @@
-from faith.agent import AgentMessage, BaseAgent
-from faith.config.models import AgentConfig, SystemConfig
-from faith.utils.tokens import (
+from faith_pa.agent import AgentMessage, BaseAgent
+from faith_pa.config.models import AgentConfig, SystemConfig
+from faith_pa.utils.tokens import (
     FALLBACK_CHARS_PER_TOKEN,
     context_threshold,
     count_message_tokens,
@@ -200,3 +200,6 @@ def test_parse_llm_response_accepts_dict_message_shape():
 def test_agent_message_to_chat_message():
     message = AgentMessage(role="user", content="hello", name="dev")
     assert message.to_chat_message() == {"role": "user", "content": "hello", "name": "dev"}
+
+
+

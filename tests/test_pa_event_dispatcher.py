@@ -4,8 +4,8 @@ import asyncio
 
 import pytest
 
-from faith.pa.event_dispatcher import PAEventDispatcher
-from faith.protocol.events import EventType, FaithEvent
+from faith_pa.pa.event_dispatcher import PAEventDispatcher
+from faith_shared.protocol.events import EventType, FaithEvent
 
 
 class FakeRedis:
@@ -58,3 +58,4 @@ async def test_dispatcher_registers_stall_detector_resources() -> None:
 
     assert "chan-1" in dispatcher.stall_detector._channel_activity
     assert "agent-1" in dispatcher.stall_detector._agent_heartbeats
+

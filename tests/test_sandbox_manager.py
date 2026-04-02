@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from faith.pa.sandbox_manager import SandboxManager
-from faith.pa.sandbox_models import (
+from faith_pa.pa.sandbox_manager import SandboxManager
+from faith_pa.pa.sandbox_models import (
     SandboxAllocationMode,
     SandboxQuota,
     SandboxRequest,
@@ -94,3 +94,4 @@ async def test_reset_recreates_sandbox() -> None:
     assert runtime.destroyed[0].endswith(allocation.sandbox_id)
     assert runtime.created[0].endswith(allocation.sandbox_id)
     assert runtime.created[1].endswith(allocation.sandbox_id)
+

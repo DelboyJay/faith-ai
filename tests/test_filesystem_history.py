@@ -1,4 +1,4 @@
-from faith.tools.filesystem import FileHistoryManager, make_metadata
+from faith_mcp.filesystem import FileHistoryManager, make_metadata
 
 
 def test_history_manager_stores_versions_when_enabled(tmp_path):
@@ -13,3 +13,4 @@ def test_history_manager_stores_versions_when_enabled(tmp_path):
     history = manager.list_history("doc.txt")
     assert len(history) == 1
     assert history[0]["agent"] == "dev"
+
