@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from faith_pa import __version__
 from faith_pa.config import ConfigSummary, RedisStatus, ServiceStatus, build_config_summary
 from faith_pa.utils import SYSTEM_EVENTS_CHANNEL, check_connection, get_async_client, get_redis_url
+from faith_shared.api import RouteManifestEntry, ServiceRouteManifest
 
 
 async def _build_status(app: FastAPI) -> ServiceStatus:
@@ -26,6 +27,71 @@ async def _build_status(app: FastAPI) -> ServiceStatus:
         status=status,
         redis=RedisStatus(url=get_redis_url(), connected=redis_connected),
         config=build_config_summary(),
+    )
+
+
+def _build_route_manifest() -> ServiceRouteManifest:
+    """Description:
+        Build the structured route manifest exposed by the PA service.
+
+    Requirements:
+        - Describe all currently supported public PA endpoints.
+        - Keep the manifest machine-readable so CLI clients do not hard-code PA routes.
+
+    :returns: Route manifest payload for the PA service.
+    """
+
+    return ServiceRouteManifest(
+        service="faith-project-agent",
+        version=__version__,
+        routes=[
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
+                method="GET",
+                path="/health",
+                summary="Return PA liveness and dependency health.",
+                expected_status_codes=[200, 503],
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
+                method="GET",
+                path="/api/status",
+                summary="Return the current PA runtime status snapshot.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
+                method="GET",
+                path="/api/config",
+                summary="Return the redacted PA config summary.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
+                method="POST",
+                path="/api/events/test",
+                summary="Publish a test event into the PA system-events channel.",
+                expected_status_codes=[200, 503],
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
+                method="GET",
+                path="/api/routes",
+                summary="Return the structured PA route manifest for CLI discovery.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="websocket",
+                path="/ws/status",
+                summary="Stream PA status snapshots over WebSocket.",
+            ),
+        ],
     )
 
 
@@ -96,6 +162,21 @@ async def publish_test_event() -> dict[str, str]:
     return payload
 
 
+@app.get("/api/routes", response_model=ServiceRouteManifest)
+async def api_routes() -> ServiceRouteManifest:
+    """Description:
+        Return the machine-readable PA route manifest.
+
+    Requirements:
+        - Expose a discovery contract for CLI tooling instead of requiring hard-coded route knowledge.
+        - Remain available without depending on Redis health.
+
+    :returns: Structured manifest for PA HTTP and WebSocket routes.
+    """
+
+    return _build_route_manifest()
+
+
 @app.websocket("/ws/status")
 async def websocket_status(websocket: WebSocket) -> None:
     """Push a status snapshot to connected clients."""
@@ -108,5 +189,3 @@ async def websocket_status(websocket: WebSocket) -> None:
             await asyncio.sleep(2)
     except WebSocketDisconnect:
         return
-
-

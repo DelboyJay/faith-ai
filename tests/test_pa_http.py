@@ -1,11 +1,11 @@
 """Description:
-High-level HTTP tests for the FAITH Project Agent API.
+    High-level HTTP tests for the FAITH Project Agent API.
 
 Requirements:
-- Verify the currently implemented PA HTTP endpoints return stable
-  request/response behaviour under normal conditions.
-- Verify expected service-unavailable responses are returned when Redis
-  is unavailable instead of surfacing internal server errors.
+    - Verify the currently implemented PA HTTP endpoints return stable
+      request/response behaviour under normal conditions.
+    - Verify expected service-unavailable responses are returned when Redis
+      is unavailable instead of surfacing internal server errors.
 """
 
 from __future__ import annotations
@@ -250,3 +250,21 @@ def test_pa_health_returns_503_when_redis_unhealthy(
     assert response.status_code == 503
     assert response.json()["status"] == "degraded"
 
+
+def test_pa_routes_returns_manifest(client: TestClient) -> None:
+    """Description:
+    Verify the PA route-discovery endpoint returns the structured route manifest.
+
+    Requirements:
+    - This test is needed to prove the CLI can discover PA endpoints without hard-coding them.
+    - Verify the manifest includes both HTTP and WebSocket routes with expected metadata.
+
+    :param client: Test client for the PA application.
+    """
+    response = client.get("/api/routes")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["service"] == "faith-project-agent"
+    assert any(route["path"] == "/api/routes" for route in payload["routes"])
+    assert any(route["path"] == "/ws/status" for route in payload["routes"])

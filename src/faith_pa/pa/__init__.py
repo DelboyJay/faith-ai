@@ -1,4 +1,10 @@
-"""Project Agent runtime package."""
+"""Description:
+    Re-export the primary runtime services used by the Project Agent package.
+
+Requirements:
+    - Provide a stable import surface for PA orchestration components.
+    - Keep the package export module free of runtime side effects.
+"""
 
 from faith_pa.pa.container_manager import ContainerManager
 from faith_pa.pa.event_dispatcher import PAEventDispatcher
@@ -29,4 +35,3 @@ __all__ = [
     "Task",
     "ToolRouter",
 ]
-

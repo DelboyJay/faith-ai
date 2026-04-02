@@ -1,3 +1,13 @@
+"""Description:
+    Cover the base agent runtime helpers and context assembly flow.
+
+Requirements:
+    - Verify token helpers and base-agent context assembly stay stable.
+    - Exercise the behaviour using request-style unit tests rather than internal implementation shortcuts.
+"""
+
+from __future__ import annotations
+
 from faith_pa.agent import AgentMessage, BaseAgent
 from faith_pa.config.models import AgentConfig, SystemConfig
 from faith_pa.utils.tokens import (
@@ -10,6 +20,17 @@ from faith_pa.utils.tokens import (
 
 
 def build_agent_config(**overrides):
+    """Description:
+        Build a valid agent configuration payload for runtime tests.
+
+    Requirements:
+        - Provide the minimum valid agent configuration used by the base-agent tests.
+        - Allow callers to override individual fields per scenario.
+
+    :param overrides: Field overrides merged into the baseline agent payload.
+    :returns: Validated agent configuration model.
+    """
+
     payload = {
         "name": "Software Developer",
         "role": "software-developer",
@@ -21,6 +42,17 @@ def build_agent_config(**overrides):
 
 
 def build_system_config(**overrides):
+    """Description:
+        Build a valid system configuration payload for runtime tests.
+
+    Requirements:
+        - Provide the minimum valid system configuration used by the base-agent tests.
+        - Allow callers to override individual fields per scenario.
+
+    :param overrides: Field overrides merged into the baseline system payload.
+    :returns: Validated system configuration model.
+    """
+
     payload = {
         "pa": {"model": "gpt-5.4"},
         "default_agent_model": "gpt-5.4-mini",
@@ -30,13 +62,31 @@ def build_system_config(**overrides):
 
 
 def test_count_text_tokens_fallback(monkeypatch):
-    monkeypatch.setattr("faith.utils.tokens.tiktoken", None)
+    """Description:
+        Verify the fallback text-token counter works when ``tiktoken`` is unavailable.
+
+    Requirements:
+        - This test is needed to prove FAITH still has deterministic token estimates without tokenizer support.
+        - Verify the fallback rounds by the configured characters-per-token constant.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
+    monkeypatch.setattr("faith_pa.utils.tokens.tiktoken", None)
     assert count_text_tokens("abcd") == 1
     assert count_text_tokens("abcde") == 2
     assert FALLBACK_CHARS_PER_TOKEN == 4
 
 
 def test_message_token_count_is_non_zero():
+    """Description:
+        Verify message token counting returns a positive value for normal messages.
+
+    Requirements:
+        - This test is needed to prove multi-message payloads produce usable token estimates.
+        - Verify a simple system-plus-user message list yields a non-zero count.
+    """
+
     messages = [
         {"role": "system", "content": "You are helpful."},
         {"role": "user", "content": "Do the task."},
@@ -45,16 +95,44 @@ def test_message_token_count_is_non_zero():
 
 
 def test_truncate_text_to_token_limit_fallback(monkeypatch):
-    monkeypatch.setattr("faith.utils.tokens.tiktoken", None)
+    """Description:
+        Verify fallback truncation respects the requested token limit.
+
+    Requirements:
+        - This test is needed to prove text truncation still works without tokenizer support.
+        - Verify the fallback truncates by the configured characters-per-token constant.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
+    monkeypatch.setattr("faith_pa.utils.tokens.tiktoken", None)
     text = "abcdefghij"
     assert truncate_text_to_token_limit(text, 2) == text[: 2 * FALLBACK_CHARS_PER_TOKEN]
 
 
 def test_context_threshold_applies_safety_margin():
+    """Description:
+        Verify context thresholds reserve the configured safety margin.
+
+    Requirements:
+        - This test is needed to prove compaction thresholds leave headroom below the hard model limit.
+        - Verify a 50 percent threshold on a 1000-token window yields 450 usable tokens after safety margin.
+    """
+
     assert context_threshold(1000, 50) == 450
 
 
 def test_base_agent_assembles_context_in_expected_order(tmp_path):
+    """Description:
+        Verify the base agent assembles prompt context in the expected order.
+
+    Requirements:
+        - This test is needed to prove the runtime prompt layout stays stable across prompt, summary, CAG, and current-task sections.
+        - Verify recent messages and current task are placed into the assembled context payload.
+
+    :param tmp_path: Temporary project workspace.
+    """
+
     doc = tmp_path / "docs" / "frs.md"
     doc.parent.mkdir(parents=True, exist_ok=True)
     doc.write_text("FRS content", encoding="utf-8")
@@ -86,6 +164,14 @@ def test_base_agent_assembles_context_in_expected_order(tmp_path):
 
 
 def test_base_agent_uses_agent_model_override():
+    """Description:
+        Verify the base agent prefers its own model override when configured.
+
+    Requirements:
+        - This test is needed to prove per-agent model selection overrides the system default.
+        - Verify the runtime model name matches the explicit agent configuration.
+    """
+
     agent = BaseAgent(
         agent_id="agent-2",
         config=build_agent_config(model="claude-sonnet"),
@@ -96,6 +182,14 @@ def test_base_agent_uses_agent_model_override():
 
 
 def test_base_agent_falls_back_to_system_model():
+    """Description:
+        Verify the base agent uses the system default model when no agent override exists.
+
+    Requirements:
+        - This test is needed to prove agents inherit the configured default model cleanly.
+        - Verify the runtime model name matches the system default.
+    """
+
     agent = BaseAgent(
         agent_id="agent-3",
         config=build_agent_config(),
@@ -106,6 +200,14 @@ def test_base_agent_falls_back_to_system_model():
 
 
 def test_base_agent_limits_recent_messages():
+    """Description:
+        Verify the base agent enforces the configured recent-message limit.
+
+    Requirements:
+        - This test is needed to prove older messages drop off once the configured rolling window is full.
+        - Verify only the newest configured messages remain.
+    """
+
     config = build_agent_config(context={"max_messages": 5, "summary_threshold_pct": 50})
     agent = BaseAgent(
         agent_id="agent-4",
@@ -129,9 +231,20 @@ def test_base_agent_limits_recent_messages():
 
 
 def test_base_agent_cag_documents_obey_token_budget(tmp_path, monkeypatch):
-    monkeypatch.setattr("faith.agent.base.count_text_tokens", lambda text, model=None: len(text))
+    """Description:
+        Verify CAG document loading respects the configured token budget.
+
+    Requirements:
+        - This test is needed to prove oversized CAG documents are truncated before entering the prompt.
+        - Verify the truncated content length matches the configured token budget in the fallback path.
+
+    :param tmp_path: Temporary project workspace.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
+    monkeypatch.setattr("faith_pa.agent.base.count_text_tokens", lambda text, model=None: len(text))
     monkeypatch.setattr(
-        "faith.agent.base.truncate_text_to_token_limit",
+        "faith_pa.agent.base.truncate_text_to_token_limit",
         lambda text, token_limit, model=None: text[:token_limit],
     )
 
@@ -154,6 +267,16 @@ def test_base_agent_cag_documents_obey_token_budget(tmp_path, monkeypatch):
 
 
 def test_context_needs_compaction_when_threshold_exceeded(monkeypatch):
+    """Description:
+        Verify the base agent requests compaction once the context threshold is exceeded.
+
+    Requirements:
+        - This test is needed to prove context compaction triggers before the hard window limit is reached.
+        - Verify the helper reports ``True`` when the counted tokens exceed the configured threshold.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
     monkeypatch.setattr(BaseAgent, "count_context_tokens", lambda self, current_task: 500)
     config = build_agent_config(context={"max_messages": 50, "summary_threshold_pct": 50})
     agent = BaseAgent(
@@ -167,6 +290,14 @@ def test_context_needs_compaction_when_threshold_exceeded(monkeypatch):
 
 
 def test_build_completion_payload_contains_messages():
+    """Description:
+        Verify completion payload construction includes the expected model and messages.
+
+    Requirements:
+        - This test is needed to prove the LLM client receives a complete chat payload.
+        - Verify the payload includes the system message and current task text.
+    """
+
     agent = BaseAgent(
         agent_id="agent-7",
         config=build_agent_config(),
@@ -180,6 +311,14 @@ def test_build_completion_payload_contains_messages():
 
 
 def test_heartbeat_payload_contains_identity():
+    """Description:
+        Verify heartbeat payload generation includes the expected identity fields.
+
+    Requirements:
+        - This test is needed to prove heartbeat events carry enough data for monitoring.
+        - Verify the payload includes the event type, agent ID, and channel.
+    """
+
     agent = BaseAgent(
         agent_id="agent-8",
         config=build_agent_config(),
@@ -193,13 +332,26 @@ def test_heartbeat_payload_contains_identity():
 
 
 def test_parse_llm_response_accepts_dict_message_shape():
+    """Description:
+        Verify LLM response parsing accepts the dictionary message shape returned by some providers.
+
+    Requirements:
+        - This test is needed to prove provider response normalization handles the nested message form.
+        - Verify the parsed content matches the nested response payload.
+    """
+
     parsed = BaseAgent.parse_llm_response({"message": {"content": "done"}})
     assert parsed.content == "done"
 
 
 def test_agent_message_to_chat_message():
+    """Description:
+        Verify agent messages convert cleanly into chat-message payloads.
+
+    Requirements:
+        - This test is needed to prove message serialization keeps role, content, and optional name intact.
+        - Verify the emitted dictionary matches the expected chat message shape.
+    """
+
     message = AgentMessage(role="user", content="hello", name="dev")
     assert message.to_chat_message() == {"role": "user", "content": "hello", "name": "dev"}
-
-
-

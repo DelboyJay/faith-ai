@@ -1,4 +1,10 @@
-"""Prerequisite checks for the FAITH CLI."""
+"""Description:
+    Run prerequisite checks for the FAITH CLI.
+
+Requirements:
+    - Validate that required host tools are available before bootstrap commands run.
+    - Raise actionable CLI errors when a prerequisite is missing or unhealthy.
+"""
 
 from __future__ import annotations
 
@@ -13,13 +19,28 @@ PYTHON_INSTALL_URL = "https://www.python.org/downloads/"
 
 
 def check_python_version() -> None:
-    """Retained for CLI flow symmetry; package metadata enforces Python 3.10+."""
+    """Description:
+        Preserve an explicit Python prerequisite check hook for CLI flows.
+
+    Requirements:
+        - Keep the check callable even though package metadata currently enforces the minimum version.
+        - Avoid changing command flow while the repository still expects this hook.
+    """
 
     return None
 
 
 def check_docker() -> None:
-    """Verify Docker, Compose, and the daemon are available."""
+    """Description:
+        Verify Docker, Docker Compose, and the Docker daemon are available.
+
+    Requirements:
+        - Fail fast when the Docker executable is missing from PATH.
+        - Verify the daemon responds before any CLI command tries to use compose.
+        - Verify Docker Compose v2 is installed and callable.
+
+    :raises click.ClickException: If Docker, Docker Compose, or the daemon is unavailable.
+    """
 
     if not shutil.which("docker"):
         raise click.ClickException(
@@ -47,7 +68,13 @@ def check_docker() -> None:
 
 
 def check_git() -> None:
-    """Warn when Git is unavailable."""
+    """Description:
+        Warn the user when Git is unavailable on the host.
+
+    Requirements:
+        - Report a positive signal when Git is present.
+        - Avoid blocking FAITH startup when Git is absent.
+    """
 
     if shutil.which("git"):
         click.secho("Git detected.", fg="green")

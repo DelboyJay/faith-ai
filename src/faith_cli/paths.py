@@ -1,4 +1,10 @@
-"""Resolve paths for the FAITH CLI bootstrap flow."""
+"""Description:
+    Resolve paths for the FAITH CLI bootstrap flow.
+
+Requirements:
+    - Keep all host-owned CLI paths under `~/.faith`.
+    - Expose dedicated helpers for compose, config, logs, and host-worker state.
+"""
 
 from __future__ import annotations
 
@@ -6,120 +12,275 @@ from pathlib import Path
 
 
 def package_root() -> Path:
-    """Return the installed CLI package root."""
+    """Description:
+        Return the installed CLI package root.
+
+    Requirements:
+        - Resolve the directory containing the installed CLI package modules.
+
+    :returns: Installed CLI package directory.
+    """
 
     return Path(__file__).resolve().parent
 
 
 def package_resources_root() -> Path:
-    """Return the bundled CLI resource directory."""
+    """Description:
+        Return the bundled CLI resource directory.
+
+    Requirements:
+        - Keep resource discovery relative to the installed package path.
+
+    :returns: CLI resource directory.
+    """
 
     return package_root() / "resources"
 
 
 def bundled_config_dir() -> Path:
-    """Return the bundled framework config template directory."""
+    """Description:
+        Return the bundled framework config template directory.
+
+    Requirements:
+        - Keep config templates inside the CLI package resources.
+
+    :returns: Bundled config template directory.
+    """
 
     return package_resources_root() / "config"
 
 
 def bundled_data_dir() -> Path:
-    """Return the bundled framework data template directory."""
+    """Description:
+        Return the bundled framework data template directory.
+
+    Requirements:
+        - Keep shipped seed data inside the CLI package resources.
+
+    :returns: Bundled data directory.
+    """
 
     return package_resources_root() / "data"
 
 
 def bundled_compose_file() -> Path:
-    """Return the bundled bootstrap compose file shipped with the CLI."""
+    """Description:
+        Return the bundled bootstrap compose file shipped with the CLI.
+
+    Requirements:
+        - Use the packaged compose file for non-editable installs.
+
+    :returns: Packaged compose file path.
+    """
 
     return package_resources_root() / "docker-compose.yml"
 
 
 def source_root() -> Path:
-    """Return the repository root for local development workflows."""
+    """Description:
+        Return the repository root for local development workflows.
+
+    Requirements:
+        - Resolve the root relative to the editable-install module path.
+
+    :returns: Repository root path.
+    """
 
     return Path(__file__).resolve().parents[2]
 
 
 def source_compose_file() -> Path:
-    """Return the repository-backed compose file used for development."""
+    """Description:
+        Return the repository-backed compose file used for development.
+
+    Requirements:
+        - Resolve the compose path relative to the repository root.
+
+    :returns: Repository compose file path.
+    """
 
     return source_root() / "docker-compose.yml"
 
 
 def is_editable_install() -> bool:
-    """Return whether the CLI is running from a local repository checkout."""
+    """Description:
+        Return whether the CLI is running from a local repository checkout.
+
+    Requirements:
+        - Detect the editable install by looking for repository markers.
+
+    :returns: ``True`` when running from a repository checkout.
+    """
 
     root = source_root()
     return (root / "pyproject.toml").exists() and (root / "src").exists()
 
 
 def faith_home() -> Path:
-    """Return the user-owned FAITH home directory."""
+    """Description:
+        Return the user-owned FAITH home directory.
+
+    Requirements:
+        - Keep all extracted bootstrap assets under the user home directory.
+
+    :returns: FAITH home directory path.
+    """
 
     return Path.home() / ".faith"
 
 
 def config_dir() -> Path:
-    """Return the extracted framework config directory."""
+    """Description:
+        Return the extracted framework config directory.
+
+    Requirements:
+        - Keep the config tree under the FAITH home directory.
+
+    :returns: Framework config directory path.
+    """
 
     return faith_home() / "config"
 
 
 def data_dir() -> Path:
-    """Return the extracted framework data directory."""
+    """Description:
+        Return the extracted framework data directory.
+
+    Requirements:
+        - Keep framework data under the FAITH home directory.
+
+    :returns: Framework data directory path.
+    """
 
     return faith_home() / "data"
 
 
 def logs_dir() -> Path:
-    """Return the extracted framework log directory."""
+    """Description:
+        Return the extracted framework log directory.
+
+    Requirements:
+        - Keep framework logs under the FAITH home directory.
+
+    :returns: Framework log directory path.
+    """
 
     return faith_home() / "logs"
 
 
 def archetypes_dir() -> Path:
-    """Return the extracted archetype directory."""
+    """Description:
+        Return the extracted archetype directory.
+
+    Requirements:
+        - Keep archetypes under the framework config directory.
+
+    :returns: Extracted archetype directory path.
+    """
 
     return config_dir() / "archetypes"
 
 
 def env_file() -> Path:
-    """Return the extracted environment template path."""
+    """Description:
+        Return the extracted environment template path.
+
+    Requirements:
+        - Keep the environment file under the framework config directory.
+
+    :returns: Extracted environment file path.
+    """
 
     return config_dir() / ".env"
 
 
 def secrets_file() -> Path:
-    """Return the extracted secrets template path."""
+    """Description:
+        Return the extracted secrets template path.
+
+    Requirements:
+        - Keep the secrets file under the framework config directory.
+
+    :returns: Extracted secrets file path.
+    """
 
     return config_dir() / "secrets.yaml"
 
 
 def recent_projects_file() -> Path:
-    """Return the framework recent-projects file path."""
+    """Description:
+        Return the framework recent-projects file path.
+
+    Requirements:
+        - Keep recent project state under the framework config directory.
+
+    :returns: Recent-projects file path.
+    """
 
     return config_dir() / "recent-projects.yaml"
 
 
+def host_worker_pid_file() -> Path:
+    """Description:
+        Return the pid file path for the optional host worker.
+
+    Requirements:
+        - Store worker runtime state under the FAITH home directory.
+
+    :returns: Host-worker pid file path.
+    """
+
+    return faith_home() / "host-worker.pid"
+
+
+def host_worker_log_file() -> Path:
+    """Description:
+        Return the host-worker log file path.
+
+    Requirements:
+        - Keep host-worker logs under the extracted logs directory.
+
+    :returns: Host-worker log file path.
+    """
+
+    return logs_dir() / "host-worker.log"
+
+
 def installed_compose_file() -> Path:
-    """Return the extracted bootstrap compose file path."""
+    """Description:
+        Return the extracted bootstrap compose file path.
+
+    Requirements:
+        - Always resolve the runtime compose path under `~/.faith`.
+
+    :returns: Extracted compose file path.
+    """
 
     return faith_home() / "docker-compose.yml"
 
 
 def compose_file() -> Path:
-    """Return the compose file used by the CLI runtime."""
+    """Description:
+        Return the compose file used by the CLI runtime.
+
+    Requirements:
+        - Always use the extracted compose file for runtime operations.
+
+    :returns: Runtime compose file path.
+    """
 
     return installed_compose_file()
 
 
 def editable_compose_contents() -> str:
-    """Return a repo-backed compose file for editable installs.
+    """Description:
+        Return a repo-backed compose file for editable installs.
 
-    The generated compose file builds PA and Web UI images from the local
-    repository checkout while keeping config, data, and logs under the user's
-    FAITH home directory.
+    Requirements:
+        - Build the PA and Web UI from the local repository checkout.
+        - Keep config, data, and logs under the user's FAITH home directory.
+
+    :returns: Generated YAML text for the editable-install compose file.
     """
 
     root = source_root().as_posix()
@@ -237,7 +398,14 @@ volumes:
 
 
 def is_initialised() -> bool:
-    """Return True when the local FAITH home has been bootstrapped."""
+    """Description:
+        Return True when the local FAITH home has been bootstrapped.
+
+    Requirements:
+        - Require the extracted compose file, templates, and framework folders.
+
+    :returns: ``True`` when the runtime home is ready.
+    """
 
     required_paths = [
         faith_home(),
@@ -254,7 +422,14 @@ def is_initialised() -> bool:
 
 
 def is_first_run() -> bool:
-    """Return True while the user has not provided secrets yet."""
+    """Description:
+        Return True while the user has not provided secrets yet.
+
+    Requirements:
+        - Treat placeholder or empty secrets files as unfinished first-run setup.
+
+    :returns: ``True`` when first-run setup is still incomplete.
+    """
 
     secrets = secrets_file()
     if not secrets.exists():

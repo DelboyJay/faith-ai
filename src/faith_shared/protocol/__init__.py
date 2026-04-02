@@ -1,4 +1,10 @@
-"""FAITH communication protocols."""
+"""Description:
+    Re-export the shared FAITH communication protocol components.
+
+Requirements:
+    - Provide a stable import surface for compact messages, events, and subscriber utilities.
+    - Avoid embedding runtime behaviour in the package export module.
+"""
 
 from faith_shared.protocol.compact import (
     ChannelMessageStore,
@@ -31,4 +37,3 @@ __all__ = [
     "StallDetector",
     "CompletionBatcher",
 ]
-

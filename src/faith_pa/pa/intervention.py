@@ -1,4 +1,11 @@
-"""Reactive intervention logic for PA event handling."""
+"""Description:
+    Handle reactive interventions for stalled channels, blocked tasks, and agent runtime errors.
+
+Requirements:
+    - Read recent channel history when investigating stalled conversations.
+    - Restart tool containers when a task is blocked on a recoverable tool dependency.
+    - Escalate actionable notifications to the user channel when intervention is required.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +19,20 @@ DEFAULT_MESSAGE_READ_LIMIT = 10
 
 
 class InterventionHandler:
-    """Respond to stalled channels, blocked tasks, and agent errors."""
+    """Description:
+        React to runtime failure signals and publish the next intervention step.
+
+    Requirements:
+        - Support stalled-channel analysis, blocked-task recovery, and agent-error escalation.
+        - Prefer container restarts for recoverable infrastructure failures.
+        - Notify the user when the runtime cannot resolve the issue automatically.
+
+    :param redis_client: Redis client used for reading history and publishing notifications.
+    :param event_publisher: Optional event publisher used by the handler.
+    :param container_manager: Optional container manager for restart actions.
+    :param session_manager: Optional session manager for agent fallback-model lookup.
+    :param message_read_limit: Maximum number of historical channel messages to inspect.
+    """
 
     def __init__(
         self,
@@ -23,6 +43,20 @@ class InterventionHandler:
         session_manager: Any | None = None,
         message_read_limit: int = DEFAULT_MESSAGE_READ_LIMIT,
     ) -> None:
+        """Description:
+            Initialise the intervention handler.
+
+        Requirements:
+            - Default the event publisher to a PA-scoped publisher when one is not supplied.
+            - Preserve the optional container and session managers for richer interventions.
+
+        :param redis_client: Redis client used for reading history and publishing notifications.
+        :param event_publisher: Optional event publisher used by the handler.
+        :param container_manager: Optional container manager for restart actions.
+        :param session_manager: Optional session manager for agent fallback-model lookup.
+        :param message_read_limit: Maximum number of historical channel messages to inspect.
+        """
+
         self.redis_client = redis_client
         self.event_publisher = event_publisher or EventPublisher(redis_client, source="pa")
         self.container_manager = container_manager
@@ -30,12 +64,32 @@ class InterventionHandler:
         self.message_read_limit = message_read_limit
 
     def register_all(self, dispatcher: Any) -> None:
+        """Description:
+            Register all intervention handlers with the PA event dispatcher.
+
+        Requirements:
+            - Attach the intervention handlers to the relevant runtime event types.
+
+        :param dispatcher: Event dispatcher receiving runtime events.
+        """
+
         dispatcher.register(EventType.CHANNEL_STALLED, self.handle_channel_stalled)
         dispatcher.register(EventType.AGENT_TASK_BLOCKED, self.handle_task_blocked)
         dispatcher.register(EventType.AGENT_ERROR, self.handle_agent_error)
         dispatcher.register(EventType.AGENT_MODEL_ESCALATION, self.handle_model_escalation)
 
     async def read_recent_messages(self, channel: str) -> list[dict[str, Any]]:
+        """Description:
+            Read and decode recent JSON messages for one channel.
+
+        Requirements:
+            - Read at most the configured number of recent messages.
+            - Skip malformed JSON records rather than raising.
+
+        :param channel: Channel name to inspect.
+        :returns: Decoded message payloads.
+        """
+
         raw_items = await self.redis_client.lrange(
             f"channel:{channel}:messages",
             -self.message_read_limit,
@@ -51,6 +105,18 @@ class InterventionHandler:
         return messages
 
     async def handle_channel_stalled(self, event: FaithEvent) -> dict[str, Any]:
+        """Description:
+            Respond to a stalled conversation channel by requesting agent status and notifying the user.
+
+        Requirements:
+            - Inspect recent channel history to identify the last non-PA speaker.
+            - Send a status-request compact message to that agent when possible.
+            - Notify the user that the stall intervention has been triggered.
+
+        :param event: Stall event payload.
+        :returns: Structured intervention result payload.
+        """
+
         channel = event.channel or event.data.get("channel")
         history = await self.read_recent_messages(channel) if channel else []
         last_agent = "unknown"
@@ -84,6 +150,17 @@ class InterventionHandler:
         }
 
     async def handle_task_blocked(self, event: FaithEvent) -> dict[str, Any]:
+        """Description:
+            Respond to a blocked task by restarting a recoverable tool or notifying the user.
+
+        Requirements:
+            - Restart the referenced tool container when the blocker identifies a tool dependency.
+            - Escalate other blockers to the user channel.
+
+        :param event: Blocked-task event payload.
+        :returns: Structured intervention result payload.
+        """
+
         blocker = str(
             event.data.get("waiting_for")
             or event.data.get("blocker")
@@ -110,6 +187,18 @@ class InterventionHandler:
         return result
 
     async def handle_agent_error(self, event: FaithEvent) -> dict[str, Any]:
+        """Description:
+            Respond to an agent runtime error by restarting infrastructure or escalating to the user.
+
+        Requirements:
+            - Restart the affected container for recoverable heartbeat and crash failures.
+            - Look up a configured fallback model when the session manager can provide one.
+            - Notify the user of the error and chosen resolution path.
+
+        :param event: Agent error event payload.
+        :returns: Structured intervention result payload.
+        """
+
         agent_id = event.source
         error = str(event.data.get("error_type") or event.data.get("error", "unknown"))
         result = {"action": "error_handled", "agent": agent_id, "error": error, "messages_read": 0}
@@ -154,6 +243,16 @@ class InterventionHandler:
         return result
 
     async def handle_model_escalation(self, event: FaithEvent) -> dict[str, Any]:
+        """Description:
+            Notify the user when an agent requests a model escalation.
+
+        Requirements:
+            - Forward the escalation details to the user notification channel.
+
+        :param event: Model-escalation event payload.
+        :returns: Structured intervention result payload.
+        """
+
         await self._notify_user(
             title="Model escalation requested",
             message=f"{event.source} requested a model escalation.",
@@ -170,6 +269,18 @@ class InterventionHandler:
         severity: str,
         data: dict[str, Any],
     ) -> None:
+        """Description:
+            Publish one user-facing runtime notification to the PA user channel.
+
+        Requirements:
+            - Publish a JSON payload containing notification metadata and the structured data payload.
+
+        :param title: Notification title.
+        :param message: Notification message body.
+        :param severity: Notification severity label.
+        :param data: Structured payload attached to the notification.
+        """
+
         payload = {
             "type": "notification",
             "title": title,
@@ -178,4 +289,3 @@ class InterventionHandler:
             "data": data,
         }
         await self.redis_client.publish("pa-user", json.dumps(payload))
-

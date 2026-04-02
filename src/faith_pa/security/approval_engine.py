@@ -1,4 +1,11 @@
-"""Ask-first approval engine for FAITH tool actions."""
+"""Description:
+    Evaluate ask-first approval rules for FAITH tool and filesystem actions.
+
+Requirements:
+    - Load persistent rule sets from ``security.yaml``.
+    - Apply explicit ask, allow, and deny rules before session memory.
+    - Fall back to ask-first behaviour when no rule matches.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +23,13 @@ logger = logging.getLogger("faith.security.approval_engine")
 
 
 class ApprovalTier(str, Enum):
+    """Description:
+        Enumerate the approval outcomes used by the FAITH approval engine.
+
+    Requirements:
+        - Cover persistent allow, session allow, ask-first, and deny outcomes.
+    """
+
     ALWAYS_ALLOW = "always_allow"
     APPROVE_SESSION = "approve_session"
     ALWAYS_ASK = "always_ask"
@@ -25,6 +39,19 @@ class ApprovalTier(str, Enum):
 
 @dataclass(slots=True)
 class ApprovalDecision:
+    """Description:
+        Represent the approval decision returned for one requested action.
+
+    Requirements:
+        - Preserve the effective tier, matched rule, and whether approval is still required.
+
+    :param tier: Effective approval tier for the action.
+    :param rule_matched: Regex rule that matched the action, when one exists.
+    :param rule_source: Configuration section that supplied the matching rule.
+    :param requires_approval: Whether user approval is still required.
+    :param remembered: Whether the decision came from session memory.
+    """
+
     tier: ApprovalTier
     rule_matched: str | None = None
     rule_source: str | None = None
@@ -34,6 +61,13 @@ class ApprovalDecision:
 
 @dataclass(slots=True)
 class _CompiledRuleSet:
+    """Description:
+        Hold the compiled regex rules for one agent's approval policy.
+
+    Requirements:
+        - Keep each persistent and learned rule section separate for precedence handling.
+    """
+
     always_ask: list[tuple[str, re.Pattern[str]]] = field(default_factory=list)
     always_allow: list[tuple[str, re.Pattern[str]]] = field(default_factory=list)
     always_ask_learned: list[tuple[str, re.Pattern[str]]] = field(default_factory=list)
@@ -42,9 +76,28 @@ class _CompiledRuleSet:
 
 
 class ApprovalEngine:
-    """Evaluate actions against ask-first security rules."""
+    """Description:
+        Evaluate runtime actions against FAITH approval rules and session memory.
+
+    Requirements:
+        - Load per-agent approval rules from ``security.yaml``.
+        - Preserve per-agent trust levels from the agent configs.
+        - Apply explicit rule precedence before falling back to ask-first behaviour.
+
+    :param faith_dir: Project ``.faith`` directory containing security and agent config.
+    """
 
     def __init__(self, faith_dir: Path):
+        """Description:
+            Initialise the approval engine state.
+
+        Requirements:
+            - Keep the security file path anchored under the supplied ``.faith`` directory.
+            - Start with empty rule, trust-level, and session-memory state.
+
+        :param faith_dir: Project ``.faith`` directory containing security and agent config.
+        """
+
         self.faith_dir = Path(faith_dir)
         self._security_yaml_path = self.faith_dir / "security.yaml"
         self._agent_rules: dict[str, _CompiledRuleSet] = {}
@@ -52,13 +105,41 @@ class ApprovalEngine:
         self._session_memory: dict[tuple[str, str], ApprovalDecision] = {}
 
     def load_rules(self) -> None:
+        """Description:
+            Load persistent approval rules and trust levels from disk.
+
+        Requirements:
+            - Refresh both the security rule set and agent trust levels.
+        """
+
         self._load_security_yaml()
         self._load_trust_levels()
 
     def reload_rules(self) -> None:
+        """Description:
+            Reload the on-disk approval policy.
+
+        Requirements:
+            - Delegate to the main rule-loading routine.
+        """
+
         self.load_rules()
 
     def evaluate(self, agent_id: str, action: str) -> ApprovalDecision:
+        """Description:
+            Evaluate one action against the approval policy for an agent.
+
+        Requirements:
+            - Apply explicit ask rules before learned ask rules.
+            - Apply deny rules before allow rules.
+            - Use session memory only after persistent rules have been checked.
+            - Fall back to ask-first when no rule matches.
+
+        :param agent_id: Agent identifier requesting the action.
+        :param action: Canonical action string to evaluate.
+        :returns: Effective approval decision for the action.
+        """
+
         ruleset = self._agent_rules.get(agent_id, _CompiledRuleSet())
 
         match = self._match_any(action, ruleset.always_ask)
@@ -129,6 +210,17 @@ class ApprovalEngine:
         *,
         rule_matched: str | None = None,
     ) -> None:
+        """Description:
+            Remember a one-session approval for a specific action.
+
+        Requirements:
+            - Record the remembered decision under the exact agent/action key.
+
+        :param agent_id: Agent identifier receiving the session approval.
+        :param action: Canonical action string that was approved.
+        :param rule_matched: Optional rule string associated with the approval.
+        """
+
         self._session_memory[(agent_id, action)] = ApprovalDecision(
             tier=ApprovalTier.APPROVE_SESSION,
             rule_matched=rule_matched,
@@ -138,12 +230,37 @@ class ApprovalEngine:
         )
 
     def clear_session_memory(self) -> None:
+        """Description:
+            Clear all in-memory session approvals.
+
+        Requirements:
+            - Remove every remembered session approval entry.
+        """
+
         self._session_memory.clear()
 
     def get_trust_level(self, agent_id: str) -> TrustLevel:
+        """Description:
+            Return the configured trust level for one agent.
+
+        Requirements:
+            - Fall back to ``standard`` trust when no explicit agent config exists.
+
+        :param agent_id: Agent identifier to inspect.
+        :returns: Effective trust level for the agent.
+        """
+
         return self._trust_levels.get(agent_id, TrustLevel.STANDARD)
 
     def _load_security_yaml(self) -> None:
+        """Description:
+            Load persistent approval rules from the project security file.
+
+        Requirements:
+            - Reset the compiled rule map when the file does not exist.
+            - Compile per-agent persistent and learned rule sections.
+        """
+
         if not self._security_yaml_path.exists():
             self._agent_rules = {}
             return
@@ -187,6 +304,14 @@ class ApprovalEngine:
             self._agent_rules[agent_id] = ruleset
 
     def _load_trust_levels(self) -> None:
+        """Description:
+            Load per-agent trust levels from the agent configuration files.
+
+        Requirements:
+            - Ignore missing agent directories.
+            - Log and skip malformed agent configuration files.
+        """
+
         self._trust_levels = {}
         agents_dir = self.faith_dir / "agents"
         if not agents_dir.exists():
@@ -205,6 +330,19 @@ class ApprovalEngine:
     def _compile_patterns(
         patterns: object, agent_id: str, section: str
     ) -> list[tuple[str, re.Pattern[str]]]:
+        """Description:
+            Compile a list of regex patterns from the security configuration.
+
+        Requirements:
+            - Ignore non-list sections and non-string entries.
+            - Skip invalid regular expressions while logging the issue.
+
+        :param patterns: Raw pattern collection from YAML.
+        :param agent_id: Agent identifier owning the rules.
+        :param section: Security section name being compiled.
+        :returns: Compiled regex rule list.
+        """
+
         if not isinstance(patterns, list):
             return []
         compiled: list[tuple[str, re.Pattern[str]]] = []
@@ -221,8 +359,18 @@ class ApprovalEngine:
 
     @staticmethod
     def _match_any(action: str, patterns: list[tuple[str, re.Pattern[str]]]) -> str | None:
+        """Description:
+            Return the first rule pattern that matches an action string.
+
+        Requirements:
+            - Preserve the original pattern text in the returned value.
+
+        :param action: Canonical action string to test.
+        :param patterns: Compiled rule list to evaluate.
+        :returns: Matching rule pattern text, if any.
+        """
+
         for pattern, compiled in patterns:
             if compiled.search(action):
                 return pattern
         return None
-
