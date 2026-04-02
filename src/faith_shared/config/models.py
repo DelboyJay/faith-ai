@@ -1,4 +1,13 @@
-"""Pydantic models for FAITH configuration and runtime status."""
+"""
+Description:
+    Define the shared Pydantic models used by FAITH configuration loading,
+    validation, and runtime status reporting.
+
+Requirements:
+    - Provide stable schemas for project config, tool config, and runtime status
+      payloads.
+    - Keep enum values aligned with the FRS vocabulary.
+"""
 
 from __future__ import annotations
 
@@ -9,37 +18,83 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class PrivacyProfile(str, Enum):
+    """
+    Description:
+        Define the privacy tiers supported by FAITH configuration.
+
+    Requirements:
+        - Preserve the canonical privacy labels used across runtime and tool
+          configuration.
+    """
+
     PUBLIC = "public"
     INTERNAL = "internal"
     CONFIDENTIAL = "confidential"
 
 
 class AccessLevel(str, Enum):
+    """
+    Description:
+        Define the access levels supported by FAITH mount and database grants.
+
+    Requirements:
+        - Preserve the canonical read-only and read-write labels.
+    """
+
     READONLY = "readonly"
     READWRITE = "readwrite"
 
 
 class TrustLevel(str, Enum):
+    """
+    Description:
+        Define the trust levels supported by FAITH agent configuration.
+
+    Requirements:
+        - Preserve the canonical high, standard, and low trust labels.
+    """
+
     HIGH = "high"
     STANDARD = "standard"
     LOW = "low"
 
 
 class FileEventType(str, Enum):
+    """
+    Description:
+        Define the filesystem watch event types supported by FAITH.
+
+    Requirements:
+        - Preserve the canonical event names used by file-watch configuration.
+    """
+
     CHANGED = "file:changed"
     CREATED = "file:created"
     DELETED = "file:deleted"
 
 
 class ConfigFileStatus(BaseModel):
-    """Presence information for a config file."""
+    """
+    Description:
+        Describe whether one expected configuration file exists on disk.
+
+    Requirements:
+        - Preserve the file path and presence flag.
+    """
 
     path: str
     exists: bool
 
 
 class ConfigSummary(BaseModel):
-    """High-level summary of the current framework config."""
+    """
+    Description:
+        Summarise the currently loaded FAITH configuration state.
+
+    Requirements:
+        - Report the config directory, key config file presence, archetypes,
+          recent projects, and redacted environment data.
+    """
 
     config_dir: str
     env_file: ConfigFileStatus
@@ -52,14 +107,27 @@ class ConfigSummary(BaseModel):
 
 
 class RedisStatus(BaseModel):
-    """Connectivity status for Redis."""
+    """
+    Description:
+        Describe the runtime connectivity state for Redis.
+
+    Requirements:
+        - Preserve the connection URL and connectivity flag.
+    """
 
     url: str
     connected: bool
 
 
 class ServiceStatus(BaseModel):
-    """Runtime status exposed by the PA."""
+    """
+    Description:
+        Describe the runtime health payload exposed by FAITH services.
+
+    Requirements:
+        - Include service identity, version, high-level status, Redis state, and
+          configuration summary.
+    """
 
     service: str
     version: str
@@ -69,39 +137,93 @@ class ServiceStatus(BaseModel):
 
 
 class SecretsConfig(BaseModel):
-    """Framework-level secrets file."""
+    """
+    Description:
+        Define the schema used by the framework-level secrets file.
+
+    Requirements:
+        - Preserve the schema version and secret key-value map.
+    """
 
     schema_version: str = "1.0"
     secrets: dict[str, str] = Field(default_factory=dict)
 
 
 class PAConfig(BaseModel):
+    """
+    Description:
+        Define the PA model selection settings in `system.yaml`.
+
+    Requirements:
+        - Preserve the primary model and optional fallback model.
+    """
+
     model: str
     fallback_model: str | None = None
 
 
 class LoopDetectionConfig(BaseModel):
+    """
+    Description:
+        Define the loop-detection settings used by the PA runtime.
+
+    Requirements:
+        - Preserve enablement, message window, and repeat threshold settings.
+    """
+
     enabled: bool = True
     window_messages: int = Field(default=10, ge=1)
     state_repeat_threshold: int = Field(default=2, ge=1)
 
 
 class CostWarningConfig(BaseModel):
+    """
+    Description:
+        Define cost-warning thresholds for model usage.
+
+    Requirements:
+        - Preserve the warning threshold in USD.
+    """
+
     threshold_usd: float = Field(default=1.0, ge=0)
 
 
 class AuditConfig(BaseModel):
+    """
+    Description:
+        Define audit-log retention settings.
+
+    Requirements:
+        - Preserve the retention period in days.
+    """
+
     retention_days: int = Field(default=90, ge=1)
 
 
 class OllamaConfig(BaseModel):
+    """
+    Description:
+        Define Ollama runtime settings for the PA.
+
+    Requirements:
+        - Preserve enablement, container-versus-external mode, and optional
+          endpoint override.
+    """
+
     enabled: bool = True
     mode: str = Field(default="container", pattern="^(container|external)$")
     endpoint: str | None = None
 
 
 class SystemConfig(BaseModel):
-    """Project-level .faith/system.yaml."""
+    """
+    Description:
+        Define the schema for project-level `.faith/system.yaml`.
+
+    Requirements:
+        - Capture PA, privacy, loop-detection, cost, audit, Ollama, retention,
+          and heartbeat settings.
+    """
 
     schema_version: str = "1.0"
     privacy_profile: PrivacyProfile = PrivacyProfile.INTERNAL
@@ -121,17 +243,40 @@ class SystemConfig(BaseModel):
 
 
 class FileWatchConfig(BaseModel):
+    """
+    Description:
+        Define one file-watch subscription in agent configuration.
+
+    Requirements:
+        - Preserve the watched pattern and subscribed event types.
+    """
+
     pattern: str
     events: list[FileEventType] = Field(default_factory=lambda: [FileEventType.CHANGED])
 
 
 class AgentContextConfig(BaseModel):
+    """
+    Description:
+        Define context-management settings for one agent.
+
+    Requirements:
+        - Preserve the summary threshold and maximum retained messages.
+    """
+
     summary_threshold_pct: int = Field(default=50, ge=10, le=90)
     max_messages: int = Field(default=50, ge=5)
 
 
 class AgentConfig(BaseModel):
-    """Per-agent machine-readable config."""
+    """
+    Description:
+        Define the schema for one agent machine-readable config file.
+
+    Requirements:
+        - Capture model, trust, tool, database, mount, watch, context, CAG, and
+          escalation settings.
+    """
 
     schema_version: str = "1.0"
     name: str
@@ -152,10 +297,27 @@ class AgentConfig(BaseModel):
 
 
 class SubfolderOverride(BaseModel):
+    """
+    Description:
+        Define one subfolder-specific access override for a mount.
+
+    Requirements:
+        - Preserve the overridden access level.
+    """
+
     access: AccessLevel
 
 
 class MountConfig(BaseModel):
+    """
+    Description:
+        Define one mounted host path for the filesystem tool.
+
+    Requirements:
+        - Capture path, access, recursion, history, and file-size settings.
+        - Preserve nested subfolder overrides.
+    """
+
     host_path: str
     access: AccessLevel
     recursive: bool = True
@@ -166,16 +328,41 @@ class MountConfig(BaseModel):
 
 
 class FilesystemToolConfig(BaseModel):
+    """
+    Description:
+        Define the schema for the filesystem tool config file.
+
+    Requirements:
+        - Preserve the schema version and mounted-path definitions.
+    """
+
     schema_version: str = "1.0"
     mounts: dict[str, MountConfig] = Field(default_factory=dict)
 
 
 class PythonToolConfig(BaseModel):
+    """
+    Description:
+        Define the schema for the Python tool config file.
+
+    Requirements:
+        - Preserve schema version and internet-access policy.
+    """
+
     schema_version: str = "1.0"
     internet_access: bool = True
 
 
 class DatabaseConnectionConfig(BaseModel):
+    """
+    Description:
+        Define one database connection entry for the database tool.
+
+    Requirements:
+        - Capture connection coordinates, authentication references, access
+          controls, and result limits.
+    """
+
     host: str
     port: int = 5432
     database: str
@@ -189,17 +376,41 @@ class DatabaseConnectionConfig(BaseModel):
 
 
 class DatabaseToolConfig(BaseModel):
+    """
+    Description:
+        Define the schema for the database tool config file.
+
+    Requirements:
+        - Preserve schema version and named database connection definitions.
+    """
+
     schema_version: str = "1.0"
     connections: dict[str, DatabaseConnectionConfig] = Field(default_factory=dict)
 
 
 class BrowserToolConfig(BaseModel):
+    """
+    Description:
+        Define the schema for the browser tool config file.
+
+    Requirements:
+        - Preserve schema version, headless mode, and optional base URL.
+    """
+
     schema_version: str = "1.0"
     headless: bool = True
     base_url: str | None = None
 
 
 class ConfluenceToolConfig(BaseModel):
+    """
+    Description:
+        Define the schema for the Confluence tool config file.
+
+    Requirements:
+        - Preserve connection details, secret references, and default space.
+    """
+
     schema_version: str = "1.0"
     url: str | None = None
     username: str | None = None
@@ -209,6 +420,15 @@ class ConfluenceToolConfig(BaseModel):
 
 
 class ExternalMCPToolConfig(BaseModel):
+    """
+    Description:
+        Define the schema for one external MCP tool installation record.
+
+    Requirements:
+        - Preserve registry reference, version, transport, environment, privacy,
+          and agent targeting settings.
+    """
+
     schema_version: str = "1.0"
     registry_ref: str
     package_version: str | None = None
@@ -229,12 +449,26 @@ TOOL_CONFIG_MAP: dict[str, type[BaseModel]] = {
 
 
 class AgentApprovalRules(BaseModel):
+    """
+    Description:
+        Define remembered approval rules for one agent.
+
+    Requirements:
+        - Preserve always-ask and always-allow rule sets.
+    """
+
     always_ask: list[str] = Field(default_factory=list)
     always_allow: list[str] = Field(default_factory=list)
 
 
 class SecurityConfig(BaseModel):
-    """Project-level .faith/security.yaml."""
+    """
+    Description:
+        Define the schema for project-level `.faith/security.yaml`.
+
+    Requirements:
+        - Preserve approval rules, trust overrides, and learned decision caches.
+    """
 
     schema_version: str = "1.0"
     approval_rules: dict[str, AgentApprovalRules] = Field(default_factory=dict)
@@ -245,7 +479,14 @@ class SecurityConfig(BaseModel):
 
 
 class ArchetypeConfig(BaseModel):
-    """Role archetype template used by the PA when creating agents."""
+    """
+    Description:
+        Define one reusable role archetype template for agent creation.
+
+    Requirements:
+        - Allow extra keys for forward-compatible archetype extensions.
+        - Preserve suggested tools, trust, and tags.
+    """
 
     model_config = ConfigDict(extra="allow")
 

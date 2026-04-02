@@ -1,3 +1,15 @@
+"""Description:
+    Verify approval requests, resolutions, learned-rule persistence, and audit logging.
+
+Requirements:
+    - Prove approval requests publish request and decision events.
+    - Prove session approvals update the approval engine memory.
+    - Prove permanent denials persist generated rules to ``security.yaml``.
+    - Prove resolved decisions are written to the audit log.
+"""
+
+from __future__ import annotations
+
 import asyncio
 import textwrap
 from pathlib import Path
@@ -11,20 +23,65 @@ from faith_pa.security.audit_log import AuditLogger
 
 
 class DummyPublisher:
+    """Description:
+        Provide a minimal event publisher for approval-flow tests.
+
+    Requirements:
+        - Record published events in call order for later assertions.
+    """
+
     def __init__(self):
+        """Description:
+            Initialise the dummy publisher state.
+
+        Requirements:
+            - Start with an empty event list.
+        """
+
         self.events = []
 
     async def publish(self, event_type, payload):
+        """Description:
+            Record one published event.
+
+        Requirements:
+            - Preserve the event type and payload tuple for assertions.
+
+        :param event_type: Published event type.
+        :param payload: Published event payload.
+        """
+
         self.events.append((event_type, payload))
 
 
 def write_file(path: Path, contents: str) -> None:
+    """Description:
+        Write one test configuration file with normalised indentation.
+
+    Requirements:
+        - Create parent directories when needed.
+        - Ensure the written file ends with a trailing newline.
+
+    :param path: Target file path.
+    :param contents: File content to write after dedenting.
+    """
+
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(textwrap.dedent(contents).strip() + "\n", encoding="utf-8")
 
 
 @pytest.mark.asyncio
 async def test_request_and_resolve_allow_once(tmp_path):
+    """Description:
+        Verify the approval flow publishes request and decision events for an allow-once decision.
+
+        Requirements:
+            - This test is needed to prove pending requests can be created and resolved end to end.
+            - Verify both the request and decision events are published in order.
+
+        :param tmp_path: Temporary pytest directory fixture.
+    """
+
     faith_dir = tmp_path / ".faith"
     write_file(faith_dir / "security.yaml", "approval_rules: {}\n")
     publisher = DummyPublisher()
@@ -51,6 +108,16 @@ async def test_request_and_resolve_allow_once(tmp_path):
 
 @pytest.mark.asyncio
 async def test_approve_session_records_engine_memory(tmp_path):
+    """Description:
+        Verify approve-session decisions are recorded in the approval engine session memory.
+
+        Requirements:
+            - This test is needed to prove repeat prompts can be suppressed within a session.
+            - Verify a later engine evaluation returns the remembered session approval.
+
+        :param tmp_path: Temporary pytest directory fixture.
+    """
+
     faith_dir = tmp_path / ".faith"
     write_file(faith_dir / "security.yaml", "approval_rules: {}\n")
     engine = ApprovalEngine(faith_dir)
@@ -75,6 +142,16 @@ async def test_approve_session_records_engine_memory(tmp_path):
 
 @pytest.mark.asyncio
 async def test_deny_permanently_writes_matching_rule(tmp_path):
+    """Description:
+        Verify permanent denials persist a generated rule and affect later evaluations.
+
+        Requirements:
+            - This test is needed to prove learned deny rules survive beyond the initial request.
+            - Verify the generated rule is written to ``security.yaml`` and then matched by the engine.
+
+        :param tmp_path: Temporary pytest directory fixture.
+    """
+
     faith_dir = tmp_path / ".faith"
     write_file(faith_dir / "security.yaml", "approval_rules: {}\n")
     engine = ApprovalEngine(faith_dir)
@@ -103,6 +180,16 @@ async def test_deny_permanently_writes_matching_rule(tmp_path):
 
 @pytest.mark.asyncio
 async def test_flow_logs_audit_decision(tmp_path):
+    """Description:
+        Verify resolved approval decisions are written to the audit log.
+
+        Requirements:
+            - This test is needed to prove approval outcomes are retained for later audit and UI inspection.
+            - Verify denied decisions are written with the expected approval tier.
+
+        :param tmp_path: Temporary pytest directory fixture.
+    """
+
     faith_dir = tmp_path / ".faith"
     logs_dir = tmp_path / "logs"
     write_file(faith_dir / "security.yaml", "approval_rules: {}\n")
@@ -125,4 +212,3 @@ async def test_flow_logs_audit_decision(tmp_path):
     assert len(entries) == 1
     assert entries[0].decision == "denied"
     assert entries[0].approval_tier == "deny_once"
-

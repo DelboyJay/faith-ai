@@ -27,7 +27,7 @@ package_ownership:
 phases:
   - id: 1
     title: 'Foundation'
-    status: 'TODO'
+    status: 'DONE'
     summary: 'Establish the project structure, Docker bootstrap, Redis, and configuration system. Everything else depends on this.'
     task_count: 6
     tasks:
@@ -53,7 +53,7 @@ phases:
         name: 'Configuration System: YAML Loading & Pydantic Models'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-003-configuration-system.md'
         dependencies: ['FAITH-001']
         frs_reference: 'Section 7.1, 7.2, 7.5'
@@ -71,7 +71,7 @@ phases:
         name: 'FAITH CLI (`faith-cli` Package)'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-005-faith-cli.md'
         dependencies: ['FAITH-001', 'FAITH-002']
         frs_reference: 'Section 9.2'
@@ -89,7 +89,7 @@ phases:
     title: 'Compact Protocol & Event System'
     status: 'TODO'
     summary: 'Define the messaging and event data models that underpin all communication.'
-    task_count: 3
+    task_count: 4
     tasks:
       - id: 'FAITH-007'
         name: 'Compact Protocol Data Models & Serialisation'
@@ -224,7 +224,7 @@ phases:
     title: 'Security & Approval System'
     status: 'TODO'
     summary: ''
-    task_count: 3
+    task_count: 4
     tasks:
       - id: 'FAITH-019'
         name: 'Security YAML Schema & Regex Approval Engine'
@@ -575,7 +575,7 @@ phases:
     title: 'CLI & Skill Execution'
     status: 'TODO'
     summary: 'Enable headless, non-interactive task execution for cron jobs, CI/CD integration, and scripted automation.'
-    task_count: 3
+    task_count: 4
     tasks:
       - id: 'FAITH-054'
         name: '`faith run` Command & Task API'
@@ -595,6 +595,15 @@ phases:
         dependencies: ['FAITH-054', 'FAITH-019']
         frs_reference: 'Section 9.6.2, 9.6.3'
         summary: 'Implement skill loading from `.faith/skills/*.md` — markdown files with YAML frontmatter (name, description, timeout, executor, command, notify_on_complete, unattended_allowed, unattended_security, auto_approve). Support two executor modes: `executor: ai` (default) sends the markdown body to the PA as a prompt; `executor: script` runs the `command` field directly as a subprocess inside the PA container without AI involvement (markdown body is documentation only). Script skills get the same audit logging, return codes, scheduler integration, Web UI visibility, and `notify_on_complete` support as AI skills. Implement `--skill <name>` flag in CLI to load and execute a named skill. CLI parses frontmatter for operational settings. Implement `--unattended` flag with the three-tier security model: `unattended_allowed` master gate (false = exit code 4 immediately), `unattended_security` mode (`safe`/`all`/`explicit`), and `auto_approve` regex list for explicit mode. In `safe` mode: only actions already covered by `always_allow` rules pass automatically; unmatched ask-first actions and `always_ask` actions block. In `all` mode: everything passes without prompting. In `explicit` mode: only `auto_approve` list patterns pass. For script skills, `--unattended` is accepted but has no effect (no approvals needed). Log all unattended approvals with `approval_source: "unattended"`, skill name, and security mode in the audit trail. Implement Skills panel in Web UI listing `.faith/skills/*.md` with Run/Edit buttons.'
+      - id: 'FAITH-059'
+        name: 'Service Route Discovery & `faith show-urls`'
+        complexity: 'S'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-059-service-route-discovery-show-urls.md'
+        dependencies: ['FAITH-005', 'FAITH-036']
+        frs_reference: 'Section 9.2.2, 9.6.1'
+        summary: 'Add a structured route-discovery contract for FAITH HTTP services via `GET /api/routes`, then implement `faith show-urls` in the CLI to aggregate those manifests and print the currently exposed HTTP/WebSocket endpoints with brief descriptions and expected HTTP status codes. The CLI must not hard-code PA or Web UI route inventories.'
       - id: 'FAITH-056'
         name: 'Built-in Skill Scheduler'
         complexity: 'M'
@@ -619,6 +628,10 @@ phases:
         dependencies: ['All previous phases']
         frs_reference: 'Section 12'
         summary: 'Adapt FAITH for cloud deployment: Kubernetes orchestration (replace Docker socket with scoped service account), OAuth2/SSO via control plane, per-project namespace isolation, S3-compatible object storage, server-side layout persistence, per-project or shared Redis. Build the FAITH Management Service: user auth, project CRUD, billing integration, licence enforcement. Ensure PA/agent/tool code is identical between local and cloud — only orchestration layer differs.'
+
+
+
+
 
 
 

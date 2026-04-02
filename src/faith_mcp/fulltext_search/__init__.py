@@ -1,14 +1,12 @@
-"""Full-text search helpers for FAITH."""
+"""
+Description:
+    Export the public full-text search MCP helpers used by the FAITH proof of
+    concept.
 
-from faith_mcp.fulltext_search.models import FileMatch, SearchMatch, SearchResult
-from faith_mcp.fulltext_search.ripgrep import RipgrepRunner
+Requirements:
+    - Re-export the full-text search server facade from a stable package surface.
+"""
+
 from faith_mcp.fulltext_search.server import FullTextSearchServer
 
-__all__ = [
-    "FileMatch",
-    "FullTextSearchServer",
-    "RipgrepRunner",
-    "SearchMatch",
-    "SearchResult",
-]
-
+__all__ = ["FullTextSearchServer"]

@@ -1,4 +1,10 @@
-"""HTTP routes for the FAITH web backend."""
+"""Description:
+    Provide HTTP routes for the FAITH Web UI backend.
+
+Requirements:
+    - Accept browser input and uploads for forwarding into the PA runtime.
+    - Validate request payloads and fail cleanly when Redis is unavailable.
+"""
 
 from __future__ import annotations
 
@@ -31,17 +37,40 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 class UserInputRequest(BaseModel):
+    """Description:
+        Validate one user text-input submission from the browser.
+
+    Requirements:
+        - Require a non-empty message.
+        - Allow the browser to attach an optional session identifier.
+    """
+
     message: str = Field(min_length=1)
     session_id: str | None = None
 
 
 class UserInputResponse(BaseModel):
+    """Description:
+        Return the acknowledgment payload for one accepted user text submission.
+
+    Requirements:
+        - Report the delivery status, generated message ID, and target channel.
+    """
+
     status: str
     message_id: str
     channel: str
 
 
 class ApprovalDecisionRequest(BaseModel):
+    """Description:
+        Validate one approval decision submitted from the browser.
+
+    Requirements:
+        - Restrict decisions to the supported approval vocabulary.
+        - Allow optional scope, reason, and pattern override metadata.
+    """
+
     decision: Literal[
         "allow_once",
         "approve_session",
@@ -56,12 +85,26 @@ class ApprovalDecisionRequest(BaseModel):
 
 
 class ApprovalDecisionResponse(BaseModel):
+    """Description:
+        Return the acknowledgment payload for one accepted approval decision.
+
+    Requirements:
+        - Report the delivery status, request ID, and recorded decision.
+    """
+
     status: str
     request_id: str
     decision: str
 
 
 class UploadResponse(BaseModel):
+    """Description:
+        Return the acknowledgment payload for one accepted file upload.
+
+    Requirements:
+        - Report the delivery status, generated message ID, filename, MIME type, and target channel.
+    """
+
     status: str
     message_id: str
     filename: str
@@ -70,10 +113,30 @@ class UploadResponse(BaseModel):
 
 
 def _utc_now() -> str:
+    """Description:
+        Return the current UTC timestamp in ISO 8601 format.
+
+    Requirements:
+        - Emit timezone-aware timestamps for browser-originated events.
+
+    :returns: Current UTC timestamp as an ISO 8601 string.
+    """
+
     return datetime.now(timezone.utc).isoformat()
 
 
 def _require_redis():
+    """Description:
+        Return the shared Web UI Redis client or raise a service-unavailable error.
+
+    Requirements:
+        - Fail with HTTP 503 when Redis is not configured.
+        - Resolve the shared client lazily so tests can replace it.
+
+    :raises HTTPException: If Redis is unavailable.
+    :returns: Shared Redis client.
+    """
+
     import faith_web.app as web_app_module
 
     redis = web_app_module.redis_pool
@@ -84,11 +147,32 @@ def _require_redis():
 
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
+    """Description:
+        Serve the main FAITH Web UI page.
+
+    Requirements:
+        - Render the ``index.html`` template with the current request object.
+
+    :param request: Incoming FastAPI request object.
+    :returns: Rendered HTML response for the main Web UI page.
+    """
+
     return templates.TemplateResponse(request, "index.html", {})
 
 
 @router.post("/input", response_model=UserInputResponse)
 async def submit_input(body: UserInputRequest) -> UserInputResponse:
+    """Description:
+        Accept one browser text input payload and publish it to the PA input channel.
+
+    Requirements:
+        - Generate a unique message identifier for each accepted submission.
+        - Publish a JSON payload into the shared PA input channel.
+
+    :param body: Validated user input payload from the browser.
+    :returns: Acknowledgment response describing the queued message.
+    """
+
     redis = _require_redis()
     message_id = str(uuid.uuid4())
     payload = {
@@ -108,6 +192,21 @@ async def upload_file(
     message: str = Form(default=""),
     session_id: str | None = Form(default=None),
 ) -> UploadResponse:
+    """Description:
+        Accept one browser file upload and publish it to the PA input channel.
+
+    Requirements:
+        - Reject unsupported MIME types with HTTP 415.
+        - Reject oversized uploads with HTTP 413.
+        - Base64-encode accepted file contents before publishing.
+
+    :param file: Uploaded browser file.
+    :param message: Optional user message accompanying the upload.
+    :param session_id: Optional session identifier supplied by the browser.
+    :raises HTTPException: If the upload type or size is invalid.
+    :returns: Acknowledgment response describing the queued upload.
+    """
+
     redis = _require_redis()
     content_type = file.content_type or "application/octet-stream"
     if content_type not in ACCEPTED_UPLOAD_TYPES:
@@ -144,6 +243,18 @@ async def submit_approval(
     request_id: str,
     body: ApprovalDecisionRequest,
 ) -> ApprovalDecisionResponse:
+    """Description:
+        Accept one approval decision and publish it back to the PA.
+
+    Requirements:
+        - Preserve the request identifier the PA originally issued.
+        - Publish the decision payload into the approval-response channel.
+
+    :param request_id: Approval request identifier.
+    :param body: Validated approval decision payload.
+    :returns: Acknowledgment response describing the queued approval decision.
+    """
+
     redis = _require_redis()
     payload = {
         "type": "approval_response",
@@ -156,5 +267,3 @@ async def submit_approval(
     }
     await redis.publish(APPROVAL_RESPONSES_CHANNEL, json.dumps(payload))
     return ApprovalDecisionResponse(status="sent", request_id=request_id, decision=body.decision)
-
-

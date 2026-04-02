@@ -1,4 +1,12 @@
-"""Approval request and decision handling for FAITH."""
+"""Description:
+    Manage approval requests, decisions, and learned rule persistence for FAITH.
+
+Requirements:
+    - Create structured approval requests for user-facing approval flows.
+    - Persist learned approval rules back into ``security.yaml`` when required.
+    - Publish approval request and decision events for the rest of the runtime.
+    - Record audit entries when approval decisions are resolved.
+"""
 
 from __future__ import annotations
 
@@ -13,12 +21,19 @@ from typing import Any
 
 import yaml
 
-from faith_shared.protocol.events import EventType, FaithEvent
 from faith_pa.security.approval_engine import ApprovalEngine
 from faith_pa.security.audit_log import AuditLogger
+from faith_shared.protocol.events import EventType, FaithEvent
 
 
 class UserApprovalDecision(str, Enum):
+    """Description:
+        Enumerate the user decisions supported by the approval flow.
+
+    Requirements:
+        - Cover one-off, session, persistent allow, persistent ask, and denial outcomes.
+    """
+
     ALLOW_ONCE = "allow_once"
     APPROVE_SESSION = "approve_session"
     ALWAYS_ALLOW = "always_allow"
@@ -36,6 +51,26 @@ PERMANENT_RULE_SECTION = {
 
 @dataclass(slots=True)
 class ApprovalRequest:
+    """Description:
+        Represent one pending approval request awaiting a user decision.
+
+    Requirements:
+        - Preserve request identity, action details, routing metadata, and generated rules.
+
+    :param request_id: Unique approval request identifier.
+    :param agent_id: Agent requesting approval.
+    :param tool: Tool involved in the request.
+    :param action: Action verb being requested.
+    :param target: Optional action target such as a path or command.
+    :param detail: Optional human-readable detail text.
+    :param channel: Optional event channel associated with the request.
+    :param msg_id: Optional message identifier associated with the request.
+    :param created_at: Request creation timestamp.
+    :param resolved: Whether the request has been resolved.
+    :param decision: Final user decision when resolved.
+    :param generated_rule: Generated persistent rule, when relevant.
+    """
+
     request_id: str
     agent_id: str
     tool: str
@@ -51,6 +86,21 @@ class ApprovalRequest:
 
 
 class ApprovalFlow:
+    """Description:
+        Coordinate approval requests, user decisions, and learned-rule persistence.
+
+    Requirements:
+        - Track pending approval requests and waiting futures.
+        - Publish request and decision events through the configured event publisher.
+        - Persist learned rules and reload the approval engine when permanent decisions are made.
+        - Write audit entries for resolved decisions when an audit logger is configured.
+
+    :param approval_engine: Approval engine used for session-memory and rule reload support.
+    :param security_yaml_path: Path to the project ``security.yaml`` file.
+    :param event_publisher: Optional runtime event publisher.
+    :param audit_logger: Optional audit logger for decision recording.
+    """
+
     def __init__(
         self,
         *,
@@ -59,6 +109,19 @@ class ApprovalFlow:
         event_publisher: Any = None,
         audit_logger: AuditLogger | None = None,
     ):
+        """Description:
+            Initialise the approval flow state.
+
+        Requirements:
+            - Start with empty pending-request and future maps.
+            - Preserve the supplied approval engine, security file path, and optional integrations.
+
+        :param approval_engine: Approval engine used for session-memory and rule reload support.
+        :param security_yaml_path: Path to the project ``security.yaml`` file.
+        :param event_publisher: Optional runtime event publisher.
+        :param audit_logger: Optional audit logger for decision recording.
+        """
+
         self.approval_engine = approval_engine
         self.security_yaml_path = Path(security_yaml_path)
         self.event_publisher = event_publisher
@@ -79,6 +142,25 @@ class ApprovalFlow:
         msg_id: int | None = None,
         timeout: float | None = None,
     ) -> UserApprovalDecision:
+        """Description:
+            Create one approval request and wait for the user decision.
+
+        Requirements:
+            - Publish an ``approval:requested`` event for the new request.
+            - Track the pending request and corresponding future until the request resolves.
+            - Support optional timeout handling via ``asyncio.wait_for``.
+
+        :param agent_id: Agent requesting approval.
+        :param tool: Tool involved in the request.
+        :param action: Action verb being requested.
+        :param target: Optional action target such as a path or command.
+        :param detail: Optional human-readable detail text.
+        :param channel: Optional event channel associated with the request.
+        :param msg_id: Optional message identifier associated with the request.
+        :param timeout: Optional timeout in seconds.
+        :returns: Final user decision.
+        """
+
         request = ApprovalRequest(
             request_id=self._next_request_id(),
             agent_id=agent_id,
@@ -123,6 +205,23 @@ class ApprovalFlow:
         scope: str | None = None,
         rule_override: str | None = None,
     ) -> ApprovalRequest:
+        """Description:
+            Resolve one pending approval request with the supplied decision.
+
+        Requirements:
+            - Update request state and persist learned rules for permanent decisions.
+            - Record session-memory approvals for ``approve_session`` decisions.
+            - Publish an ``approval:decision`` event and resolve the waiting future.
+            - Write an audit log entry when an audit logger is configured.
+
+        :param request_id: Approval request identifier.
+        :param decision: User decision to apply.
+        :param scope: Optional rule-generation scope such as ``exact`` or ``folder``.
+        :param rule_override: Optional explicit regex override to persist instead of the generated rule.
+        :returns: Resolved approval request payload.
+        :raises KeyError: If the request identifier is unknown.
+        """
+
         request = self.pending.get(request_id)
         if request is None:
             raise KeyError(f"Unknown approval request: {request_id}")
@@ -186,6 +285,18 @@ class ApprovalFlow:
 
     @classmethod
     def generate_rule(cls, request: ApprovalRequest, *, scope: str | None = None) -> str:
+        """Description:
+            Generate a regex rule for persisting a learned approval decision.
+
+        Requirements:
+            - Generate exact-match rules by default.
+            - Support folder and glob filesystem scopes when a target path is present.
+
+        :param request: Approval request to generate a rule for.
+        :param scope: Optional scope hint such as ``exact``, ``folder``, or ``glob``.
+        :returns: Generated regex rule string.
+        """
+
         action_key = cls._action_key(request)
         scope_kind = (scope or "exact").lower()
 
@@ -204,6 +315,18 @@ class ApprovalFlow:
         return rf"^{re.escape(action_key)}$"
 
     def _write_learned_rule(self, agent_id: str, section: str, rule: str) -> None:
+        """Description:
+            Persist one learned rule into the configured security YAML file.
+
+        Requirements:
+            - Create the parent directory when necessary.
+            - Avoid writing duplicate rules for the same agent and section.
+
+        :param agent_id: Agent identifier that owns the learned rule.
+        :param section: Security YAML section to update.
+        :param rule: Regex rule string to persist.
+        """
+
         data: dict[str, Any] = {}
         if self.security_yaml_path.exists():
             with self.security_yaml_path.open("r", encoding="utf-8") as handle:
@@ -219,6 +342,18 @@ class ApprovalFlow:
             yaml.safe_dump(data, handle, sort_keys=False)
 
     async def _publish(self, event_type: str, payload: dict[str, Any]) -> None:
+        """Description:
+            Publish one approval-flow event through the configured event publisher.
+
+        Requirements:
+            - Prefer explicit helper methods when the publisher exposes them.
+            - Fall back to the generic ``publish`` method otherwise.
+            - Support both awaitable and synchronous publisher return values.
+
+        :param event_type: Event type name to publish.
+        :param payload: Structured event payload.
+        """
+
         if self.event_publisher is None:
             return
 
@@ -263,11 +398,30 @@ class ApprovalFlow:
             await result
 
     def _next_request_id(self) -> str:
+        """Description:
+            Generate the next sequential approval request identifier.
+
+        Requirements:
+            - Produce stable, zero-padded identifiers with the ``apr-`` prefix.
+
+        :returns: Next approval request identifier.
+        """
+
         self._counter += 1
         return f"apr-{self._counter:04d}"
 
     @staticmethod
     def _action_key(request: ApprovalRequest) -> str:
+        """Description:
+            Build the canonical action key for one approval request.
+
+        Requirements:
+            - Include the normalised target when a target is present.
+
+        :param request: Approval request to convert.
+        :returns: Canonical action key string.
+        """
+
         if request.target:
             return (
                 f"{request.tool}:{request.action}:{ApprovalFlow._normalize_target(request.target)}"
@@ -276,10 +430,30 @@ class ApprovalFlow:
 
     @staticmethod
     def _normalize_target(target: str) -> str:
+        """Description:
+            Normalise one target path for rule generation.
+
+        Requirements:
+            - Convert Windows path separators to forward slashes.
+
+        :param target: Raw target string.
+        :returns: Normalised target string.
+        """
+
         return target.replace("\\", "/")
 
     @staticmethod
     def _glob_to_regex(pattern: str) -> str:
+        """Description:
+            Convert a simple glob pattern into a regex fragment.
+
+        Requirements:
+            - Support ``*`` and ``?`` wildcards while escaping all other characters.
+
+        :param pattern: Glob-style pattern to convert.
+        :returns: Regex fragment representing the glob pattern.
+        """
+
         parts: list[str] = []
         for char in pattern:
             if char == "*":
@@ -289,4 +463,3 @@ class ApprovalFlow:
             else:
                 parts.append(re.escape(char))
         return "".join(parts)
-

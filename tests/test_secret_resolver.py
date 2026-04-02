@@ -1,3 +1,12 @@
+"""Description:
+    Verify secret resolution for environment variables, secret references, and container specs.
+
+Requirements:
+    - Prove environment substitution and secret-reference injection both work.
+    - Prove container specifications promote secret references into resolved fields.
+    - Prove unknown secret references fail with ``KeyError``.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -8,6 +17,16 @@ from faith_pa.pa.secret_resolver import SecretResolver
 
 
 def test_resolve_environment_and_secret_refs(tmp_path: Path) -> None:
+    """Description:
+        Verify environment placeholders and secret references are resolved together.
+
+        Requirements:
+            - This test is needed to prove runtime environment maps can combine plain values and secret references safely.
+            - Verify environment substitution and secret injection produce the expected mapping.
+
+        :param tmp_path: Temporary pytest directory fixture.
+    """
+
     secrets_path = tmp_path / "secrets.yaml"
     secrets_path.write_text("secrets:\n  api_key: super-secret\n", encoding="utf-8")
     env_path = tmp_path / ".env"
@@ -32,6 +51,16 @@ def test_resolve_environment_and_secret_refs(tmp_path: Path) -> None:
 
 
 def test_resolve_container_spec_promotes_secret_ref(tmp_path: Path) -> None:
+    """Description:
+        Verify container specs replace password secret references with resolved secret values.
+
+        Requirements:
+            - This test is needed to prove container runtime specs can be materialised without exposing unresolved secret references.
+            - Verify the resolved spec contains the password and preserves plain environment values.
+
+        :param tmp_path: Temporary pytest directory fixture.
+    """
+
     secrets_path = tmp_path / "secrets.yaml"
     secrets_path.write_text("secrets:\n  db_password: swordfish\n", encoding="utf-8")
 
@@ -49,6 +78,16 @@ def test_resolve_container_spec_promotes_secret_ref(tmp_path: Path) -> None:
 
 
 def test_unknown_secret_ref_raises_key_error(tmp_path: Path) -> None:
+    """Description:
+        Verify unknown secret references fail with ``KeyError``.
+
+        Requirements:
+            - This test is needed to prove missing secret references do not fail open.
+            - Verify resolving an unknown secret name raises ``KeyError``.
+
+        :param tmp_path: Temporary pytest directory fixture.
+    """
+
     secrets_path = tmp_path / "secrets.yaml"
     secrets_path.write_text("secrets: {}\n", encoding="utf-8")
 
@@ -56,4 +95,3 @@ def test_unknown_secret_ref_raises_key_error(tmp_path: Path) -> None:
 
     with pytest.raises(KeyError):
         resolver.resolve_secret_ref("missing")
-

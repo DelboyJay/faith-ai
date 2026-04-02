@@ -1,7 +1,28 @@
-from faith_mcp.filesystem import FileHistoryManager, make_metadata
+"""
+Description:
+    Verify filesystem history snapshots are stored and listed correctly.
+
+Requirements:
+    - Cover basic history storage for enabled mounts.
+    - Verify stored metadata includes the acting agent.
+"""
+
+from faith_mcp.filesystem.history import FileHistoryManager, make_metadata
 
 
-def test_history_manager_stores_versions_when_enabled(tmp_path):
+def test_history_manager_stores_versions_when_enabled(tmp_path) -> None:
+    """
+    Description:
+        Verify the history manager stores a snapshot and lists its metadata when
+        history is enabled.
+
+    Requirements:
+        - This test is needed to prove version history is actually persisted for
+          enabled mounts.
+        - Verify the stored history entry preserves the acting agent metadata.
+
+    :param tmp_path: Temporary directory provided by pytest.
+    """
     source = tmp_path / "workspace"
     source.mkdir()
     file_path = source / "doc.txt"
@@ -13,4 +34,3 @@ def test_history_manager_stores_versions_when_enabled(tmp_path):
     history = manager.list_history("doc.txt")
     assert len(history) == 1
     assert history[0]["agent"] == "dev"
-

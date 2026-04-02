@@ -1,4 +1,11 @@
-"""Disposable sandbox lifecycle and scheduling."""
+"""Description:
+    Allocate, reuse, reset, and release disposable sandboxes for PA tasks and sub-agents.
+
+Requirements:
+    - Reuse one shared sandbox when the request does not require isolation.
+    - Allocate isolated sandboxes for destructive or isolation-required work.
+    - Enforce the configured concurrent sandbox quota.
+"""
 
 from __future__ import annotations
 
@@ -14,11 +21,27 @@ from faith_pa.pa.sandbox_models import (
 
 
 class SandboxQuotaExceeded(RuntimeError):
-    """Raised when sandbox allocation exceeds the configured quota."""
+    """Description:
+        Raise when sandbox allocation would exceed the configured quota.
+
+    Requirements:
+        - Signal quota exhaustion as a runtime error.
+    """
 
 
 class SandboxManager:
-    """Allocate shared or isolated sandboxes through a runtime abstraction."""
+    """Description:
+        Allocate shared or isolated disposable sandboxes through a runtime abstraction.
+
+    Requirements:
+        - Reuse a shared sandbox when compatible requests can safely share one.
+        - Create isolated sandboxes for destructive or isolation-required requests.
+        - Reset or destroy runtime sandboxes through the supplied runtime abstraction.
+
+    :param runtime: Runtime abstraction used to create and destroy sandboxes.
+    :param quota: Sandbox quota configuration.
+    :param image: Sandbox image reference.
+    """
 
     def __init__(
         self,
@@ -27,6 +50,17 @@ class SandboxManager:
         quota: SandboxQuota | ResourceQuota | None = None,
         image: str = "ghcr.io/faith/sandbox:latest",
     ):
+        """Description:
+            Initialise the sandbox manager.
+
+        Requirements:
+            - Start with no active sandboxes and no shared sandbox selection.
+
+        :param runtime: Runtime abstraction used to create and destroy sandboxes.
+        :param quota: Sandbox quota configuration.
+        :param image: Sandbox image reference.
+        """
+
         self.runtime = runtime
         self.quota = quota or SandboxQuota()
         self.image = image
@@ -35,18 +69,56 @@ class SandboxManager:
         self._shared_sandbox_id: str | None = None
 
     def _next_id(self) -> str:
+        """Description:
+            Return the next sequential sandbox identifier.
+
+        Requirements:
+            - Use the stable ``sbx-`` prefix with zero-padded numbering.
+
+        :returns: Next sandbox identifier.
+        """
+
         self._counter += 1
         return f"sbx-{self._counter:04d}"
 
     def _active_count(self) -> int:
+        """Description:
+            Return the number of non-destroyed sandbox records.
+
+        Requirements:
+            - Exclude records already marked as destroyed.
+
+        :returns: Active sandbox count.
+        """
+
         return sum(
             1 for record in self._sandboxes.values() if record.state is not SandboxState.DESTROYED
         )
 
     def _container_name(self, sandbox_id: str) -> str:
+        """Description:
+            Build the container name for one sandbox identifier.
+
+        Requirements:
+            - Use the stable ``faith-sandbox-`` prefix.
+
+        :param sandbox_id: Sandbox identifier.
+        :returns: Sandbox container name.
+        """
+
         return f"faith-sandbox-{sandbox_id}"
 
     def _sandbox_spec(self, record: SandboxRecord) -> ContainerSpec:
+        """Description:
+            Build the runtime container spec for one sandbox record.
+
+        Requirements:
+            - Attach role, sandbox, session, and task labels to the sandbox container.
+
+        :param record: Sandbox record to convert.
+        :returns: Sandbox container specification.
+        """
+
         return ContainerSpec(
             name=record.container_name,
             image=self.image,
@@ -60,18 +132,51 @@ class SandboxManager:
         )
 
     async def _create_runtime(self, record: SandboxRecord) -> None:
+        """Description:
+            Create or start the runtime container for one sandbox record.
+
+        Requirements:
+            - Prefer the higher-level ``ensure_running`` API when the runtime exposes it.
+            - Fall back to a lower-level ``create`` API otherwise.
+
+        :param record: Sandbox record to materialise.
+        """
+
         if hasattr(self.runtime, "ensure_running"):
             await self.runtime.ensure_running(self._sandbox_spec(record))
         else:
             await self.runtime.create(record)
 
     async def _destroy_runtime(self, record: SandboxRecord) -> None:
+        """Description:
+            Destroy the runtime container for one sandbox record.
+
+        Requirements:
+            - Prefer the higher-level ``destroy`` API using the container name when available.
+            - Fall back to sandbox-id destruction for older runtimes.
+
+        :param record: Sandbox record to destroy.
+        """
+
         if hasattr(self.runtime, "destroy") and hasattr(self.runtime, "ensure_running"):
             await self.runtime.destroy(record.container_name)
         else:
             await self.runtime.destroy(record.sandbox_id)
 
     async def allocate(self, request: SandboxRequest) -> SandboxRecord:
+        """Description:
+            Allocate or reuse a sandbox for one request.
+
+        Requirements:
+            - Reuse the current shared sandbox when the request is shareable.
+            - Enforce the concurrent sandbox quota before creating a new sandbox.
+            - Mark new runtime sandboxes as ready after creation.
+
+        :param request: Sandbox allocation request.
+        :returns: Allocated or reused sandbox record.
+        :raises SandboxQuotaExceeded: If allocation would exceed the configured quota.
+        """
+
         shared_ok = (
             request.mode is SandboxAllocationMode.SHARED
             and not request.requires_isolation
@@ -110,6 +215,17 @@ class SandboxManager:
         return record
 
     async def reset(self, sandbox_id: str) -> SandboxRecord:
+        """Description:
+            Reset one sandbox by destroying and recreating its runtime container.
+
+        Requirements:
+            - Mark the sandbox as resetting during the reset operation.
+            - Return the sandbox to the ready state afterward.
+
+        :param sandbox_id: Sandbox identifier to reset.
+        :returns: Reset sandbox record.
+        """
+
         record = self._sandboxes[sandbox_id]
         record.state = SandboxState.RESETTING
         await self._destroy_runtime(record)
@@ -118,6 +234,18 @@ class SandboxManager:
         return record
 
     async def release(self, sandbox_id: str, *, agent_id: str) -> None:
+        """Description:
+            Release one agent's claim on a sandbox and destroy it when no longer needed.
+
+        Requirements:
+            - Destroy isolated sandboxes immediately on release.
+            - Destroy shared sandboxes once no agents remain attached.
+            - Clear the shared-sandbox pointer when that sandbox is destroyed.
+
+        :param sandbox_id: Sandbox identifier to release.
+        :param agent_id: Agent identifier to detach from the sandbox.
+        """
+
         record = self._sandboxes[sandbox_id]
         record.agents.discard(agent_id)
         if record.allocation_mode is SandboxAllocationMode.ISOLATED or not record.agents:
@@ -125,4 +253,3 @@ class SandboxManager:
             record.state = SandboxState.DESTROYED
             if self._shared_sandbox_id == sandbox_id:
                 self._shared_sandbox_id = None
-

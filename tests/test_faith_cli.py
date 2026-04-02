@@ -1,4 +1,10 @@
-"""Tests for the FAITH CLI package."""
+"""Description:
+    Cover the FAITH CLI package behaviour.
+
+Requirements:
+    - Verify the CLI lifecycle commands, bootstrap helpers, and route-discovery output behave correctly.
+    - Keep the CLI test surface aligned with the current command contract.
+"""
 
 from __future__ import annotations
 
@@ -6,15 +12,30 @@ import subprocess
 from pathlib import Path
 from unittest.mock import Mock
 
+import click
+import pytest
 from click.testing import CliRunner
 
 import faith_cli.cli as cli_module
 from faith_cli import paths
 from faith_cli.cli import main
 from faith_cli.docker import compose_command
+from faith_web import version
 
 
 def _fake_home(monkeypatch, tmp_path: Path) -> Path:
+    """Description:
+        Redirect CLI path helpers into one temporary FAITH home directory.
+
+    Requirements:
+        - Keep CLI tests isolated from the real user home directory.
+        - Patch both the shared path helpers and the imported CLI aliases.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    :returns: Temporary FAITH home directory path.
+    """
+
     home = tmp_path / ".faith"
     monkeypatch.setattr(paths, "faith_home", lambda: home)
     monkeypatch.setattr(paths, "config_dir", lambda: home / "config")
@@ -42,15 +63,45 @@ def _fake_home(monkeypatch, tmp_path: Path) -> Path:
 
 
 def test_source_root_points_to_repo_root() -> None:
+    """Description:
+        Verify the CLI source-root helper resolves to the repository root.
+
+    Requirements:
+        - This test is needed to prove editable-install resource generation can find the root compose file.
+        - Verify the repository docker-compose file exists under the resolved source root.
+    """
+
     assert (paths.source_root() / "docker-compose.yml").exists()
 
 
 def test_is_initialised_false_when_home_missing(monkeypatch, tmp_path: Path) -> None:
+    """Description:
+        Verify the installed-home check returns false when the FAITH home is absent.
+
+    Requirements:
+        - This test is needed to prove CLI startup commands do not treat a missing home directory as initialized.
+        - Verify the helper returns ``False`` for a fresh temporary location.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
     _fake_home(monkeypatch, tmp_path)
     assert not paths.is_initialised()
 
 
 def test_is_initialised_true_when_required_files_exist(monkeypatch, tmp_path: Path) -> None:
+    """Description:
+        Verify the installed-home check returns true once the required files exist.
+
+    Requirements:
+        - This test is needed to prove CLI lifecycle commands recognise a valid extracted FAITH home.
+        - Verify the helper returns ``True`` when the expected bootstrap files are present.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
     home = _fake_home(monkeypatch, tmp_path)
     (home / "config" / "archetypes").mkdir(parents=True)
     (home / "data").mkdir()
@@ -63,6 +114,17 @@ def test_is_initialised_true_when_required_files_exist(monkeypatch, tmp_path: Pa
 
 
 def test_is_first_run_detects_template_secret(monkeypatch, tmp_path: Path) -> None:
+    """Description:
+        Verify first-run detection recognises the template secrets file.
+
+    Requirements:
+        - This test is needed to prove the CLI can detect when the user has not yet completed setup.
+        - Verify the helper returns ``True`` when the placeholder API key is still present.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
     home = _fake_home(monkeypatch, tmp_path)
     (home / "config").mkdir(parents=True)
     (home / "config" / "secrets.yaml").write_text(
@@ -77,11 +139,10 @@ def test_compose_command_uses_installed_project_directory() -> None:
         Verify the compose command resolves against the extracted FAITH home.
 
     Requirements:
-        - This test is needed to prove CLI Docker operations run against the
-          installed bootstrap bundle rather than the repository checkout.
-        - Verify the compose command points at `~/.faith` and the installed
-          compose file path.
+        - This test is needed to prove CLI Docker operations run against the installed bootstrap bundle rather than the repository checkout.
+        - Verify the compose command points at `~/.faith` and the installed compose file path.
     """
+
     command = compose_command("ps")
     assert command[:3] == ["docker", "compose", "--project-name"]
     assert "--project-directory" in command
@@ -90,15 +151,35 @@ def test_compose_command_uses_installed_project_directory() -> None:
 
 
 def test_help_shows_available_commands() -> None:
+    """Description:
+        Verify the CLI help output lists the expected command surface.
+
+    Requirements:
+        - This test is needed to prove users can discover the implemented lifecycle and discovery commands.
+        - Verify the help output includes ``init``, ``start``, ``status``, and ``show-urls``.
+    """
+
     runner = CliRunner()
     result = runner.invoke(main, ["--help"])
     assert result.exit_code == 0
     assert "init" in result.output
     assert "start" in result.output
     assert "status" in result.output
+    assert "show-urls" in result.output
 
 
 def test_init_bootstraps_home(monkeypatch, tmp_path: Path) -> None:
+    """Description:
+        Verify ``faith init`` bootstraps the installed FAITH home structure.
+
+    Requirements:
+        - This test is needed to prove initialization creates the expected config, data, and compose files.
+        - Verify the command succeeds when prerequisite and compose calls are stubbed out.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
     home = _fake_home(monkeypatch, tmp_path)
     monkeypatch.setattr("faith_cli.cli.check_python_version", lambda: None)
     monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
@@ -121,6 +202,16 @@ def test_init_bootstraps_home(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_init_prompts_before_reinitialising(monkeypatch) -> None:
+    """Description:
+        Verify ``faith init`` stops when the user declines reinitialization.
+
+    Requirements:
+        - This test is needed to prove the CLI preserves existing config when the user cancels.
+        - Verify the command exits successfully with a cancellation message.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
     monkeypatch.setattr("faith_cli.cli.is_initialised", lambda: True)
     monkeypatch.setattr("faith_cli.cli.click.confirm", lambda *args, **kwargs: False)
     runner = CliRunner()
@@ -130,6 +221,16 @@ def test_init_prompts_before_reinitialising(monkeypatch) -> None:
 
 
 def test_start_requires_initialisation(monkeypatch) -> None:
+    """Description:
+        Verify ``faith start`` refuses to run before initialization.
+
+    Requirements:
+        - This test is needed to prove the CLI does not start against a missing FAITH home.
+        - Verify the command guides the user toward ``faith init``.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
     monkeypatch.setattr("faith_cli.cli.is_initialised", lambda: False)
     runner = CliRunner()
     result = runner.invoke(main, ["start"])
@@ -138,6 +239,16 @@ def test_start_requires_initialisation(monkeypatch) -> None:
 
 
 def test_start_when_already_running(monkeypatch) -> None:
+    """Description:
+        Verify ``faith start`` reports success when the stack is already running.
+
+    Requirements:
+        - This test is needed to prove the CLI avoids unnecessary compose operations when the stack is already up.
+        - Verify the command reports the running state cleanly.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
     monkeypatch.setattr("faith_cli.cli.is_initialised", lambda: True)
     monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
     monkeypatch.setattr("faith_cli.cli.is_running", lambda: True)
@@ -148,6 +259,16 @@ def test_start_when_already_running(monkeypatch) -> None:
 
 
 def test_stop_falls_back_to_compose_down(monkeypatch) -> None:
+    """Description:
+        Verify ``faith stop`` falls back to Docker Compose teardown when the PA is unreachable.
+
+    Requirements:
+        - This test is needed to prove stack shutdown still works when coordinated PA shutdown is unavailable.
+        - Verify the compose teardown helper is invoked exactly once.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
     monkeypatch.setattr("faith_cli.cli.is_initialised", lambda: True)
     monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
     monkeypatch.setattr("faith_cli.cli.is_running", lambda: True)
@@ -161,6 +282,16 @@ def test_stop_falls_back_to_compose_down(monkeypatch) -> None:
 
 
 def test_status_renders_runtime_details(monkeypatch) -> None:
+    """Description:
+        Verify ``faith status`` renders compose and PA status information.
+
+    Requirements:
+        - This test is needed to prove the status command surfaces runtime details from compose and the PA.
+        - Verify the rendered output includes the PA service name and Redis health.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
     monkeypatch.setattr("faith_cli.cli.is_initialised", lambda: True)
     monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
     monkeypatch.setattr(
@@ -173,7 +304,7 @@ def test_status_renders_runtime_details(monkeypatch) -> None:
         "faith_cli.cli.get_status",
         lambda: {
             "service": "faith-project-agent",
-            "version": "0.1.0",
+            "version": version.__version__,
             "status": "ok",
             "redis": {"connected": True},
             "config": {"config_dir": "/config"},
@@ -187,6 +318,16 @@ def test_status_renders_runtime_details(monkeypatch) -> None:
 
 
 def test_restart_starts_after_shutdown(monkeypatch) -> None:
+    """Description:
+        Verify ``faith restart`` tears down and starts the stack again.
+
+    Requirements:
+        - This test is needed to prove restart performs the stop-then-start lifecycle under normal conditions.
+        - Verify the command reports a successful restart.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
     monkeypatch.setattr("faith_cli.cli.is_initialised", lambda: True)
     monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
     monkeypatch.setattr("faith_cli.cli.is_running", lambda: True)
@@ -206,6 +347,14 @@ def test_restart_starts_after_shutdown(monkeypatch) -> None:
 
 
 def test_help_subcommand_prints_group_help() -> None:
+    """Description:
+        Verify the explicit help subcommand prints the group help output.
+
+    Requirements:
+        - This test is needed to prove ``faith help`` behaves consistently with ``faith --help``.
+        - Verify the output contains the Click usage header.
+    """
+
     runner = CliRunner()
     result = runner.invoke(main, ["help"])
     assert result.exit_code == 0
@@ -215,15 +364,13 @@ def test_help_subcommand_prints_group_help() -> None:
 def test_bundled_cli_resources_exist() -> None:
     """
     Description:
-        Verify the CLI package carries the bootstrap assets it must extract for
-        end users.
+        Verify the CLI package carries the bootstrap assets it must extract for end users.
 
     Requirements:
-        - This test is needed to prove `faith init` can work from an installed
-          wheel rather than depending on repository-root files.
-        - Verify the bundled compose file, config templates, and data assets
-          exist under the CLI package resources directory.
+        - This test is needed to prove `faith init` can work from an installed wheel rather than depending on repository-root files.
+        - Verify the bundled compose file, config templates, and data assets exist under the CLI package resources directory.
     """
+
     resources_root = paths.package_resources_root()
 
     expected_paths = [
@@ -248,10 +395,13 @@ def test_compose_file_uses_installed_bundle(monkeypatch, tmp_path: Path) -> None
         Verify the CLI resolves Docker Compose from the user-owned FAITH home.
 
     Requirements:
-        - This test is needed to prove `faith init` and later CLI commands use
-          the extracted bootstrap bundle rather than the repository checkout.
+        - This test is needed to prove `faith init` and later CLI commands use the extracted bootstrap bundle rather than the repository checkout.
         - Verify `compose_file()` returns the installed compose path.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
     """
+
     home = _fake_home(monkeypatch, tmp_path)
     home.mkdir(parents=True, exist_ok=True)
     installed = home / "docker-compose.yml"
@@ -259,17 +409,18 @@ def test_compose_file_uses_installed_bundle(monkeypatch, tmp_path: Path) -> None
 
     assert paths.compose_file() == installed
 
+
 def test_init_writes_repo_backed_compose_for_editable_install(monkeypatch, tmp_path: Path) -> None:
     """
     Description:
-        Verify editable installs bootstrap a compose file that builds from the
-        local repository rather than pulling stale published images.
+        Verify editable installs bootstrap a compose file that builds from the local repository rather than pulling stale published images.
 
     Requirements:
-        - This test is needed to prevent `faith init` from starting outdated
-          image-based services while the local checkout contains newer code.
-        - Verify the generated compose file references the repository root as
-          the PA and Web UI build context.
+        - This test is needed to prevent `faith init` from starting outdated image-based services while the local checkout contains newer code.
+        - Verify the generated compose file references the repository root as the PA and Web UI build context.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
     """
 
     home = _fake_home(monkeypatch, tmp_path)
@@ -284,6 +435,7 @@ def test_init_writes_repo_backed_compose_for_editable_install(monkeypatch, tmp_p
     monkeypatch.setattr("faith_cli.cli.wait_and_open_browser", lambda: True)
     monkeypatch.setattr("faith_cli.paths.source_root", lambda: repo_root)
     monkeypatch.setattr("faith_cli.paths.is_editable_install", lambda: True)
+    monkeypatch.setattr("faith_cli.cli.is_editable_install", lambda: True)
 
     runner = CliRunner()
     result = runner.invoke(main, ["init"])
@@ -294,3 +446,165 @@ def test_init_writes_repo_backed_compose_for_editable_install(monkeypatch, tmp_p
     assert f"context: {expected_root}" in compose_text
     assert "ghcr.io/faith/faith-project-agent:latest" not in compose_text
     assert "ghcr.io/faith/faith-web-ui:latest" not in compose_text
+
+
+def test_validate_runtime_compatibility_rejects_pending_schema_migration(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """
+    Description:
+        Verify the CLI blocks startup when config migration is still required.
+
+    Requirements:
+        - This test is needed to prove `faith init/start/update` enforce shared schema compatibility.
+        - Verify the compatibility check raises a Click exception when a config file uses an older schema version.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    home = _fake_home(monkeypatch, tmp_path)
+    (home / "config").mkdir(parents=True, exist_ok=True)
+    (home / ".faith").mkdir(parents=True, exist_ok=True)
+    (home / "config" / "secrets.yaml").write_text(
+        'schema_version: "0.9"\nsecrets: {}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(click.ClickException):
+        cli_module._validate_runtime_compatibility()
+
+
+def test_host_worker_start_and_stop_lifecycle(monkeypatch, tmp_path: Path) -> None:
+    """
+    Description:
+        Verify the optional host worker can be started and stopped by the CLI helper.
+
+    Requirements:
+        - This test is needed to prove the host worker stays user-scoped and manageable by `faith-cli`.
+        - Verify the worker creates a pid file when started and removes it again when stopped.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    from faith_cli import host_worker
+
+    pid_file = tmp_path / "host-worker.pid"
+    log_file = tmp_path / "host-worker.log"
+    monkeypatch.setenv("FAITH_ENABLE_HOST_WORKER", "1")
+    monkeypatch.setattr(host_worker, "host_worker_pid_file", lambda: pid_file)
+    monkeypatch.setattr(host_worker, "host_worker_log_file", lambda: log_file)
+    monkeypatch.setattr(host_worker, "logs_dir", lambda: tmp_path)
+
+    started = host_worker.start_host_worker()
+    assert started.enabled is True
+    assert started.running is True
+    assert started.pid is not None
+    assert pid_file.exists()
+
+    stopped = host_worker.stop_host_worker()
+    assert stopped.enabled is True
+    assert stopped.running is False
+    assert not pid_file.exists()
+
+
+def test_run_placeholder_command_reports_faith_054() -> None:
+    """Description:
+        Verify the CLI exposes the placeholder ``faith run`` command until task submission is implemented.
+
+    Requirements:
+        - This test is needed to prove the command surface matches the Phase 1 CLI contract.
+        - Verify ``faith run`` returns a clear placeholder message instead of failing with missing-command output.
+    """
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["run", "hello"])
+    assert result.exit_code == 0
+    assert "FAITH-054" in result.output
+
+
+def test_show_urls_renders_service_manifests(monkeypatch) -> None:
+    """Description:
+        Verify the CLI renders discovered service routes from the shared route manifests.
+
+    Requirements:
+        - This test is needed to prove ``faith show-urls`` does not hard-code PA or Web UI endpoints.
+        - Verify the command prints absolute HTTP and WebSocket URLs from the returned manifests.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
+    manifests = [
+        (
+            "http://localhost:8000",
+            {
+                "service": "faith-project-agent",
+                "version": version.__version__,
+                "routes": [
+                    {
+                        "protocol": "http",
+                        "method": "GET",
+                        "path": "/api/routes",
+                        "summary": "Return the PA route manifest.",
+                        "expected_status_codes": [200],
+                    },
+                    {
+                        "protocol": "websocket",
+                        "method": None,
+                        "path": "/ws/status",
+                        "summary": "Stream PA status.",
+                        "expected_status_codes": [],
+                    },
+                ],
+            },
+        ),
+        (
+            "http://localhost:8080",
+            {
+                "service": "faith-web-ui",
+                "version": version.__version__,
+                "routes": [
+                    {
+                        "protocol": "http",
+                        "method": "GET",
+                        "path": "/",
+                        "summary": "Serve the main UI.",
+                        "expected_status_codes": [200],
+                    }
+                ],
+            },
+        ),
+    ]
+    monkeypatch.setattr("faith_cli.cli.get_known_route_manifests", lambda: manifests)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["show-urls"])
+
+    assert result.exit_code == 0
+    assert "http://localhost:8000/api/routes" in result.output
+    assert "ws://localhost:8000/ws/status" in result.output
+    assert "http://localhost:8080/" in result.output
+
+
+def test_show_urls_reports_when_no_services_are_reachable(monkeypatch) -> None:
+    """Description:
+        Verify the CLI fails cleanly when no route manifests can be fetched.
+
+    Requirements:
+        - This test is needed to prove ``faith show-urls`` gives a useful fix hint instead of failing with a traceback.
+        - Verify the command exits non-zero and tells the user to start FAITH first.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
+    monkeypatch.setattr(
+        "faith_cli.cli.get_known_route_manifests",
+        lambda: [("http://localhost:8000", None), ("http://localhost:8080", None)],
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["show-urls"])
+
+    assert result.exit_code != 0
+    assert "Start FAITH with `faith init` or `faith start`" in result.output

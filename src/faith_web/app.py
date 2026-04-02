@@ -13,8 +13,9 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from faith_pa import __version__
 from faith_pa.utils.redis_client import check_connection, get_redis_url
+from faith_shared.api import RouteManifestEntry, ServiceRouteManifest
+from faith_web.version import __version__
 
 logger = logging.getLogger("faith.web")
 
@@ -87,6 +88,113 @@ async def _redis_connected() -> bool:
     return await check_connection(redis_pool) if redis_pool is not None else False
 
 
+def _build_route_manifest() -> ServiceRouteManifest:
+    """Description:
+        Build the structured route manifest exposed by the Web UI service.
+
+    Requirements:
+        - Describe all currently supported public Web UI HTTP and WebSocket endpoints.
+        - Keep the manifest machine-readable so CLI tools do not hard-code UI routes.
+
+    :returns: Route manifest payload for the Web UI service.
+    """
+
+    return ServiceRouteManifest(
+        service="faith-web-ui",
+        version=__version__,
+        routes=[
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
+                path="/",
+                summary="Serve the main FAITH Web UI page.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
+                path="/health",
+                summary="Return Web UI liveness and Redis health.",
+                expected_status_codes=[200, 503],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
+                path="/api/status",
+                summary="Return the current Web UI status payload.",
+                expected_status_codes=[200, 503],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
+                path="/api/routes",
+                summary="Return the structured Web UI route manifest for CLI discovery.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="POST",
+                path="/input",
+                summary="Submit a user text message to the PA input channel.",
+                expected_status_codes=[200, 422, 503],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="POST",
+                path="/upload",
+                summary="Upload a file and publish it to the PA input channel.",
+                expected_status_codes=[200, 413, 415, 422, 503],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="POST",
+                path="/approve/{request_id}",
+                summary="Submit an approval decision back to the PA.",
+                expected_status_codes=[200, 422, 503],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
+                path="/static/{path:path}",
+                summary="Serve bundled frontend assets.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="websocket",
+                path="/ws/agent/{agent_id}",
+                summary="Stream one agent output feed.",
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="websocket",
+                path="/ws/tool/{tool_id}",
+                summary="Stream one tool output feed.",
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="websocket",
+                path="/ws/approvals",
+                summary="Stream approval requests and updates.",
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="websocket",
+                path="/ws/status",
+                summary="Stream shared system status events.",
+            ),
+        ],
+    )
+
+
 async def health() -> JSONResponse:
     """Description:
         Return the FAITH Web UI health payload.
@@ -124,6 +232,20 @@ async def api_status() -> JSONResponse:
     return await health()
 
 
+async def api_routes() -> ServiceRouteManifest:
+    """Description:
+        Return the machine-readable Web UI route manifest.
+
+    Requirements:
+        - Expose a discovery contract for CLI tooling instead of requiring hard-coded UI routes.
+        - Remain available without depending on Redis health.
+
+    :returns: Structured manifest for Web UI HTTP and WebSocket routes.
+    """
+
+    return _build_route_manifest()
+
+
 def create_app(*, testing: bool = False) -> FastAPI:
     """Description:
         Create the FAITH Web UI FastAPI application.
@@ -146,6 +268,7 @@ def create_app(*, testing: bool = False) -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     app.add_api_route("/health", health, methods=["GET"])
     app.add_api_route("/api/status", api_status, methods=["GET"])
+    app.add_api_route("/api/routes", api_routes, methods=["GET"], response_model=ServiceRouteManifest)
 
     from faith_web.routes.http import router as http_router
     from faith_web.routes.websocket import router as websocket_router
@@ -156,5 +279,3 @@ def create_app(*, testing: bool = False) -> FastAPI:
 
 
 app = create_app()
-
-

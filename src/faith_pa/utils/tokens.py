@@ -1,4 +1,11 @@
-"""Token counting utilities for FAITH."""
+"""Description:
+    Provide token estimation helpers used by the FAITH agent runtime.
+
+Requirements:
+    - Support model-aware token counting when ``tiktoken`` is available.
+    - Fall back to conservative character-based estimates when a tokenizer is unavailable.
+    - Expose helpers for context-threshold checks and prompt truncation.
+"""
 
 from __future__ import annotations
 
@@ -16,6 +23,17 @@ DEFAULT_TOKEN_SAFETY_MARGIN = 0.10
 
 @lru_cache(maxsize=32)
 def _encoding_for_model(model: str | None):
+    """Description:
+        Resolve the tokenizer encoding for one model name.
+
+    Requirements:
+        - Return ``None`` when ``tiktoken`` is unavailable.
+        - Fall back to the ``cl100k_base`` encoding for unknown model names.
+
+    :param model: Optional model name.
+    :returns: Matching tokenizer encoding or ``None``.
+    """
+
     if tiktoken is None:
         return None
     target = model or "gpt-4o-mini"
@@ -26,7 +44,18 @@ def _encoding_for_model(model: str | None):
 
 
 def count_text_tokens(text: str, model: str | None = None) -> int:
-    """Count tokens for plain text with a safe fallback when no tokenizer exists."""
+    """Description:
+        Estimate the token count for one plain-text fragment.
+
+    Requirements:
+        - Return ``0`` for empty input.
+        - Use the tokenizer when available.
+        - Fall back to a conservative character-per-token estimate otherwise.
+
+    :param text: Text to measure.
+    :param model: Optional model name used for tokenizer selection.
+    :returns: Estimated token count.
+    """
 
     if not text:
         return 0
@@ -38,7 +67,17 @@ def count_text_tokens(text: str, model: str | None = None) -> int:
 
 
 def count_message_tokens(messages: Sequence[Mapping[str, object]], model: str | None = None) -> int:
-    """Approximate token count for chat messages."""
+    """Description:
+        Estimate the token count for a sequence of chat messages.
+
+    Requirements:
+        - Include a small per-message overhead in the estimate.
+        - Count the ``role``, ``content``, and optional ``name`` fields.
+
+    :param messages: Chat message payloads to measure.
+    :param model: Optional model name used for tokenizer selection.
+    :returns: Estimated token count for the message sequence.
+    """
 
     total = 0
     for message in messages:
@@ -54,7 +93,18 @@ def count_message_tokens(messages: Sequence[Mapping[str, object]], model: str | 
 def context_threshold(
     context_window: int, pct: int, *, safety_margin: float = DEFAULT_TOKEN_SAFETY_MARGIN
 ) -> int:
-    """Return the usable token threshold for a context window."""
+    """Description:
+        Return the usable token threshold for one model context window.
+
+    Requirements:
+        - Apply the configured percentage limit before the safety margin.
+        - Never return a threshold below ``1``.
+
+    :param context_window: Total context window for the model.
+    :param pct: Percentage of the context window available for prompt content.
+    :param safety_margin: Additional margin reserved for response generation and overhead.
+    :returns: Safe usable token threshold.
+    """
 
     base = int(context_window * (pct / 100.0))
     adjusted = int(base * (1.0 - safety_margin))
@@ -62,13 +112,35 @@ def context_threshold(
 
 
 def over_context_threshold(token_count: int, context_window: int, pct: int) -> bool:
-    """Return whether token_count exceeds the configured threshold."""
+    """Description:
+        Return whether the current token count exceeds the safe threshold.
+
+    Requirements:
+        - Compare against the threshold returned by ``context_threshold``.
+
+    :param token_count: Observed token count.
+    :param context_window: Total context window for the model.
+    :param pct: Percentage of the context window available for prompt content.
+    :returns: ``True`` when the token count is at or above the threshold.
+    """
 
     return token_count >= context_threshold(context_window, pct)
 
 
 def truncate_text_to_token_limit(text: str, token_limit: int, model: str | None = None) -> str:
-    """Truncate text to approximately token_limit tokens."""
+    """Description:
+        Truncate text so it fits within an approximate token limit.
+
+    Requirements:
+        - Return an empty string for empty input or non-positive limits.
+        - Use tokenizer-aware truncation when a tokenizer is available.
+        - Fall back to a conservative character-based truncation otherwise.
+
+    :param text: Text to truncate.
+    :param token_limit: Maximum allowed token count.
+    :param model: Optional model name used for tokenizer selection.
+    :returns: Truncated text that fits within the approximate token budget.
+    """
 
     if token_limit <= 0 or not text:
         return ""
@@ -85,6 +157,15 @@ def truncate_text_to_token_limit(text: str, token_limit: int, model: str | None 
 
 
 def summarize_token_usage(parts: Iterable[str], model: str | None = None) -> int:
-    """Count the combined tokens for a sequence of text fragments."""
+    """Description:
+        Count the combined token usage for multiple text fragments.
+
+    Requirements:
+        - Reuse the plain-text token counting helper for each fragment.
+
+    :param parts: Text fragments to measure.
+    :param model: Optional model name used for tokenizer selection.
+    :returns: Combined token count estimate.
+    """
 
     return sum(count_text_tokens(part, model) for part in parts)

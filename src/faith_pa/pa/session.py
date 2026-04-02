@@ -1,4 +1,12 @@
-"""Session and task management for the PA."""
+"""Description:
+    Manage PA sessions, tasks, and lightweight agent state under the project ``.faith`` directory.
+
+Requirements:
+    - Create and persist session metadata for each runtime session.
+    - Create and persist task metadata for active work.
+    - Track active agents, staged agents, phases, and optional sandbox assignments.
+    - End idle sessions automatically when an idle timeout is configured.
+"""
 
 from __future__ import annotations
 
@@ -15,24 +23,73 @@ from faith_pa.config.models import SystemConfig
 
 
 def _now() -> datetime:
+    """Description:
+        Return the current UTC timestamp.
+
+    Requirements:
+        - Use timezone-aware UTC datetimes.
+
+    :returns: Current UTC datetime.
+    """
+
     return datetime.now(timezone.utc)
 
 
 def _iso(dt: datetime) -> str:
+    """Description:
+        Convert one datetime into the session metadata timestamp format.
+
+    Requirements:
+        - Return an ISO-8601 UTC string ending with ``Z``.
+
+    :param dt: Datetime to format.
+    :returns: Formatted UTC timestamp string.
+    """
+
     return dt.isoformat().replace("+00:00", "Z")
 
 
 @dataclass(slots=True)
 class AgentState:
+    """Description:
+        Represent a lightweight persisted agent state snapshot.
+
+    Requirements:
+        - Preserve the agent identifier, status, and a short summary string.
+
+    :param agent_id: Agent identifier.
+    :param status: Agent runtime status.
+    :param summary: Human-readable summary of the current state.
+    """
+
     agent_id: str
     status: str
     summary: str = ""
 
     def to_markdown(self) -> str:
+        """Description:
+            Render the agent state as a simple markdown-backed metadata file.
+
+        Requirements:
+            - Preserve the three key state fields in a stable plain-text format.
+
+        :returns: Markdown representation of the agent state.
+        """
+
         return f"# Agent State\nagent_id: {self.agent_id}\nstatus: {self.status}\nsummary: {self.summary}\n"
 
     @classmethod
     def from_markdown(cls, markdown: str) -> AgentState:
+        """Description:
+            Parse an agent state from its markdown-backed metadata representation.
+
+        Requirements:
+            - Ignore heading lines and malformed lines without ``:`` separators.
+
+        :param markdown: Markdown text to parse.
+        :returns: Parsed agent state.
+        """
+
         values: dict[str, str] = {}
         for line in markdown.splitlines():
             if ":" not in line or line.startswith("#"):
@@ -48,6 +105,18 @@ class AgentState:
 
 @dataclass(slots=True)
 class SessionRecord:
+    """Description:
+        Represent one persisted PA session.
+
+    Requirements:
+        - Preserve the session identifier, metadata path, trigger, and start time.
+
+    :param session_id: Session identifier.
+    :param path: Session metadata directory.
+    :param trigger: Trigger that created the session.
+    :param started_at: Session start timestamp.
+    """
+
     session_id: str
     path: Path
     trigger: str
@@ -56,6 +125,26 @@ class SessionRecord:
 
 @dataclass(slots=True)
 class TaskRecord:
+    """Description:
+        Represent one persisted task within a PA session.
+
+    Requirements:
+        - Preserve channels, active agents, staged agents, phase state, and optional sandbox assignment.
+        - Track start and end timestamps for task lifecycle reporting.
+
+    :param task_id: Task identifier.
+    :param goal: Human-readable task goal.
+    :param path: Task metadata directory.
+    :param status: Current task status.
+    :param channels: Task channel metadata.
+    :param agents: Active agent identifiers.
+    :param staged_agents: Agents staged per phase.
+    :param current_phase: Currently active phase.
+    :param sandbox_id: Optional sandbox identifier associated with the task.
+    :param started_at: Task start timestamp.
+    :param ended_at: Task end timestamp.
+    """
+
     task_id: str
     goal: str
     path: Path
@@ -69,9 +158,30 @@ class TaskRecord:
     ended_at: str | None = None
 
     def stage_agents(self, phase: str, agents: list[str]) -> None:
+        """Description:
+            Stage agents for activation during one task phase.
+
+        Requirements:
+            - Preserve the supplied phase ordering as a plain list.
+
+        :param phase: Phase identifier.
+        :param agents: Agent identifiers to stage.
+        """
+
         self.staged_agents[phase] = list(agents)
 
     def activate_phase(self, phase: str) -> list[str]:
+        """Description:
+            Activate one staged phase and add its agents to the task.
+
+        Requirements:
+            - Merge joining agents into the task-level active-agent set.
+            - Reflect the joining agents into all tracked channel metadata.
+
+        :param phase: Phase identifier to activate.
+        :returns: Agents joining during the phase activation.
+        """
+
         self.current_phase = phase
         joining = list(self.staged_agents.get(phase, []))
         self.agents.update(joining)
@@ -81,12 +191,36 @@ class TaskRecord:
         return joining
 
     def finish(self, status: str) -> None:
+        """Description:
+            Mark the task as finished with the supplied status.
+
+        Requirements:
+            - Record the end timestamp when the task transitions out of the active state.
+
+        :param status: Final task status value.
+        """
+
         self.status = status
         self.ended_at = _iso(_now())
 
 
 class SessionManager:
-    """Manage user sessions and their tasks under .faith/sessions."""
+    """Description:
+        Manage sessions, tasks, and agent metadata under the project's ``.faith/sessions`` tree.
+
+    Requirements:
+        - Create a new session directory and metadata file for each session.
+        - Create per-task metadata under the active session.
+        - Support idle-timeout shutdown when configured.
+        - Publish phase-activation events when a Redis client is available.
+
+    :param project_root: Project root or ``.faith`` directory.
+    :param system_config: System configuration payload.
+    :param redis_client: Optional Redis client for runtime notifications.
+    :param idle_timeout_seconds: Optional idle-session timeout in seconds.
+    :param workspace_path: Optional workspace-path alias for project root.
+    :param channel_agent_limit: Optional channel agent limit override.
+    """
 
     def __init__(
         self,
@@ -98,6 +232,22 @@ class SessionManager:
         workspace_path: Path | None = None,
         channel_agent_limit: int | None = None,
     ) -> None:
+        """Description:
+            Initialise the session manager.
+
+        Requirements:
+            - Accept either a project root or a direct ``.faith`` directory.
+            - Create the sessions directory eagerly.
+            - Start with no active session and an empty task map.
+
+        :param project_root: Project root or ``.faith`` directory.
+        :param system_config: System configuration payload.
+        :param redis_client: Optional Redis client for runtime notifications.
+        :param idle_timeout_seconds: Optional idle-session timeout in seconds.
+        :param workspace_path: Optional workspace-path alias for project root.
+        :param channel_agent_limit: Optional channel agent limit override.
+        """
+
         initial = Path(project_root or workspace_path or Path.cwd()).resolve()
         if initial.name == ".faith":
             self.faith_dir = initial
@@ -125,9 +275,28 @@ class SessionManager:
 
     @property
     def active_session(self) -> SessionRecord | None:
+        """Description:
+            Return the current active session record.
+
+        Requirements:
+            - Expose the same object stored in ``current_session``.
+
+        :returns: Active session record, if any.
+        """
+
         return self.current_session
 
     def session_path(self) -> Path:
+        """Description:
+            Return the path for the active session directory.
+
+        Requirements:
+            - Raise when no session has been started yet.
+
+        :returns: Active session directory path.
+        :raises RuntimeError: If no session is active.
+        """
+
         if not self.session_dir:
             raise RuntimeError("session has not been started")
         return self.session_dir
@@ -135,6 +304,19 @@ class SessionManager:
     async def start_session(
         self, trigger: str = "web-ui", source: str | None = None
     ) -> SessionRecord:
+        """Description:
+            Start a new PA session and persist its metadata.
+
+        Requirements:
+            - Create the session directory and ``session.meta.json`` file.
+            - Cancel any existing idle monitor before starting a new one.
+            - Start an idle monitor when an idle timeout is configured.
+
+        :param trigger: High-level trigger for the session start.
+        :param source: Optional explicit source override.
+        :returns: New session record.
+        """
+
         self._session_counter += 1
         now = _now()
         session_id = f"sess-{self._session_counter:04d}-{now.strftime('%Y%m%d%H%M%S')}"
@@ -168,6 +350,16 @@ class SessionManager:
         return session
 
     def create_session(self, project_root: Path | None = None) -> SessionRecord:
+        """Description:
+            Start a session synchronously for host-side callers.
+
+        Requirements:
+            - Allow callers to override the project root before session creation.
+
+        :param project_root: Optional project root override.
+        :returns: New session record.
+        """
+
         if project_root is not None:
             self.project_root = Path(project_root).resolve()
             self.workspace_path = self.project_root
@@ -177,6 +369,13 @@ class SessionManager:
         return asyncio.run(self.start_session())
 
     async def _idle_monitor(self) -> None:
+        """Description:
+            End the active session after the configured idle timeout elapses.
+
+        Requirements:
+            - Exit quietly when the idle monitor is cancelled.
+        """
+
         try:
             await asyncio.sleep(self.idle_timeout_seconds or 0)
         except asyncio.CancelledError:
@@ -191,6 +390,22 @@ class SessionManager:
         staged_agents: dict[str, list[str]] | None = None,
         sandbox_id: str | None = None,
     ) -> TaskRecord:
+        """Description:
+            Create a new task record under the active session.
+
+        Requirements:
+            - Require an active session before task creation.
+            - Create a per-task metadata directory and file.
+            - Update the session metadata with the new task summary.
+
+        :param goal: Human-readable task goal.
+        :param channels: Optional channel names associated with the task.
+        :param staged_agents: Optional staged-agent mapping keyed by phase.
+        :param sandbox_id: Optional sandbox identifier associated with the task.
+        :returns: New task record.
+        :raises RuntimeError: If no session is active.
+        """
+
         if not self.current_session or not self.session_dir:
             raise RuntimeError("session has not been started")
         self._task_counter += 1
@@ -211,9 +426,30 @@ class SessionManager:
         return task
 
     def start_task(self, goal: str, *, channel: str, sandbox_id: str | None = None) -> TaskRecord:
+        """Description:
+            Create a task with a single initial channel.
+
+        Requirements:
+            - Delegate to ``create_task`` with the supplied channel.
+
+        :param goal: Human-readable task goal.
+        :param channel: Initial channel name.
+        :param sandbox_id: Optional sandbox identifier associated with the task.
+        :returns: New task record.
+        """
+
         return self.create_task(goal, channels=[channel], sandbox_id=sandbox_id)
 
     def _write_task_meta(self, task: TaskRecord) -> None:
+        """Description:
+            Persist the metadata for one task record.
+
+        Requirements:
+            - Write the task metadata as indented JSON under the task directory.
+
+        :param task: Task record to persist.
+        """
+
         payload = {
             "task_id": task.task_id,
             "goal": task.goal,
@@ -229,6 +465,15 @@ class SessionManager:
         (task.path / "task.meta.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def _update_session_tasks(self, task: TaskRecord) -> None:
+        """Description:
+            Update the session metadata summary with one task record.
+
+        Requirements:
+            - Write the task goal, status, first channel, and sandbox identifier into ``session.meta.json``.
+
+        :param task: Task record to reflect into the session summary.
+        """
+
         if not self.session_dir:
             return
         meta_path = self.session_dir / "session.meta.json"
@@ -243,6 +488,19 @@ class SessionManager:
         meta_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
     async def activate_task_phase(self, task: TaskRecord | str, phase: str) -> list[str]:
+        """Description:
+            Activate one task phase and optionally notify newly activated agents.
+
+        Requirements:
+            - Accept either a task record or task identifier.
+            - Persist the updated task metadata after phase activation.
+            - Publish phase-activation notifications when a Redis client is configured.
+
+        :param task: Task record or task identifier.
+        :param phase: Phase identifier to activate.
+        :returns: Agents joining during the phase activation.
+        """
+
         task_obj = self.tasks[task] if isinstance(task, str) else task
         joining = task_obj.activate_phase(phase)
         self._write_task_meta(task_obj)
@@ -254,29 +512,76 @@ class SessionManager:
         return joining
 
     def activate_phase(self, task_id: str, phase: int | str) -> list[str]:
+        """Description:
+            Activate one phase synchronously without Redis notification support.
+
+        Requirements:
+            - Persist the updated task metadata after phase activation.
+
+        :param task_id: Task identifier to update.
+        :param phase: Phase identifier to activate.
+        :returns: Agents joining during the phase activation.
+        """
+
         task = self.tasks[task_id]
         joining = task.activate_phase(str(phase))
         self._write_task_meta(task)
         return joining
 
     def complete_task(self, task_id: str) -> None:
+        """Description:
+            Mark one task as complete.
+
+        Requirements:
+            - Persist both task metadata and session summary updates.
+
+        :param task_id: Task identifier to complete.
+        """
+
         task = self.tasks[task_id]
         task.finish("complete")
         self._write_task_meta(task)
         self._update_session_tasks(task)
 
     def cancel_task(self, task_id: str) -> None:
+        """Description:
+            Mark one task as cancelled.
+
+        Requirements:
+            - Persist both task metadata and session summary updates.
+
+        :param task_id: Task identifier to cancel.
+        """
+
         task = self.tasks[task_id]
         task.finish("cancelled")
         self._write_task_meta(task)
         self._update_session_tasks(task)
 
     def get_active_tasks(self) -> dict[str, str]:
+        """Description:
+            Return the currently active task goals keyed by task identifier.
+
+        Requirements:
+            - Include only tasks still in the ``active`` status.
+
+        :returns: Mapping of active task identifiers to goals.
+        """
+
         return {
             task_id: task.goal for task_id, task in self.tasks.items() if task.status == "active"
         }
 
     def get_active_agent_ids(self) -> list[str]:
+        """Description:
+            Return the sorted active agent identifiers across active tasks.
+
+        Requirements:
+            - Include agents only from tasks still marked active.
+
+        :returns: Sorted active agent identifiers.
+        """
+
         active: set[str] = set()
         for task in self.tasks.values():
             if task.status == "active":
@@ -284,6 +589,15 @@ class SessionManager:
         return sorted(active)
 
     def load_agent_configs(self) -> dict[str, Any]:
+        """Description:
+            Load the project agent configuration files into a simple mapping.
+
+        Requirements:
+            - Return an empty mapping when the agents directory does not exist.
+
+        :returns: Mapping of agent identifiers to parsed config payloads.
+        """
+
         agents_dir = self.faith_dir / "agents"
         configs: dict[str, Any] = {}
         if not agents_dir.exists():
@@ -294,15 +608,45 @@ class SessionManager:
         return configs
 
     def get_agent_config(self, agent_id: str) -> Any | None:
+        """Description:
+            Return the parsed configuration for one agent.
+
+        Requirements:
+            - Delegate to the bulk agent-config loader.
+
+        :param agent_id: Agent identifier to inspect.
+        :returns: Parsed agent config payload, if present.
+        """
+
         return self.load_agent_configs().get(agent_id)
 
     def write_agent_state(self, agent_id: str, content: str) -> Path:
+        """Description:
+            Persist a lightweight agent state file under the project ``.faith`` tree.
+
+        Requirements:
+            - Create the agent state directory when needed.
+
+        :param agent_id: Agent identifier whose state is being written.
+        :param content: Agent state file content.
+        :returns: Written state file path.
+        """
+
         path = self.faith_dir / "agents" / agent_id / "state.md"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content, encoding="utf-8")
         return path
 
     async def end_session(self) -> None:
+        """Description:
+            End the active session and persist its final metadata.
+
+        Requirements:
+            - Mark the session status as ended and record an end timestamp.
+            - Clear the active session pointers after persistence.
+
+        """
+
         if not self.current_session:
             return
         meta_path = self.current_session.path / "session.meta.json"
@@ -317,4 +661,3 @@ class SessionManager:
 
 Session = SessionRecord
 Task = TaskRecord
-

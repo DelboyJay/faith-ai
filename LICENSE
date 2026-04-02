@@ -1,5 +1,128 @@
-Placeholder license file for FAITH.
+Copyright (c) 2026 Del Hyman-Jones
+All rights reserved.
 
-Intended license: AGPL-3.0.
+FAITH Personal and Non-Commercial Use License
 
-Replace this file with the full AGPL-3.0 license text before release.
+1. Definitions
+
+For the purposes of this license:
+
+- "Commercial use" means any use for the benefit of a business, client,
+  employer, legal entity, revenue-generating activity, paid service, paid
+  product, paid work, consulting engagement, contract, freelance engagement, or
+  self-employment activity.
+- "Personal use" means use by a natural person acting for themselves and not
+  for the benefit of a business, client, employer, legal entity, or
+  revenue-generating activity.
+- "Internal non-profit use" means use only within the permitted organisation
+  for its own internal non-profit purposes, and not for the benefit of clients,
+  customers, third parties, or affiliated commercial entities.
+- "Written permission" means express written approval from the copyright
+  holder.
+
+2. Grant of Permission
+
+You may use, copy, fork, modify, and publish this software, and modified
+versions of it, for personal and non-commercial purposes only, provided that
+this license remains attached to the software and to any modified version.
+
+3. Permitted Non-Commercial Use
+
+The following uses are permitted without separate written permission:
+
+- personal individual use that is not for the benefit of a business, client,
+  employer, or revenue-generating activity;
+- personal learning, experimentation, and hobby use;
+- use by a registered charity for its own internal non-profit use only, with no
+  parent company, subsidiary, sister company, or affiliated commercial entity
+  benefiting from that use;
+- use by schools, colleges, and universities for their own internal
+  non-profit educational use only;
+- use by students for their own personal non-commercial use.
+
+4. Commercial and Restricted Use
+
+You may not use this software, or any modified version of it, for the benefit
+of a business, client, employer, or revenue-generating activity without prior
+written permission from the copyright holder.
+
+For the avoidance of doubt, freelance work, contracting, consulting,
+self-employment, sole-trader activity, one-person business activity, and use
+through a company or other legal entity are all classed as commercial use when
+they benefit a business, client, employer, or revenue-generating activity.
+
+For the avoidance of doubt, use by a registered charity, school, college, or
+university is permitted only for that organisation's own internal non-profit
+use. It is not permitted where that use benefits any client, external third
+party, affiliated commercial entity, parent company, subsidiary, or sister
+company.
+
+Without prior written permission from the copyright holder, you may not:
+
+- use this software within or for a company, business, government body,
+  nonprofit organisation other than a registered charity as described above, or
+  any other legal entity;
+- use this software as part of paid work, client work, consulting, contracting,
+  or employment;
+- use this software to maintain, modify, support, operate, or further develop
+  software after that software has first been sold, licensed for a fee, or used
+  to provide paid services to another party;
+- use this software to provide a hosted service or managed service to third
+  parties;
+- sell this software;
+- sublicense this software under different license terms.
+
+For the avoidance of doubt, an individual may create software using FAITH for
+their own personal non-commercial use, and the copyright holder makes no claim
+over that output. However, once that software has first been sold, licensed for
+a fee, or used to provide paid services to another party, FAITH may no longer
+be used on that software without prior written permission from the copyright
+holder.
+
+5. Redistribution and Forks
+
+Public forks and public modified repositories are allowed, provided that:
+
+- this license remains attached and is not removed or replaced; and
+- the software is not used in a way prohibited by Section 3.
+
+You may not change, replace, or remove this license from this software or from
+modified versions of it.
+
+6. Output
+
+The copyright holder claims no ownership rights over software, code, content,
+or other output created by a user through use of FAITH.
+
+This waiver of rights in output does not grant any right to use FAITH itself in
+breach of this license.
+
+7. Ownership
+
+This software is copyrighted by Del Hyman-Jones. Copyright in the original
+software remains with Del Hyman-Jones. All rights not expressly granted by this
+license are reserved.
+
+8. Termination
+
+Any rights granted under this license automatically terminate if you breach any
+term of this license.
+
+If your rights terminate, you must immediately stop using, copying, forking,
+publishing, modifying, and distributing this software unless and until you have
+received prior written permission from the copyright holder.
+
+9. Contact and Permissions
+
+Requests for written permission to make commercial or otherwise restricted use
+of this software may be made through the project's public repository contact
+details or any other contact method designated by the copyright holder.
+
+10. No Warranty
+
+This software is provided "as is", without warranty of any kind, express or 
+implied, including but not limited to the warranties of merchantability,
+fitness for a particular purpose, and non-infringement. In no event shall the
+copyright holder be liable for any claim, damages, or other liability, whether
+in an action of contract, tort, or otherwise, arising from, out of, or in
+connection with the software or the use or other dealings in the software.

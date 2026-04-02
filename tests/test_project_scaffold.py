@@ -24,10 +24,10 @@ def test_src_package_layout_exists() -> None:
         Verify the canonical FAITH package layout exists under `src/`.
 
     Requirements:
-        - This test is needed to prove FAITH-001 provides the package
-          ownership structure defined in the FRS and epic.
-        - Verify every primary package directory and FAITH-owned MCP
-          subpackage has an `__init__.py` file.
+        - This test is needed to prove FAITH-001 provides the package ownership
+          structure defined in the FRS and epic.
+        - Verify every primary package directory and FAITH-owned MCP subpackage
+          has an `__init__.py` file.
     """
     expected_files = [
         ROOT / "src" / "faith_cli" / "__init__.py",
@@ -53,8 +53,8 @@ def test_bootstrap_templates_and_framework_assets_exist() -> None:
         `faith init`.
 
     Requirements:
-        - This test is needed to prove the CLI has the committed assets it
-          must extract into `~/.faith/`.
+        - This test is needed to prove the CLI has the committed assets it must
+          extract into `~/.faith/`.
         - Verify the expected config, web, container, log, and test scaffold
           files exist.
     """
@@ -74,7 +74,7 @@ def test_bootstrap_templates_and_framework_assets_exist() -> None:
         ROOT / "containers" / "web-ui" / "Dockerfile",
         ROOT / "containers" / "mcp-runtime" / "Dockerfile",
         ROOT / "tests" / "__init__.py",
-        ROOT / "setup.ps",
+        ROOT / "setup.ps1",
         ROOT / "setup.sh",
     ]
 

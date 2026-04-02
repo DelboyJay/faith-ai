@@ -31,13 +31,34 @@ use host networking, and they only receive explicitly approved mounts. If a sand
 polluted or broken, the PA destroys it and creates a fresh one instead of trying to
 repair it in place.
 
+## License
+FAITH is source-available, not open source. Personal, non-commercial use is allowed under
+the [Business Source License 1.1](E:\ClaudeSharedFolder\AI Agent Framework\LICENSE). Company
+or other organizational use requires a separate commercial license. See
+[LICENSING.md](E:\ClaudeSharedFolder\AI Agent Framework\LICENSING.md).
+
+Config files are monitored and loaded dynamically on change: you don't have to stop 
+and restart FAITH to make changes.
+
 The Web UI polls the Project Agent and shows Redis/config status from the current 
 `config/` directory.
 
-## CLI
+## Initial Setup
+For FAITH to work you need docker and python 3.10+ installed. You can install these 
+packages simply by running the following:
 
-The repo now includes a `faith-cli` bootstrap package that wraps the current POC 
-compose stack.
+### Powershell
+```powershell
+setup.ps1
+```
+
+### Bash
+```bash
+setup.sh
+```
+
+## FAITH-CLI
+To run the faith system just run the following:
 
 ```powershell
 faith init
@@ -45,6 +66,15 @@ faith status
 faith stop
 ```
 
-`faith init` creates `~/.faith/`, copies config templates and archetypes there, starts the repo-backed Docker Compose stack, and opens `http://localhost:8080` when the Web UI responds.
+`faith init` creates `~/.faith/`, copies config templates and archetypes there, starts 
+the repo-backed Docker Compose stack, and opens `http://localhost:8080` when the Web 
+UI responds.
 
+`faith status` returns status information about the system such as the docker container 
+states and the Project Assistant (PA) health.
+
+## Configuration
+By default, the configuration files live under the /config folder.
+These configuration files can be manually changed bu the user or just ask the PA to
+modify them for you.
 

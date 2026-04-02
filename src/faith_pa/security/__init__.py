@@ -1,4 +1,10 @@
-"""FAITH security package exports."""
+"""Description:
+    Re-export the approval and audit components used by the FAITH runtime.
+
+Requirements:
+    - Provide a stable import surface for security-related services.
+    - Avoid embedding approval logic in the package export module.
+"""
 
 from faith_pa.security.approval_engine import (
     ApprovalDecision,
@@ -22,4 +28,3 @@ __all__ = [
     "AuditLogger",
     "UserApprovalDecision",
 ]
-

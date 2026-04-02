@@ -1,8 +1,11 @@
-"""Project code indexing helpers for FAITH.
+"""
+Description:
+    Build and query a lightweight code index for FAITH workspaces.
 
-This is a practical POC for FAITH-027: it can scan a repository, extract
-basic Python symbols, persist an index snapshot, and perform lightweight
-keyword search over file names, symbols, and text content.
+Requirements:
+    - Scan text files under a workspace while excluding generated directories.
+    - Extract basic Python symbols, persist snapshots, and support simple
+      keyword search over paths, symbols, and preview content.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 DEFAULT_EXCLUDED_DIRS = {
     ".git",
@@ -57,6 +61,14 @@ DEFAULT_TEXT_EXTENSIONS = {
 
 @dataclass(slots=True)
 class CodeSymbol:
+    """
+    Description:
+        Represent one extracted symbol from an indexed source file.
+
+    Requirements:
+        - Preserve the symbol name, symbol kind, and source line number.
+    """
+
     name: str
     kind: str
     line: int
@@ -64,6 +76,15 @@ class CodeSymbol:
 
 @dataclass(slots=True)
 class CodeDocument:
+    """
+    Description:
+        Represent one indexed text document inside the workspace.
+
+    Requirements:
+        - Preserve path, language, checksum, size, line count, symbols, and
+          preview lines for search and inspection.
+    """
+
     path: str
     relative_path: str
     language: str
@@ -76,6 +97,15 @@ class CodeDocument:
 
 @dataclass(slots=True)
 class CodeSearchHit:
+    """
+    Description:
+        Represent one ranked search hit returned by the code index.
+
+    Requirements:
+        - Preserve the relative path, absolute path, score, snippet, matched
+          categories, and extracted symbols.
+    """
+
     relative_path: str
     path: str
     score: int
@@ -86,6 +116,15 @@ class CodeSearchHit:
 
 @dataclass(slots=True)
 class CodeIndex:
+    """
+    Description:
+        Represent one persisted or in-memory snapshot of an indexed workspace.
+
+    Requirements:
+        - Preserve the workspace root, generation timestamp, excluded
+          directories, and indexed documents.
+    """
+
     root: str
     generated_at: str
     excluded_dirs: set[str]
@@ -99,6 +138,20 @@ class CodeIndex:
         excluded_dirs: Iterable[str] | None = None,
         max_file_size_bytes: int = 1_000_000,
     ) -> CodeIndex:
+        """
+        Description:
+            Build a fresh code index snapshot for the supplied workspace root.
+
+        Requirements:
+            - Skip excluded directories and oversize or non-text files.
+            - Extract checksums, preview lines, symbols, and language metadata
+              for each included file.
+
+        :param root: Workspace root to scan.
+        :param excluded_dirs: Optional override for excluded directory names.
+        :param max_file_size_bytes: Maximum file size to index.
+        :returns: Newly built code index snapshot.
+        """
         root = Path(root).resolve()
         exclude = set(excluded_dirs or DEFAULT_EXCLUDED_DIRS)
         documents: list[CodeDocument] = []
@@ -140,6 +193,16 @@ class CodeIndex:
 
     @classmethod
     def load(cls, path: Path) -> CodeIndex:
+        """
+        Description:
+            Load a code index snapshot from disk.
+
+        Requirements:
+            - Rebuild document and symbol objects from the saved JSON structure.
+
+        :param path: Path to the saved index JSON file.
+        :returns: Loaded code index snapshot.
+        """
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
         documents = [
             CodeDocument(
@@ -162,12 +225,31 @@ class CodeIndex:
         )
 
     def save(self, path: Path) -> Path:
+        """
+        Description:
+            Save the code index snapshot to disk.
+
+        Requirements:
+            - Create missing parent directories before writing the JSON file.
+
+        :param path: Destination JSON file path.
+        :returns: Written snapshot path.
+        """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self.to_dict(), indent=2) + "\n", encoding="utf-8")
         return path
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
+        """
+        Description:
+            Convert the code index snapshot into a serialisable dictionary.
+
+        Requirements:
+            - Serialize document and symbol objects into JSON-safe structures.
+
+        :returns: Serializable code index payload.
+        """
         return {
             "root": self.root,
             "generated_at": self.generated_at,
@@ -182,6 +264,16 @@ class CodeIndex:
         }
 
     def refresh(self, *, max_file_size_bytes: int = 1_000_000) -> CodeIndex:
+        """
+        Description:
+            Build a fresh snapshot using the current index settings.
+
+        Requirements:
+            - Reuse the stored root and excluded-directory set.
+
+        :param max_file_size_bytes: Maximum file size to index.
+        :returns: Refreshed code index snapshot.
+        """
         return self.build(
             Path(self.root),
             excluded_dirs=self.excluded_dirs,
@@ -189,6 +281,18 @@ class CodeIndex:
         )
 
     def search(self, query: str, *, limit: int = 10) -> list[CodeSearchHit]:
+        """
+        Description:
+            Search the indexed documents using simple token scoring.
+
+        Requirements:
+            - Return no hits for empty queries.
+            - Rank hits by score descending, then by relative path.
+
+        :param query: Search query string.
+        :param limit: Maximum number of hits to return.
+        :returns: Ranked code-search hits.
+        """
         tokens = [token for token in _tokenize(query) if token]
         if not tokens:
             return []
@@ -213,6 +317,16 @@ class CodeIndex:
         return hits[:limit]
 
     def find(self, relative_path: str) -> CodeDocument | None:
+        """
+        Description:
+            Return one indexed document by its relative path.
+
+        Requirements:
+            - Treat backslashes and forward slashes equivalently.
+
+        :param relative_path: Relative path of the indexed document to find.
+        :returns: Matching indexed document or `None`.
+        """
         relative_path = relative_path.replace("\\", "/")
         for document in self.documents:
             if document.relative_path == relative_path:
@@ -221,6 +335,18 @@ class CodeIndex:
 
 
 def _iter_source_files(root: Path, excluded_dirs: set[str]) -> Iterable[Path]:
+    """
+    Description:
+        Yield candidate files under the workspace root for indexing.
+
+    Requirements:
+        - Skip directories whose path parts contain excluded directory names.
+        - Yield files in deterministic sorted order.
+
+    :param root: Workspace root to scan.
+    :param excluded_dirs: Directory names that must be skipped.
+    :returns: Iterable of candidate file paths.
+    """
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
@@ -230,6 +356,17 @@ def _iter_source_files(root: Path, excluded_dirs: set[str]) -> Iterable[Path]:
 
 
 def _read_text(path: Path) -> str | None:
+    """
+    Description:
+        Read a file as text when it matches the supported indexable formats.
+
+    Requirements:
+        - Skip unsupported extensions and binary files.
+        - Try the supported text encodings in order until one succeeds.
+
+    :param path: Candidate file path to read.
+    :returns: Decoded text content or `None` when the file should be skipped.
+    """
     suffix = path.suffix.lower()
     if suffix not in DEFAULT_TEXT_EXTENSIONS and path.name not in {
         "LICENSE",
@@ -255,6 +392,17 @@ def _read_text(path: Path) -> str | None:
 
 
 def _detect_language(path: Path) -> str:
+    """
+    Description:
+        Infer a simple language label from the file name or suffix.
+
+    Requirements:
+        - Treat README files as markdown.
+        - Fall back to `text` for unknown suffixes.
+
+    :param path: File path whose language should be inferred.
+    :returns: Simple language label for the file.
+    """
     mapping = {
         ".py": "python",
         ".md": "markdown",
@@ -284,6 +432,17 @@ def _detect_language(path: Path) -> str:
 
 
 def _normalise_python_source(text: str) -> str:
+    """
+    Description:
+        Normalise embedded or oddly indented Python source before parsing.
+
+    Requirements:
+        - Remove common indentation from non-empty trailing lines.
+        - Preserve blank lines where possible.
+
+    :param text: Python source text to normalise.
+    :returns: Normalised Python source text.
+    """
     lines = text.splitlines()
     if not lines:
         return text
@@ -303,6 +462,18 @@ def _normalise_python_source(text: str) -> str:
 
 
 def _extract_symbols(path: Path, text: str) -> list[CodeSymbol]:
+    """
+    Description:
+        Extract top-level Python symbols from a text document when applicable.
+
+    Requirements:
+        - Return no symbols for non-Python files.
+        - Retry parsing with normalised source when the raw parse fails.
+
+    :param path: File path being indexed.
+    :param text: Text content of the file.
+    :returns: Extracted top-level code symbols.
+    """
     if path.suffix.lower() != ".py":
         return []
 
@@ -326,15 +497,47 @@ def _extract_symbols(path: Path, text: str) -> list[CodeSymbol]:
 
 
 def _tokenize(value: str) -> list[str]:
+    """
+    Description:
+        Split a search string into lowercase word tokens.
+
+    Requirements:
+        - Drop empty tokens from the output.
+
+    :param value: Input text to tokenize.
+    :returns: Lowercase non-empty search tokens.
+    """
     return [token for token in re.split(r"\W+", value.lower()) if token]
 
 
 def _symbol_search_text(name: str) -> str:
+    """
+    Description:
+        Expand a symbol name into searchable token text.
+
+    Requirements:
+        - Split CamelCase boundaries before tokenization.
+
+    :param name: Symbol name to expand.
+    :returns: Space-delimited searchable token text.
+    """
     spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name)
     return " ".join(_tokenize(spaced))
 
 
 def _score_document(document: CodeDocument, tokens: list[str]) -> tuple[int, list[str]]:
+    """
+    Description:
+        Score one indexed document against a tokenised search query.
+
+    Requirements:
+        - Consider path, file name, preview content, and symbol names.
+        - Return both the cumulative score and the matched categories.
+
+    :param document: Indexed document to score.
+    :param tokens: Lowercase query tokens.
+    :returns: Tuple of score and matched-category labels.
+    """
     haystacks = [
         document.relative_path.lower(),
         Path(document.relative_path).name.lower(),
@@ -370,6 +573,18 @@ def _score_document(document: CodeDocument, tokens: list[str]) -> tuple[int, lis
 
 
 def _find_snippet(document: CodeDocument, tokens: list[str]) -> str:
+    """
+    Description:
+        Choose a preview snippet from the indexed document for a search result.
+
+    Requirements:
+        - Prefer the first preview line that matches any query token.
+        - Fall back to the first three preview lines when nothing matches.
+
+    :param document: Indexed document being rendered into a search hit.
+    :param tokens: Lowercase query tokens.
+    :returns: Search-result snippet text.
+    """
     if not document.preview_lines:
         return ""
 
@@ -384,5 +599,17 @@ def _find_snippet(document: CodeDocument, tokens: list[str]) -> str:
 
 
 def _preview_lines(text: str, limit: int = 20) -> list[str]:
+    """
+    Description:
+        Return the leading preview lines stored for one indexed document.
+
+    Requirements:
+        - Preserve the original line order.
+        - Limit the preview to the requested number of lines.
+
+    :param text: Full text content of the document.
+    :param limit: Maximum number of preview lines to keep.
+    :returns: Leading preview lines for the document.
+    """
     lines = text.splitlines()
     return lines[:limit]
