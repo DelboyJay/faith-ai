@@ -72,6 +72,9 @@ Requirements:
 - A correct test case MUST NOT be weakened or rewritten later just to make the implementation pass.
 - Tests must verify the intended behaviour explicitly, including expected failures, exceptions, and validation errors where relevant.
 - Avoid creating trivial or ineffective tests that would pass regardless of whether the implementation is correct.
+- Every HTTP endpoint MUST have at least one high-level request-style test that proves the endpoint does not return HTTP 500 on its expected happy path.
+- If an HTTP endpoint is expected to return any non-200 status under defined conditions, those conditions MUST also have high-level request-style tests that prove the correct status code is returned.
+- Request-style endpoint tests should exercise the route the way a curl call or equivalent external client would, not by calling internal helpers directly.
 
 ### 4.1 Use of Python Mocking in Tests
 
@@ -106,3 +109,4 @@ Requirements:
 
 - Keep JavaScript out of templates where possible.
 - Move inline scripts into dedicated `.js` files unless minimal inline bootstrapping is unavoidable.
+
