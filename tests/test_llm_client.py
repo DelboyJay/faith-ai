@@ -16,9 +16,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from faith_pa.agent.llm_client import (
+    OLLAMA_CONTAINER_HOST,
     LLMClient,
     LLMPermanentError,
     LLMRetryableError,
+    LocalModelCapability,
     parse_model_string,
 )
 
@@ -195,3 +197,114 @@ def test_call_ollama_normalises_response_payload():
     assert result.content == "hello"
     assert result.input_tokens == 4
     assert result.output_tokens == 6
+
+
+def test_resolve_ollama_endpoint_prefers_container_on_linux_with_gpu():
+    """Description:
+        Verify Linux defaults to the bundled Ollama container when accelerator support is confirmed.
+
+    Requirements:
+        - This test is needed to prove the local-model routing policy follows the updated FRS on Linux.
+        - Verify container routing wins when Docker GPU support is confirmed.
+    """
+
+    client = LLMClient(model="ollama/llama3:8b")
+    resolution = client.resolve_ollama_endpoint(platform_name="linux", docker_gpu_supported=True)
+    assert resolution.endpoint == OLLAMA_CONTAINER_HOST
+    assert resolution.route_kind == "container"
+
+
+def test_resolve_ollama_endpoint_prefers_host_on_windows_without_docker_gpu():
+    """Description:
+        Verify Windows defaults to native host Ollama when Docker GPU support is not confirmed.
+
+    Requirements:
+        - This test is needed to prove Windows does not assume WSL2/Docker GPU support is available.
+        - Verify host routing wins when Docker GPU support is absent.
+    """
+
+    client = LLMClient(model="ollama/llama3:8b")
+    resolution = client.resolve_ollama_endpoint(
+        platform_name="windows",
+        docker_gpu_supported=False,
+    )
+    assert resolution.route_kind == "host"
+    assert "host.docker.internal" in resolution.endpoint
+
+
+def test_resolve_ollama_endpoint_prefers_host_on_macos():
+    """Description:
+        Verify macOS defaults to native host Ollama rather than the bundled container route.
+
+    Requirements:
+        - This test is needed to prove macOS follows the host-first policy from the FRS.
+        - Verify host routing wins on macOS without requiring a container-specific override.
+    """
+
+    client = LLMClient(model="ollama/llama3:8b")
+    resolution = client.resolve_ollama_endpoint(platform_name="darwin")
+    assert resolution.route_kind == "host"
+    assert "host.docker.internal" in resolution.endpoint
+
+
+def test_probe_local_model_capability_reports_first_successful_endpoint(monkeypatch):
+    """Description:
+        Verify local-model capability probing reports the first endpoint that passes the inference probe.
+
+    Requirements:
+        - This test is needed to prove FAITH chooses a working Ollama route based on runtime evidence rather than a fixed assumption.
+        - Verify the reported capability includes endpoint, route kind, inference readiness, and resource metadata.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
+    client = LLMClient(model="ollama/llama3:8b")
+
+    async def fake_probe(
+        endpoint: str,
+        route_kind: str,
+        probe_model: str,
+        *,
+        system_ram_mb: int | None,
+        docker_gpu_supported: bool | None,
+    ) -> LocalModelCapability | None:
+        """Description:
+            Simulate endpoint probing for the local-model capability test.
+
+        Requirements:
+            - Return a successful capability only for the host route.
+
+        :param endpoint: Candidate Ollama endpoint.
+        :param route_kind: Candidate route kind.
+        :param probe_model: Model used for the probe.
+        :param system_ram_mb: Reported system RAM budget.
+        :param docker_gpu_supported: Docker GPU support hint.
+        :returns: Capability description for the successful route, otherwise ``None``.
+        """
+
+        del docker_gpu_supported
+        if route_kind != "host":
+            return None
+        return LocalModelCapability(
+            endpoint=endpoint,
+            route_kind=route_kind,
+            inference_available=True,
+            gpu_acceleration=False,
+            usable_vram_mb=0,
+            system_ram_mb=system_ram_mb,
+            probe_model=probe_model,
+            notes=("host probe succeeded",),
+        )
+
+    monkeypatch.setattr(client, "_probe_ollama_endpoint", fake_probe)
+    capability = asyncio.run(
+        client.probe_local_model_capability(
+            platform_name="windows",
+            docker_gpu_supported=False,
+            system_ram_mb=32768,
+        )
+    )
+
+    assert capability.inference_available is True
+    assert capability.route_kind == "host"
+    assert capability.system_ram_mb == 32768

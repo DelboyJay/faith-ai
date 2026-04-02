@@ -8,6 +8,11 @@ Requirements:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+
+import pytest
+
 from faith_pa.agent import AgentMessage, BaseAgent
 from faith_pa.config.models import AgentConfig, SystemConfig
 from faith_pa.utils.tokens import (
@@ -17,6 +22,8 @@ from faith_pa.utils.tokens import (
     count_text_tokens,
     truncate_text_to_token_limit,
 )
+from faith_shared.protocol.compact import CompactMessage, MessageType
+from faith_shared.protocol.events import SYSTEM_EVENTS_CHANNEL, EventType, FaithEvent
 
 
 def build_agent_config(**overrides):
@@ -59,6 +66,207 @@ def build_system_config(**overrides):
     }
     payload.update(overrides)
     return SystemConfig.model_validate(payload)
+
+
+class FakePubSub:
+    """Description:
+        Provide a minimal async Redis pubsub stand-in for agent runtime tests.
+
+    Requirements:
+        - Record subscribe and unsubscribe calls for lifecycle assertions.
+        - Replay queued pubsub messages in order.
+
+    :param messages: Optional initial queue of pubsub messages.
+    """
+
+    def __init__(self, messages: list[dict] | None = None) -> None:
+        """Description:
+            Initialise the fake pubsub with an optional queued-message list.
+
+        Requirements:
+            - Start with deterministic message order and open state.
+
+        :param messages: Optional initial queue of pubsub messages.
+        """
+
+        self.messages = list(messages or [])
+        self.subscribed: list[str] = []
+        self.unsubscribed: list[str] = []
+        self.closed = False
+
+    async def subscribe(self, *channels: str) -> None:
+        """Description:
+            Record requested channel subscriptions.
+
+        Requirements:
+            - Preserve subscription order for later assertions.
+
+        :param channels: Channel names being subscribed.
+        """
+
+        self.subscribed.extend(channels)
+
+    async def unsubscribe(self, *channels: str) -> None:
+        """Description:
+            Record requested channel unsubscriptions.
+
+        Requirements:
+            - Preserve unsubscription order for later assertions.
+
+        :param channels: Channel names being unsubscribed.
+        """
+
+        self.unsubscribed.extend(channels)
+
+    async def get_message(
+        self,
+        ignore_subscribe_messages: bool = True,
+        timeout: float = 1.0,
+    ) -> dict | None:
+        """Description:
+            Return the next queued pubsub message or ``None`` when empty.
+
+        Requirements:
+            - Consume queued messages in order.
+            - Yield to the event loop when the queue is empty.
+
+        :param ignore_subscribe_messages: Compatibility flag matching the Redis API.
+        :param timeout: Requested polling timeout.
+        :returns: Next queued pubsub message, or ``None`` when none remain.
+        """
+
+        del ignore_subscribe_messages, timeout
+        if self.messages:
+            return self.messages.pop(0)
+        await asyncio.sleep(0)
+        return None
+
+    async def aclose(self) -> None:
+        """Description:
+            Mark the fake pubsub as closed.
+
+        Requirements:
+            - Allow shutdown tests to verify the pubsub was closed.
+        """
+
+        self.closed = True
+
+
+class FakeRedis:
+    """Description:
+        Provide the minimal Redis interface needed by the base-agent runtime tests.
+
+    Requirements:
+        - Expose ``publish()`` and ``pubsub()`` with deterministic captured state.
+
+    :param pubsub: Fake pubsub instance returned by ``pubsub()``.
+    """
+
+    def __init__(self, pubsub: FakePubSub | None = None) -> None:
+        """Description:
+            Initialise the fake Redis client.
+
+        Requirements:
+            - Start with an empty published-message log.
+
+        :param pubsub: Fake pubsub instance returned by ``pubsub()``.
+        """
+
+        self._pubsub = pubsub or FakePubSub()
+        self.published: list[tuple[str, str]] = []
+
+    async def publish(self, channel: str, message: str) -> None:
+        """Description:
+            Record one published Redis message.
+
+        Requirements:
+            - Preserve publish order for later assertions.
+
+        :param channel: Redis channel name.
+        :param message: Published message payload.
+        """
+
+        self.published.append((channel, message))
+
+    def pubsub(self) -> FakePubSub:
+        """Description:
+            Return the fake pubsub dependency used by the runtime.
+
+        Requirements:
+            - Return the same fake pubsub instance on every call.
+
+        :returns: Fake pubsub instance.
+        """
+
+        return self._pubsub
+
+
+class FakeLLMClient:
+    """Description:
+        Provide a deterministic LLM client stand-in for agent runtime tests.
+
+    Requirements:
+        - Capture chat requests for later assertions.
+        - Return a configured response body without network access.
+
+    :param content: Response content returned by ``chat()``.
+    """
+
+    def __init__(self, content: str = "Acknowledged.") -> None:
+        """Description:
+            Initialise the fake LLM client.
+
+        Requirements:
+            - Start with an empty request log.
+
+        :param content: Response content returned by ``chat()``.
+        """
+
+        self.content = content
+        self.calls: list[dict[str, object]] = []
+
+    async def chat(
+        self,
+        messages: list[dict[str, object]],
+        *,
+        model: str | None = None,
+        fallback_model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ):
+        """Description:
+            Record one chat request and return a deterministic structured response.
+
+        Requirements:
+            - Preserve the request payload for later assertions.
+            - Return an object matching the shared ``LLMResponse`` surface.
+
+        :param messages: Chat-message payload.
+        :param model: Optional model override.
+        :param fallback_model: Optional fallback-model override.
+        :param temperature: Optional temperature override.
+        :param max_tokens: Optional output-token cap.
+        :returns: Structured fake response object.
+        """
+
+        self.calls.append(
+            {
+                "messages": messages,
+                "model": model,
+                "fallback_model": fallback_model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+        )
+        return type(
+            "FakeLLMResponse",
+            (),
+            {
+                "content": self.content,
+                "input_tokens": 10,
+                "output_tokens": 5,
+            },
+        )()
 
 
 def test_count_text_tokens_fallback(monkeypatch):
@@ -197,6 +405,27 @@ def test_base_agent_falls_back_to_system_model():
         prompt_text="Prompt",
     )
     assert agent.model_name == "gpt-default"
+
+
+def test_base_agent_passes_ollama_endpoint_override():
+    """Description:
+        Verify the base agent passes the configured Ollama endpoint override into the LLM client.
+
+    Requirements:
+        - This test is needed to prove agent runtime config can direct local-model traffic to a resolved Ollama endpoint.
+        - Verify the LLM client receives the system-configured Ollama endpoint.
+    """
+
+    agent = BaseAgent(
+        agent_id="agent-override",
+        config=build_agent_config(model="ollama/llama3:8b"),
+        system_config=build_system_config(
+            default_agent_model="ollama/llama3:8b",
+            ollama={"enabled": True, "mode": "external", "endpoint": "http://external-ollama:11434"},
+        ),
+        prompt_text="Prompt",
+    )
+    assert agent.llm_client.ollama_host == "http://external-ollama:11434"
 
 
 def test_base_agent_limits_recent_messages():
@@ -355,3 +584,142 @@ def test_agent_message_to_chat_message():
 
     message = AgentMessage(role="user", content="hello", name="dev")
     assert message.to_chat_message() == {"role": "user", "content": "hello", "name": "dev"}
+
+
+@pytest.mark.asyncio
+async def test_base_agent_subscribe_and_unsubscribe_channel():
+    """Description:
+        Verify the base agent manages Redis channel subscriptions and channel stores.
+
+    Requirements:
+        - This test is needed to prove the runtime can join and leave task channels cleanly.
+        - Verify subscribing creates a store and unsubscribing removes the channel from the active set.
+    """
+
+    redis = FakeRedis()
+    agent = BaseAgent(
+        agent_id="agent-subscribe",
+        config=build_agent_config(),
+        system_config=build_system_config(),
+        prompt_text="Prompt",
+        redis_client=redis,
+    )
+    agent._pubsub = redis.pubsub()
+
+    await agent.subscribe_channel("ch-auth")
+    await agent.unsubscribe_channel("ch-auth")
+
+    assert redis._pubsub.subscribed == ["ch-auth"]
+    assert redis._pubsub.unsubscribed == ["ch-auth"]
+    assert "ch-auth" not in agent._subscribed_channels
+    assert "ch-auth" in agent._channel_stores
+
+
+@pytest.mark.asyncio
+async def test_base_agent_handle_message_stores_message_and_calls_llm():
+    """Description:
+        Verify incoming compact-protocol messages are stored and passed through the LLM path.
+
+    Requirements:
+        - This test is needed to prove the runtime parses channel traffic into message history before calling the LLM.
+        - Verify the stored channel message count and the LLM invocation both occur for one inbound task message.
+    """
+
+    redis = FakeRedis()
+    llm_client = FakeLLMClient(content="Task acknowledged.")
+    agent = BaseAgent(
+        agent_id="agent-handle",
+        config=build_agent_config(),
+        system_config=build_system_config(),
+        prompt_text="Prompt",
+        redis_client=redis,
+        llm_client=llm_client,
+    )
+    message = CompactMessage(
+        from_agent="pa",
+        to_agent="agent-handle",
+        channel="ch-auth",
+        msg_id=1,
+        type=MessageType.TASK,
+        tags=["code"],
+        summary="Implement login form.",
+    )
+
+    await agent._handle_message(message.to_json(), "ch-auth")
+
+    assert agent._channel_stores["ch-auth"].count() == 1
+    assert llm_client.calls
+    assert llm_client.calls[0]["messages"][-1]["content"] == "Implement login form."
+    published_events = [
+        FaithEvent.from_json(payload)
+        for channel_name, payload in redis.published
+        if channel_name == SYSTEM_EVENTS_CHANNEL
+    ]
+    assert any(event.event == EventType.AGENT_TASK_COMPLETE for event in published_events)
+
+
+@pytest.mark.asyncio
+async def test_base_agent_heartbeat_loop_publishes_agent_events():
+    """Description:
+        Verify the heartbeat loop emits canonical agent-heartbeat events on the system event bus.
+
+    Requirements:
+        - This test is needed to prove specialist agents remain observable while running.
+        - Verify the runtime publishes at least one ``agent:heartbeat`` event through Redis.
+    """
+
+    redis = FakeRedis()
+    agent = BaseAgent(
+        agent_id="agent-heartbeat",
+        config=build_agent_config(),
+        system_config=build_system_config(heartbeat_interval_seconds=5),
+        prompt_text="Prompt",
+        redis_client=redis,
+    )
+    agent._running = True
+
+    task = asyncio.create_task(agent._heartbeat_loop(interval_seconds=0.01))
+    await asyncio.sleep(0.03)
+    agent._running = False
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    published_events = [
+        FaithEvent.from_json(payload)
+        for channel, payload in redis.published
+        if channel == SYSTEM_EVENTS_CHANNEL
+    ]
+    assert published_events
+    assert published_events[0].event == EventType.AGENT_HEARTBEAT
+    assert published_events[0].source == "agent-heartbeat"
+
+
+@pytest.mark.asyncio
+async def test_base_agent_run_subscribes_personal_channel_and_shuts_down_cleanly():
+    """Description:
+        Verify the async runtime subscribes its personal channel, starts, and shuts down cleanly.
+
+    Requirements:
+        - This test is needed to prove the base-agent runtime executes the Redis listener lifecycle defined by Phase 3.
+        - Verify the personal channel subscription occurs and the pubsub closes on shutdown.
+    """
+
+    redis = FakeRedis()
+    agent = BaseAgent(
+        agent_id="agent-run",
+        config=build_agent_config(),
+        system_config=build_system_config(),
+        prompt_text="Prompt",
+        redis_client=redis,
+        llm_client=FakeLLMClient(),
+    )
+
+    task = asyncio.create_task(agent.run())
+    await asyncio.sleep(0.03)
+    agent._signal_shutdown()
+    await asyncio.wait_for(task, timeout=1.0)
+
+    assert "pa-agent-run" in redis._pubsub.subscribed
+    assert "pa-agent-run" in redis._pubsub.unsubscribed
+    assert redis._pubsub.closed is True

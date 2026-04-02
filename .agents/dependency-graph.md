@@ -18,10 +18,10 @@
 | FAITH-007 | Compact Protocol Data Models & Serialisation | 2 (Protocol & Events) | DONE | FAITH-002 | M | Sonnet / GPT-5.4 |
 | FAITH-008 | Event System Data Models & Publisher | 2 (Protocol & Events) | DONE | FAITH-002 | M | Sonnet / GPT-5.4 |
 | FAITH-009 | Event Subscriber & Dispatcher | 2 (Protocol & Events) | DONE | FAITH-008 | M | Sonnet / GPT-5.4 |
-| FAITH-010 | Base Agent Class | 3 (Agent Runtime) | IN PROGRESS | FAITH-007, FAITH-008 | L | Opus / GPT-5.4 high reasoning |
+| FAITH-010 | Base Agent Class | 3 (Agent Runtime) | DONE | FAITH-007, FAITH-008 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-011 | Rolling Context Summary & Compaction | 3 (Agent Runtime) | DONE | FAITH-010 | M | Sonnet / GPT-5.4 |
 | FAITH-012 | MCP Adapter Layer | 3 (Agent Runtime) | DONE | FAITH-010 | L | Sonnet / GPT-5.4 |
-| FAITH-013 | LLM API Client (Ollama + OpenRouter) | 3 (Agent Runtime) | IN PROGRESS | FAITH-010 | M | Sonnet / GPT-5.4 |
+| FAITH-013 | LLM API Client (Ollama + OpenRouter) | 3 (Agent Runtime) | DONE | FAITH-010 | M | Sonnet / GPT-5.4 |
 | FAITH-014 | PA Container Setup & Docker SDK Integration | 4 (PA Core) | IN PROGRESS | FAITH-001, FAITH-002, FAITH-010 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-015 | PA Session & Task Management | 4 (PA Core) | IN PROGRESS | FAITH-014, FAITH-057, FAITH-009 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-016 | PA Event Dispatcher & Intervention Logic | 4 (PA Core) | DONE | FAITH-015, FAITH-009 | L | Opus / GPT-5.4 high reasoning |
@@ -89,10 +89,10 @@ flowchart TD
     FAITH-009["FAITH-009<br/>Event Subscriber & Dispatcher<br/>Phase 2 | DONE | M"]
 
     %% ── Phase 3: Agent Runtime ──
-    FAITH-010["FAITH-010<br/>Base Agent Class<br/>Phase 3 | IN PROGRESS | L"]
+    FAITH-010["FAITH-010<br/>Base Agent Class<br/>Phase 3 | DONE | L"]
     FAITH-011["FAITH-011<br/>Rolling Context Summary & Compaction<br/>Phase 3 | DONE | M"]
     FAITH-012["FAITH-012<br/>MCP Adapter Layer<br/>Phase 3 | DONE | L"]
-    FAITH-013["FAITH-013<br/>LLM API Client (Ollama + OpenRouter)<br/>Phase 3 | IN PROGRESS | M"]
+    FAITH-013["FAITH-013<br/>LLM API Client (Ollama + OpenRouter)<br/>Phase 3 | DONE | M"]
 
     %% ── Phase 4: PA Core ──
     FAITH-014["FAITH-014<br/>PA Container Setup & Docker SDK Integration<br/>Phase 4 | IN PROGRESS | M"]
@@ -396,7 +396,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
 | FAITH-009 | Event Subscriber & Dispatcher | 2 (Protocol & Events) | DONE | M |
-| FAITH-010 | Base Agent Class | 3 (Agent Runtime) | IN PROGRESS | L |
+| FAITH-010 | Base Agent Class | 3 (Agent Runtime) | DONE | L |
 | FAITH-020 | Approval Request/Response Flow | 5 (Security) | IN PROGRESS | M |
 | FAITH-021 | Audit Log System | 5 (Security) | IN PROGRESS | M |
 | FAITH-025 | PostgreSQL Database MCP Server | 6 (Tool Servers) | TODO | M |
@@ -409,7 +409,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 |------|------|-------|--------|------------|
 | FAITH-011 | Rolling Context Summary & Compaction | 3 (Agent Runtime) | DONE | M |
 | FAITH-012 | MCP Adapter Layer | 3 (Agent Runtime) | DONE | L |
-| FAITH-013 | LLM API Client (Ollama + OpenRouter) | 3 (Agent Runtime) | IN PROGRESS | M |
+| FAITH-013 | LLM API Client (Ollama + OpenRouter) | 3 (Agent Runtime) | DONE | M |
 | FAITH-014 | PA Container Setup & Docker SDK Integration | 4 (PA Core) | IN PROGRESS | M |
 | FAITH-030 | Pricing MCP Server | 6 (Tool Servers) | TODO | M |
 | FAITH-037 | GoldenLayout Panel Framework | 8 (Web UI) | TODO | M |

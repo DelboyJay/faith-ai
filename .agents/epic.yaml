@@ -120,7 +120,7 @@ phases:
         summary: 'Implement `EventSubscriber` class that listens on `system-events` and dispatches events to registered handlers by event type. This is the PA''s primary input loop. Include stall detection logic: maintain per-channel last-message timestamps, 60-second background tick, configurable timeout (default 5 min). Tool activity (`tool:call_started`/`tool:call_complete`) resets stall timer. Heartbeat absence detection (3 missed beats = error event). Include `CompletionBatcher` support class: tracks a pending-completions set, buffers incoming `agent:task_complete` results, and only fires a batch-ready callback when all expected completions arrive or a configurable timeout expires (default 10 min). Urgent events (`agent:error`, `channel:stalled`, `channel:loop_detected`, `approval:requested`) always bypass batching and dispatch immediately.'
   - id: 3
     title: 'Base Agent Runtime'
-    status: 'TODO'
+    status: 'DONE'
     summary: 'Build the reusable agent base class that all specialist agents inherit from.'
     task_count: 4
     tasks:
@@ -128,7 +128,7 @@ phases:
         name: 'Base Agent Class'
         complexity: 'L'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-010-base-agent-class.md'
         dependencies: ['FAITH-007', 'FAITH-008']
         frs_reference: 'Section 3.5, 3.6, 3.7.4'
@@ -155,7 +155,7 @@ phases:
         name: 'LLM API Client (Ollama + OpenRouter)'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-013-llm-api-client.md'
         dependencies: ['FAITH-010']
         frs_reference: 'Section 3.6.4, 3.6.5'
