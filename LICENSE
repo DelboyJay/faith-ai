@@ -103,6 +103,10 @@ This software is copyrighted by Del Hyman-Jones. Copyright in the original
 software remains with Del Hyman-Jones. All rights not expressly granted by this
 license are reserved.
 
+Unless a specific commit or file expressly states otherwise, the copyright
+holder intends this license to apply to all versions and prior commits of this
+repository as well as the current version.
+
 8. Termination
 
 Any rights granted under this license automatically terminate if you breach any
@@ -120,7 +124,7 @@ details or any other contact method designated by the copyright holder.
 
 10. No Warranty
 
-This software is provided "as is", without warranty of any kind, express or 
+This software is provided "as is", without warranty of any kind, express or
 implied, including but not limited to the warranties of merchantability,
 fitness for a particular purpose, and non-infringement. In no event shall the
 copyright holder be liable for any claim, damages, or other liability, whether
