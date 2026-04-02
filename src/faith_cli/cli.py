@@ -15,6 +15,8 @@ from faith_cli.http_client import get_status, pa_is_reachable, request_shutdown
 from faith_cli.paths import (
     archetypes_dir,
     bundled_compose_file,
+    editable_compose_contents,
+    is_editable_install,
     bundled_config_dir,
     bundled_data_dir,
     config_dir,
@@ -59,7 +61,9 @@ def _ensure_framework_home() -> None:
     _copy_tree(bundled_config_dir() / "archetypes", archetypes_dir())
     _copy_tree(bundled_data_dir(), data_dir())
 
-    if not installed_compose_file().exists():
+    if is_editable_install():
+        installed_compose_file().write_text(editable_compose_contents(), encoding="utf-8")
+    elif not installed_compose_file().exists():
         shutil.copy2(bundled_compose_file(), installed_compose_file())
     if (bundled_compose_file().parent / ".gitignore").exists() and not (
         faith_home() / ".gitignore"
@@ -284,3 +288,5 @@ def help_command(ctx: click.Context) -> None:
     """Show CLI help."""
 
     click.echo(ctx.parent.get_help() if ctx.parent else ctx.get_help())
+
+
