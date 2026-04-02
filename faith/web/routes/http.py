@@ -84,7 +84,7 @@ def _require_redis():
 
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html", {})
 
 
 @router.post("/input", response_model=UserInputResponse)

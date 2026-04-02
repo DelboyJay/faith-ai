@@ -6,7 +6,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from faith import __version__
@@ -29,13 +29,28 @@ async def _build_status(app: FastAPI) -> ServiceStatus:
     )
 
 
+def _require_redis(app: FastAPI):
+    """Return the shared Redis client or raise a service-unavailable error.
+
+    :param app: FastAPI application holding shared runtime state.
+    :raises HTTPException: If Redis is not available.
+    :returns: Shared Redis client.
+    """
+    redis_client = getattr(app.state, "redis", None)
+    if redis_client is None:
+        raise HTTPException(status_code=503, detail="Redis not available")
+    return redis_client
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Create shared resources for the API lifespan."""
 
     app.state.redis = await get_async_client()
     yield
-    await app.state.redis.aclose()
+    redis_client = getattr(app.state, "redis", None)
+    if redis_client is not None:
+        await redis_client.aclose()
 
 
 app = FastAPI(
@@ -76,7 +91,8 @@ async def publish_test_event() -> dict[str, str]:
         "event": "poc:test",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    await app.state.redis.publish(SYSTEM_EVENTS_CHANNEL, str(payload))
+    redis_client = _require_redis(app)
+    await redis_client.publish(SYSTEM_EVENTS_CHANNEL, str(payload))
     return payload
 
 

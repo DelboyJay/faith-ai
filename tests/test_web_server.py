@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import warnings
 
 import pytest
 import pytest_asyncio
@@ -96,6 +97,31 @@ def test_index_returns_html(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert "FAITH Web UI" in response.text
+
+
+def test_index_route_uses_non_deprecated_template_signature(client: TestClient) -> None:
+    """Description:
+    Verify the index route renders without relying on the deprecated
+    Starlette template response call signature.
+
+    Requirements:
+    - This test is needed to prevent the root page from working locally
+      while failing in newer container environments.
+    - Verify the index route does not emit the known TemplateResponse
+      deprecation warning during rendering.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert not any(
+        isinstance(warning.message, DeprecationWarning)
+        and "TemplateResponse" in str(warning.message)
+        for warning in captured
+    )
 
 
 def test_health_returns_ok(client: TestClient) -> None:
@@ -236,3 +262,147 @@ def test_status_websocket_relays_messages(client: TestClient, fake_redis: FakeRe
         )
         payload = json.loads(websocket.receive_text())
         assert payload["event"] == "agent:heartbeat"
+
+
+def test_api_status_returns_ok(client: TestClient) -> None:
+    """Description:
+    Verify the web status endpoint returns a successful status payload.
+
+    Requirements:
+    - Prove the explicit `/api/status` route responds successfully over HTTP.
+    - Verify the route does not rely on `/health` tests alone for coverage.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+    response = client.get("/api/status")
+
+    assert response.status_code == 200
+    assert response.json()["service"] == "faith-web-ui"
+
+
+def test_health_returns_503_when_redis_missing(app) -> None:
+    """Description:
+    Verify the web health endpoint returns 503 when Redis is unavailable.
+
+    Requirements:
+    - This test is needed to prove degraded dependencies do not surface as
+      internal server errors.
+    - Verify the health endpoint returns HTTP 503 under that condition.
+
+    :param app: FastAPI application under test.
+    """
+    original = web_app.redis_pool
+    web_app.redis_pool = None
+    try:
+        with TestClient(app) as client:
+            response = client.get("/health")
+        assert response.status_code == 503
+    finally:
+        web_app.redis_pool = original
+
+
+def test_api_status_returns_503_when_redis_missing(app) -> None:
+    """Description:
+    Verify the web status endpoint returns 503 when Redis is unavailable.
+
+    Requirements:
+    - This test is needed to prove the explicit `/api/status` route reports
+      degraded dependencies correctly.
+    - Verify the route returns HTTP 503 under that condition.
+
+    :param app: FastAPI application under test.
+    """
+    original = web_app.redis_pool
+    web_app.redis_pool = None
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/status")
+        assert response.status_code == 503
+    finally:
+        web_app.redis_pool = original
+
+
+@pytest.mark.asyncio
+async def test_input_validates_required_message(async_client: AsyncClient) -> None:
+    """Description:
+    Verify the input endpoint returns validation errors for invalid payloads.
+
+    Requirements:
+    - This test is needed to prove invalid input payloads return the expected
+      HTTP 422 response instead of a server error.
+    - Verify an empty message is rejected.
+
+    :param async_client: Async HTTP client bound to the FAITH web app.
+    """
+    response = await async_client.post("/input", json={"message": ""})
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_upload_requires_file(async_client: AsyncClient) -> None:
+    """Description:
+    Verify the upload endpoint validates that a file is provided.
+
+    Requirements:
+    - This test is needed to prove missing multipart file uploads return the
+      expected HTTP 422 response.
+    - Verify the endpoint rejects requests that omit the required file field.
+
+    :param async_client: Async HTTP client bound to the FAITH web app.
+    """
+    response = await async_client.post("/upload", data={"message": "review"})
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_upload_returns_503_when_redis_missing(app) -> None:
+    """Description:
+    Verify the upload endpoint returns 503 when Redis is unavailable.
+
+    Requirements:
+    - This test is needed to prove upload requests fail cleanly when Redis is
+      unavailable.
+    - Verify the endpoint returns the expected service-unavailable status code.
+
+    :param app: FastAPI application under test.
+    """
+    original = web_app.redis_pool
+    web_app.redis_pool = None
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+            response = await async_client.post(
+                "/upload",
+                files={"file": ("note.txt", b"hello", "text/plain")},
+            )
+        assert response.status_code == 503
+    finally:
+        web_app.redis_pool = original
+
+
+@pytest.mark.asyncio
+async def test_approval_endpoint_returns_503_when_redis_missing(app) -> None:
+    """Description:
+    Verify the approval endpoint returns 503 when Redis is unavailable.
+
+    Requirements:
+    - This test is needed to prove approval decisions fail cleanly when Redis
+      is unavailable.
+    - Verify the endpoint returns the expected service-unavailable status code.
+
+    :param app: FastAPI application under test.
+    """
+    original = web_app.redis_pool
+    web_app.redis_pool = None
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+            response = await async_client.post(
+                "/approve/apr-503",
+                json={"decision": "allow_once", "scope": "file"},
+            )
+        assert response.status_code == 503
+    finally:
+        web_app.redis_pool = original
