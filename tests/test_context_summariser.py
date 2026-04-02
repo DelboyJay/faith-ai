@@ -1,7 +1,7 @@
 import asyncio
 
-from faith.agent.base import AgentMessage
-from faith.agent.summariser import ContextSummariser
+from faith_pa.agent.base import AgentMessage
+from faith_pa.agent.summariser import ContextSummariser
 
 
 def test_should_summarise_on_message_count(tmp_path):
@@ -56,3 +56,4 @@ def test_compact_retains_recent_messages_and_compacts_disposable(tmp_path):
     assert result.remaining_messages[0]["role"] == "system"
     assert [item["content"] for item in result.remaining_messages[1:]] == ["keep-1", "keep-2"]
     assert summariser.load_summary() == "Summarised context"
+

@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from faith.config.models import PAConfig, PrivacyProfile, SystemConfig
-from faith.pa.project_switcher import ProjectSwitcher
-from faith.pa.session import SessionManager
+from faith_pa.config.models import PAConfig, PrivacyProfile, SystemConfig
+from faith_pa.pa.project_switcher import ProjectSwitcher
+from faith_pa.pa.session import SessionManager
 
 
 @pytest.fixture
@@ -46,3 +46,4 @@ async def test_load_project_updates_recent_projects(
     assert result.project_root == target.resolve()
     start_runtime.assert_awaited_once()
     reindex.assert_awaited_once()
+

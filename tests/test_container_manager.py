@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from faith.pa.container_manager import (
+from faith_pa.pa.container_manager import (
     ContainerManager,
     ContainerSpec,
     InMemoryContainerRuntime,
 )
-from faith.pa.secret_resolver import SecretResolver
+from faith_pa.pa.secret_resolver import SecretResolver
 
 
 @pytest.mark.asyncio
@@ -68,3 +68,4 @@ def test_list_containers_returns_sorted_items():
     manager = ContainerManager(runtime)
     names = [item.name for item in manager.list_containers()]
     assert names == ["a", "b"]
+

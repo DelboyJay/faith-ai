@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from faith.tools.code_index import CodeIndex, CodeIndexServer
+from faith_mcp.code_index import CodeIndex, CodeIndexServer
 
 
 def write_text(path: Path, content: str) -> Path:
@@ -103,3 +103,4 @@ def test_code_index_server_builds_and_searches(tmp_path):
     hits = server.search("hello")
     assert len(hits) == 1
     assert hits[0].relative_path == "app.py"
+

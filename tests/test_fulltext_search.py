@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from faith.mcp.fulltext_search import FullTextSearchServer, RipgrepRunner
+from faith_mcp.fulltext_search import FullTextSearchServer, RipgrepRunner
 
 
 @pytest.mark.asyncio
@@ -52,7 +52,7 @@ async def test_server_returns_json_safe_dict(tmp_path, monkeypatch):
     server = FullTextSearchServer(tmp_path)
 
     async def fake_search(pattern, *, path=None, ignore_case=False):
-        from faith.mcp.fulltext_search.models import SearchResult
+        from faith_mcp.fulltext_search.models import SearchResult
 
         return SearchResult(match_count=0)
 
@@ -60,3 +60,4 @@ async def test_server_returns_json_safe_dict(tmp_path, monkeypatch):
     payload = await server.search("needle")
     assert payload["match_count"] == 0
     assert payload["matches"] == []
+

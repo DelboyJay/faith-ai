@@ -1,8 +1,8 @@
 import asyncio
 
-from faith.pa.mcp_adapter import MCPAdapter
-from faith.pa.tool_router import ToolRouter
-from faith.protocol.compact import CompactMessage, MessageStatus, MessageType
+from faith_pa.pa.mcp_adapter import MCPAdapter
+from faith_pa.pa.tool_router import ToolRouter
+from faith_shared.protocol.compact import CompactMessage, MessageStatus, MessageType
 
 
 def build_tool_call() -> CompactMessage:
@@ -61,3 +61,4 @@ def test_tool_router_routes_by_agent_capability():
 
     assert native_result.data["result"]["echo"] == "filesystem_read"
     assert prompt_result.data["result"]["via"] == "prompt"
+

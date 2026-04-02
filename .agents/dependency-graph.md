@@ -1,7 +1,7 @@
 # FAITH Epic — Dependency Graph & Implementation Schedule
 
 **Generated from:** `epic.yaml`
-**Date:** 2026-04-01
+**Date:** 2026-04-02
 
 ---
 
@@ -9,27 +9,27 @@
 
 | Task ID | Task Name | Phase | Status | Dependencies | Complexity | Model |
 | --------- | ----------- | ------- | -------- | -------------- | ------------ | ------- |
-| FAITH-001 | Project Directory Structure & Base Scaffolding | 1 (Foundation) | DONE | None | S | Haiku / GPT-5.4-mini |
+| FAITH-001 | Project Directory Structure & Base Scaffolding | 1 (Foundation) | IN PROGRESS | None | S | Haiku / GPT-5.4-mini |
 | FAITH-002 | Redis Container Setup | 1 (Foundation) | DONE | FAITH-001 | S | Haiku / GPT-5.4-mini |
-| FAITH-003 | Configuration System: YAML Loading & Pydantic Models | 1 (Foundation) | DONE | FAITH-001 | M | Sonnet / GPT-5.4 |
+| FAITH-003 | Configuration System: YAML Loading & Pydantic Models | 1 (Foundation) | IN PROGRESS | FAITH-001 | M | Sonnet / GPT-5.4 |
 | FAITH-004 | Config Hot-Reload Watcher | 1 (Foundation) | DONE | FAITH-003, FAITH-002 | M | Sonnet / GPT-5.4 |
-| FAITH-005 | FAITH CLI (`faith-cli` Package) | 1 (Foundation) | DONE | FAITH-001, FAITH-002 | M | Sonnet / GPT-5.4 |
+| FAITH-005 | FAITH CLI (`faith-cli` Package) | 1 (Foundation) | IN PROGRESS | FAITH-001, FAITH-002 | M | Sonnet / GPT-5.4 |
 | FAITH-006 | Config Migration System | 1 (Foundation) | DONE | FAITH-003 | S | Haiku / GPT-5.4-mini |
 | FAITH-007 | Compact Protocol Data Models & Serialisation | 2 (Protocol & Events) | DONE | FAITH-002 | M | Sonnet / GPT-5.4 |
-| FAITH-008 | Event System Data Models & Publisher | 2 (Protocol & Events) | DONE | FAITH-002 | M | Sonnet / GPT-5.4 |
+| FAITH-008 | Event System Data Models & Publisher | 2 (Protocol & Events) | IN PROGRESS | FAITH-002 | M | Sonnet / GPT-5.4 |
 | FAITH-009 | Event Subscriber & Dispatcher | 2 (Protocol & Events) | DONE | FAITH-008 | M | Sonnet / GPT-5.4 |
-| FAITH-010 | Base Agent Class | 3 (Agent Runtime) | DONE | FAITH-007, FAITH-008 | L | Sonnet / GPT-5.4 |
+| FAITH-010 | Base Agent Class | 3 (Agent Runtime) | IN PROGRESS | FAITH-007, FAITH-008 | L | Sonnet / GPT-5.4 |
 | FAITH-011 | Rolling Context Summary & Compaction | 3 (Agent Runtime) | DONE | FAITH-010 | M | Sonnet / GPT-5.4 |
 | FAITH-012 | MCP Adapter Layer | 3 (Agent Runtime) | DONE | FAITH-010 | L | Sonnet / GPT-5.4 |
-| FAITH-013 | LLM API Client (Ollama + OpenRouter) | 3 (Agent Runtime) | DONE | FAITH-010 | M | Sonnet / GPT-5.4 |
-| FAITH-014 | PA Container Setup & Docker SDK Integration | 4 (PA Core) | DONE | FAITH-001, FAITH-002, FAITH-010 | M | Sonnet / GPT-5.4 |
-| FAITH-015 | PA Session & Task Management | 4 (PA Core) | DONE | FAITH-014, FAITH-057, FAITH-009 | L | Opus / GPT-5.4 high reasoning |
+| FAITH-013 | LLM API Client (Ollama + OpenRouter) | 3 (Agent Runtime) | IN PROGRESS | FAITH-010 | M | Sonnet / GPT-5.4 |
+| FAITH-014 | PA Container Setup & Docker SDK Integration | 4 (PA Core) | IN PROGRESS | FAITH-001, FAITH-002, FAITH-010 | M | Sonnet / GPT-5.4 |
+| FAITH-015 | PA Session & Task Management | 4 (PA Core) | IN PROGRESS | FAITH-014, FAITH-057, FAITH-009 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-016 | PA Event Dispatcher & Intervention Logic | 4 (PA Core) | DONE | FAITH-015, FAITH-009 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-017 | Loop Detection | 4 (PA Core) | DONE | FAITH-016 | M | Sonnet / GPT-5.4 |
 | FAITH-018 | Living FRS Management | 4 (PA Core) | DONE | FAITH-015 | M | Sonnet / GPT-5.4 |
-| FAITH-019 | Security YAML Schema & Regex Approval Engine | 5 (Security) | DONE | FAITH-003 | M | Sonnet / GPT-5.4 |
-| FAITH-020 | Approval Request/Response Flow | 5 (Security) | DONE | FAITH-019, FAITH-008 | M | Sonnet / GPT-5.4 |
-| FAITH-021 | Audit Log System | 5 (Security) | DONE | FAITH-008 | M | Haiku / GPT-5.4-mini |
+| FAITH-019 | Security YAML Schema & Regex Approval Engine | 5 (Security) | IN PROGRESS | FAITH-003 | M | Sonnet / GPT-5.4 |
+| FAITH-020 | Approval Request/Response Flow | 5 (Security) | IN PROGRESS | FAITH-019, FAITH-008 | M | Sonnet / GPT-5.4 |
+| FAITH-021 | Audit Log System | 5 (Security) | IN PROGRESS | FAITH-008 | M | Haiku / GPT-5.4-mini |
 | FAITH-022 | Filesystem MCP Server | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008, FAITH-057 | L | Sonnet / GPT-5.4 |
 | FAITH-023 | Filesystem File History | 6 (Tool Servers) | TODO | FAITH-022 | M | Haiku / GPT-5.4-mini |
 | FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008, FAITH-057 | M | Sonnet / GPT-5.4 |
@@ -65,7 +65,7 @@
 | FAITH-054 | `faith run` Command & Task API | 11 (CLI & Skills) | TODO | FAITH-005, FAITH-036, FAITH-015 | M | Sonnet / GPT-5.4 |
 | FAITH-055 | Skill Definitions & Unattended Execution | 11 (CLI & Skills) | TODO | FAITH-054, FAITH-019 | M | Sonnet / GPT-5.4 |
 | FAITH-056 | Built-in Skill Scheduler | 11 (CLI & Skills) | TODO | FAITH-055, FAITH-004 | M | Sonnet / GPT-5.4 |
-| FAITH-057 | Disposable Sandbox Lifecycle & Scheduling | 4 (PA Core) | DONE | FAITH-014 | L | Sonnet / GPT-5.4 |
+| FAITH-057 | Disposable Sandbox Lifecycle & Scheduling | 4 (PA Core) | IN PROGRESS | FAITH-014 | L | Sonnet / GPT-5.4 |
 | FAITH-058 | Docker Runtime & Image Panel | 8 (Web UI) | TODO | FAITH-014, FAITH-036, FAITH-037 | M | Sonnet / GPT-5.4 |
 
 ---
@@ -75,36 +75,36 @@
 ```mermaid
 flowchart TD
     %% ── Phase 1: Foundation ──
-    FAITH-001["FAITH-001<br/>Project Directory Structure & Base Scaffolding<br/>Phase 1 | DONE | S"]
+    FAITH-001["FAITH-001<br/>Project Directory Structure & Base Scaffolding<br/>Phase 1 | IN PROGRESS | S"]
     FAITH-002["FAITH-002<br/>Redis Container Setup<br/>Phase 1 | DONE | S"]
-    FAITH-003["FAITH-003<br/>Configuration System: YAML Loading & Pydantic Models<br/>Phase 1 | DONE | M"]
+    FAITH-003["FAITH-003<br/>Configuration System: YAML Loading & Pydantic Models<br/>Phase 1 | IN PROGRESS | M"]
     FAITH-004["FAITH-004<br/>Config Hot-Reload Watcher<br/>Phase 1 | DONE | M"]
-    FAITH-005["FAITH-005<br/>FAITH CLI (`faith-cli` Package)<br/>Phase 1 | DONE | M"]
+    FAITH-005["FAITH-005<br/>FAITH CLI (`faith-cli` Package)<br/>Phase 1 | IN PROGRESS | M"]
     FAITH-006["FAITH-006<br/>Config Migration System<br/>Phase 1 | DONE | S"]
 
     %% ── Phase 2: Protocol & Events ──
     FAITH-007["FAITH-007<br/>Compact Protocol Data Models & Serialisation<br/>Phase 2 | DONE | M"]
-    FAITH-008["FAITH-008<br/>Event System Data Models & Publisher<br/>Phase 2 | DONE | M"]
+    FAITH-008["FAITH-008<br/>Event System Data Models & Publisher<br/>Phase 2 | IN PROGRESS | M"]
     FAITH-009["FAITH-009<br/>Event Subscriber & Dispatcher<br/>Phase 2 | DONE | M"]
 
     %% ── Phase 3: Agent Runtime ──
-    FAITH-010["FAITH-010<br/>Base Agent Class<br/>Phase 3 | DONE | L"]
+    FAITH-010["FAITH-010<br/>Base Agent Class<br/>Phase 3 | IN PROGRESS | L"]
     FAITH-011["FAITH-011<br/>Rolling Context Summary & Compaction<br/>Phase 3 | DONE | M"]
     FAITH-012["FAITH-012<br/>MCP Adapter Layer<br/>Phase 3 | DONE | L"]
-    FAITH-013["FAITH-013<br/>LLM API Client (Ollama + OpenRouter)<br/>Phase 3 | DONE | M"]
+    FAITH-013["FAITH-013<br/>LLM API Client (Ollama + OpenRouter)<br/>Phase 3 | IN PROGRESS | M"]
 
     %% ── Phase 4: PA Core ──
-    FAITH-014["FAITH-014<br/>PA Container Setup & Docker SDK Integration<br/>Phase 4 | DONE | M"]
-    FAITH-015["FAITH-015<br/>PA Session & Task Management<br/>Phase 4 | DONE | L"]
+    FAITH-014["FAITH-014<br/>PA Container Setup & Docker SDK Integration<br/>Phase 4 | IN PROGRESS | M"]
+    FAITH-015["FAITH-015<br/>PA Session & Task Management<br/>Phase 4 | IN PROGRESS | L"]
     FAITH-016["FAITH-016<br/>PA Event Dispatcher & Intervention Logic<br/>Phase 4 | DONE | L"]
     FAITH-017["FAITH-017<br/>Loop Detection<br/>Phase 4 | DONE | M"]
     FAITH-018["FAITH-018<br/>Living FRS Management<br/>Phase 4 | DONE | M"]
-    FAITH-057["FAITH-057<br/>Disposable Sandbox Lifecycle & Scheduling<br/>Phase 4 | DONE | L"]
+    FAITH-057["FAITH-057<br/>Disposable Sandbox Lifecycle & Scheduling<br/>Phase 4 | IN PROGRESS | L"]
 
     %% ── Phase 5: Security ──
-    FAITH-019["FAITH-019<br/>Security YAML Schema & Regex Approval Engine<br/>Phase 5 | DONE | M"]
-    FAITH-020["FAITH-020<br/>Approval Request/Response Flow<br/>Phase 5 | DONE | M"]
-    FAITH-021["FAITH-021<br/>Audit Log System<br/>Phase 5 | DONE | M"]
+    FAITH-019["FAITH-019<br/>Security YAML Schema & Regex Approval Engine<br/>Phase 5 | IN PROGRESS | M"]
+    FAITH-020["FAITH-020<br/>Approval Request/Response Flow<br/>Phase 5 | IN PROGRESS | M"]
+    FAITH-021["FAITH-021<br/>Audit Log System<br/>Phase 5 | IN PROGRESS | M"]
 
     %% ── Phase 6: Tool Servers ──
     FAITH-022["FAITH-022<br/>Filesystem MCP Server<br/>Phase 6 | TODO | L"]
@@ -367,23 +367,23 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 ### Wave 1
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
-| FAITH-001 | Project Directory Structure & Base Scaffolding | 1 (Foundation) | DONE | S |
+| FAITH-001 | Project Directory Structure & Base Scaffolding | 1 (Foundation) | IN PROGRESS | S |
 
 ### Wave 2
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
 | FAITH-002 | Redis Container Setup | 1 (Foundation) | DONE | S |
-| FAITH-003 | Configuration System: YAML Loading & Pydantic Models | 1 (Foundation) | DONE | M |
+| FAITH-003 | Configuration System: YAML Loading & Pydantic Models | 1 (Foundation) | IN PROGRESS | M |
 
 ### Wave 3
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
 | FAITH-004 | Config Hot-Reload Watcher | 1 (Foundation) | DONE | M |
-| FAITH-005 | FAITH CLI (`faith-cli` Package) | 1 (Foundation) | DONE | M |
+| FAITH-005 | FAITH CLI (`faith-cli` Package) | 1 (Foundation) | IN PROGRESS | M |
 | FAITH-006 | Config Migration System | 1 (Foundation) | DONE | S |
 | FAITH-007 | Compact Protocol Data Models & Serialisation | 2 (Protocol & Events) | DONE | M |
-| FAITH-008 | Event System Data Models & Publisher | 2 (Protocol & Events) | DONE | M |
-| FAITH-019 | Security YAML Schema & Regex Approval Engine | 5 (Security) | DONE | M |
+| FAITH-008 | Event System Data Models & Publisher | 2 (Protocol & Events) | IN PROGRESS | M |
+| FAITH-019 | Security YAML Schema & Regex Approval Engine | 5 (Security) | IN PROGRESS | M |
 | FAITH-031 | Web Search MCP Server | 6 (Tool Servers) | TODO | S |
 | FAITH-033 | Key-Value Store MCP Server | 6 (Tool Servers) | TODO | S |
 
@@ -391,9 +391,9 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
 | FAITH-009 | Event Subscriber & Dispatcher | 2 (Protocol & Events) | DONE | M |
-| FAITH-010 | Base Agent Class | 3 (Agent Runtime) | DONE | L |
-| FAITH-020 | Approval Request/Response Flow | 5 (Security) | DONE | M |
-| FAITH-021 | Audit Log System | 5 (Security) | DONE | M |
+| FAITH-010 | Base Agent Class | 3 (Agent Runtime) | IN PROGRESS | L |
+| FAITH-020 | Approval Request/Response Flow | 5 (Security) | IN PROGRESS | M |
+| FAITH-021 | Audit Log System | 5 (Security) | IN PROGRESS | M |
 | FAITH-025 | PostgreSQL Database MCP Server | 6 (Tool Servers) | TODO | M |
 | FAITH-026 | Browser Automation MCP Server (Playwright) | 6 (Tool Servers) | TODO | L |
 | FAITH-029 | Git MCP Server | 6 (Tool Servers) | TODO | M |
@@ -404,8 +404,8 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 |------|------|-------|--------|------------|
 | FAITH-011 | Rolling Context Summary & Compaction | 3 (Agent Runtime) | DONE | M |
 | FAITH-012 | MCP Adapter Layer | 3 (Agent Runtime) | DONE | L |
-| FAITH-013 | LLM API Client (Ollama + OpenRouter) | 3 (Agent Runtime) | DONE | M |
-| FAITH-014 | PA Container Setup & Docker SDK Integration | 4 (PA Core) | DONE | M |
+| FAITH-013 | LLM API Client (Ollama + OpenRouter) | 3 (Agent Runtime) | IN PROGRESS | M |
+| FAITH-014 | PA Container Setup & Docker SDK Integration | 4 (PA Core) | IN PROGRESS | M |
 | FAITH-030 | Pricing MCP Server | 6 (Tool Servers) | TODO | M |
 | FAITH-037 | GoldenLayout Panel Framework | 8 (Web UI) | TODO | M |
 | FAITH-045 | Event Log Writer | 9 (Logging) | TODO | S |
@@ -421,13 +421,13 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-042 | Terminal Dark Theme CSS | 8 (Web UI) | TODO | S |
 | FAITH-044 | Web UI Log Views | 8 (Web UI) | TODO | M |
 | FAITH-047 | Token & Cost Log | 9 (Logging) | TODO | S |
-| FAITH-057 | Disposable Sandbox Lifecycle & Scheduling | 4 (PA Core) | DONE | L |
+| FAITH-057 | Disposable Sandbox Lifecycle & Scheduling | 4 (PA Core) | IN PROGRESS | L |
 | FAITH-058 | Docker Runtime & Image Panel | 8 (Web UI) | TODO | M |
 
 ### Wave 7
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
-| FAITH-015 | PA Session & Task Management | 4 (PA Core) | DONE | L |
+| FAITH-015 | PA Session & Task Management | 4 (PA Core) | IN PROGRESS | L |
 | FAITH-022 | Filesystem MCP Server | 6 (Tool Servers) | TODO | L |
 | FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | TODO | M |
 | FAITH-048 | Log Retention & Rotation | 9 (Logging) | TODO | S |

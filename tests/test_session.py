@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from faith.config.models import PAConfig, PrivacyProfile, SystemConfig
-from faith.pa.session import AgentState, SessionManager
+from faith_pa.config.models import PAConfig, PrivacyProfile, SystemConfig
+from faith_pa.pa.session import AgentState, SessionManager
 
 
 class FakeRedis:
@@ -63,3 +63,4 @@ def test_agent_state_roundtrip() -> None:
     parsed = AgentState.from_markdown(state.to_markdown())
 
     assert parsed == state
+

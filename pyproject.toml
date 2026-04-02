@@ -40,8 +40,24 @@ faith = "faith_cli.cli:main"
 [tool.setuptools]
 include-package-data = true
 
+[tool.setuptools.package-data]
+faith_cli = [
+  "resources/docker-compose.yml",
+  "resources/config/.env.template",
+  "resources/config/secrets.yaml.template",
+  "resources/config/archetypes/*.yaml",
+  "resources/data/*.json",
+  "resources/.gitignore",
+]
+faith_web = [
+  "templates/*.html",
+]
+[tool.setuptools.package-dir]
+"" = "src"
+
 [tool.setuptools.packages.find]
-include = ["faith*", "faith_cli*"]
+where = ["src"]
+include = ["faith_cli*", "faith_pa*", "faith_web*", "faith_shared*", "faith_mcp*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -64,3 +80,5 @@ ignore = ["E501"]
 quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
+
+

@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from faith.protocol.events import EventType, FaithEvent
-from faith.protocol.subscriber import CompletionBatcher, EventSubscriber, StallDetector
+from faith_shared.protocol.events import EventType, FaithEvent
+from faith_shared.protocol.subscriber import CompletionBatcher, EventSubscriber, StallDetector
 
 
 class FakePubSub:
@@ -176,3 +176,4 @@ async def test_completion_batcher_ignores_immediate_events():
     assert handled is False
     assert batcher.active_batches == ["batch-3"]
     batcher.cancel("batch-3")
+

@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from faith.security.approval_engine import ApprovalEngine, ApprovalTier
-from faith.security.approval_flow import ApprovalFlow, UserApprovalDecision
-from faith.security.audit_log import AuditLogger
+from faith_pa.security.approval_engine import ApprovalEngine, ApprovalTier
+from faith_pa.security.approval_flow import ApprovalFlow, UserApprovalDecision
+from faith_pa.security.audit_log import AuditLogger
 
 
 class DummyPublisher:
@@ -125,3 +125,4 @@ async def test_flow_logs_audit_decision(tmp_path):
     assert len(entries) == 1
     assert entries[0].decision == "denied"
     assert entries[0].approval_tier == "deny_once"
+

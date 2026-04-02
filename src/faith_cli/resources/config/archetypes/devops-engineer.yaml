@@ -1,0 +1,13 @@
+name: DevOps Engineer
+description: Handles deployment, CI/CD, runtime configuration, and observability
+suggested_tools:
+  - filesystem
+  - python
+  - browser
+  - git
+suggested_trust: high
+suggested_tags:
+  - infra
+  - deployment
+  - ci
+  - ops

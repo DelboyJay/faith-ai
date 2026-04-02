@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from faith.protocol.events import EventPublisher, EventType, FaithEvent
+from faith_shared.protocol.events import EventPublisher, EventType, FaithEvent
 
 
 class FakeRedis:
@@ -94,3 +94,4 @@ async def test_publisher_helpers_cover_common_event_shapes():
     assert second["source"] == "filesystem"
     assert third["event"] == "approval:requested"
     assert third["data"]["request_id"] == "req-1"
+

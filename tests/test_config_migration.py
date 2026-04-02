@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import yaml
 
-from faith.config.migration import CURRENT_SCHEMA_VERSION, MigrationEngine
+from faith_pa.config.migration import CURRENT_SCHEMA_VERSION, MigrationEngine
 
 
 def write_yaml(path: Path, data: dict) -> Path:
@@ -122,3 +122,4 @@ def test_migration_guide_mentions_versions(tmp_path):
     assert "schema version" in guide
     assert item.current_version in guide
     assert CURRENT_SCHEMA_VERSION in guide
+

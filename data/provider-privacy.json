@@ -1,0 +1,18 @@
+{
+  "generated_date": "2026-03-23",
+  "source": "curated-faith-reference",
+  "providers": {
+    "openrouter": {
+      "training_opt_out_supported": true,
+      "human_review": "provider-dependent",
+      "data_retention": "provider-dependent",
+      "faith_privacy_tier": "internal"
+    },
+    "ollama": {
+      "training_opt_out_supported": true,
+      "human_review": false,
+      "data_retention": "local-only",
+      "faith_privacy_tier": "private"
+    }
+  }
+}

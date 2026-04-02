@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from faith.config.hot_reload import ConfigWatcher
+from faith_pa.config.hot_reload import ConfigWatcher
 
 
 class FakeRedis:
@@ -117,3 +117,4 @@ async def test_prompt_change_skips_validation_and_publishes(watcher_env):
     events = await watcher.poll_once()
     assert events == [{"path": str(prompt_path), "kind": "agent.prompt"}]
     assert handled == ["prompt.md"]
+

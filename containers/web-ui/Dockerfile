@@ -5,11 +5,14 @@ WORKDIR /app
 COPY containers/web-ui/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY faith/ /app/faith/
+COPY src/ /app/src/
+COPY web/ /app/web/
 
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8080
 
-CMD ["uvicorn", "faith.web.app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "faith_web.app:app", "--host", "0.0.0.0", "--port", "8080"]
+
+

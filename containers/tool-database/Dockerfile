@@ -5,9 +5,12 @@ WORKDIR /app
 COPY containers/tool-database/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY faith/ /app/faith/
+COPY src/ /app/src/
+COPY web/ /app/web/
 
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
 
 CMD ["python", "-c", "print('FAITH database tool scaffold')"]
+
+

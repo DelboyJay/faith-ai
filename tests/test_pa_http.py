@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-import faith.pa.app as pa_app_module
+import faith_pa.pa.app as pa_app_module
 
 
 class FakeRedis:
@@ -249,3 +249,4 @@ def test_pa_health_returns_503_when_redis_unhealthy(
 
     assert response.status_code == 503
     assert response.json()["status"] == "degraded"
+

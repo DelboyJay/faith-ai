@@ -1,0 +1,11 @@
+name: Code Reviewer
+description: Reviews code for correctness, quality, and regressions
+suggested_tools:
+  - filesystem
+  - code-index
+  - git
+suggested_trust: standard
+suggested_tags:
+  - review
+  - quality
+  - risk

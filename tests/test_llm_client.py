@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from faith.agent.llm_client import (
+from faith_pa.agent.llm_client import (
     LLMClient,
     LLMPermanentError,
     LLMRetryableError,
@@ -89,3 +89,4 @@ def test_call_ollama_normalises_response_payload():
     assert result.content == "hello"
     assert result.input_tokens == 4
     assert result.output_tokens == 6
+

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from faith.pa.sandbox_manager import SandboxManager, SandboxQuotaExceeded
-from faith.pa.sandbox_models import SandboxQuota, SandboxRequest
+from faith_pa.pa.sandbox_manager import SandboxManager, SandboxQuotaExceeded
+from faith_pa.pa.sandbox_models import SandboxQuota, SandboxRequest
 
 
 class FakeContainerManager:
@@ -37,3 +37,4 @@ async def test_quota_is_enforced() -> None:
                 requires_isolation=True,
             )
         )
+

@@ -1,6 +1,6 @@
 import time
 
-from faith.security.audit_log import AuditEntry, AuditLogger
+from faith_pa.security.audit_log import AuditEntry, AuditLogger
 
 
 def test_audit_entry_round_trip():
@@ -57,3 +57,4 @@ def test_file_restoration_uses_allow_once(tmp_path):
     logger = AuditLogger(tmp_path / "logs")
     entry = logger.log_file_restoration(agent="dev", target="/repo/file.txt")
     assert entry.approval_tier == "allow_once"
+

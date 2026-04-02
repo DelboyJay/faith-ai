@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from faith.pa.secret_resolver import SecretResolver
+from faith_pa.pa.secret_resolver import SecretResolver
 
 
 def test_resolve_environment_and_secret_refs(tmp_path: Path) -> None:
@@ -56,3 +56,4 @@ def test_unknown_secret_ref_raises_key_error(tmp_path: Path) -> None:
 
     with pytest.raises(KeyError):
         resolver.resolve_secret_ref("missing")
+

@@ -1,0 +1,11 @@
+name: Technical Writer
+description: Produces user-facing and internal technical documentation
+suggested_tools:
+  - filesystem
+  - browser
+  - search
+suggested_trust: standard
+suggested_tags:
+  - docs
+  - onboarding
+  - guides
