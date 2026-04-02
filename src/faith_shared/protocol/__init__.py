@@ -14,7 +14,12 @@ from faith_shared.protocol.compact import (
     MessageStatus,
     MessageType,
 )
-from faith_shared.protocol.events import EventPublisher, EventType, FaithEvent
+from faith_shared.protocol.events import (
+    EventPublisher,
+    EventType,
+    FaithEvent,
+    SYSTEM_EVENTS_CHANNEL,
+)
 from faith_shared.protocol.subscriber import (
     CompletionBatcher,
     EventHandler,
@@ -32,6 +37,7 @@ __all__ = [
     "FaithEvent",
     "EventType",
     "EventPublisher",
+    "SYSTEM_EVENTS_CHANNEL",
     "EventSubscriber",
     "EventHandler",
     "StallDetector",

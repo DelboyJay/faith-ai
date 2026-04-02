@@ -15,8 +15,9 @@ import redis as sync_redis
 import redis.asyncio as aioredis
 from redis.exceptions import RedisError
 
+from faith_shared.protocol.events import SYSTEM_EVENTS_CHANNEL
+
 DEFAULT_REDIS_URL = "redis://redis:6379/0"
-SYSTEM_EVENTS_CHANNEL = "system-events"
 USER_INPUT_CHANNEL = "pa-input"
 
 

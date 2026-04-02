@@ -19,9 +19,8 @@ from typing import Any
 import redis.asyncio as aioredis
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from faith_pa.utils.redis_client import SYSTEM_EVENTS_CHANNEL
-
 logger = logging.getLogger("faith.protocol.events")
+SYSTEM_EVENTS_CHANNEL = "system-events"
 
 
 class EventType(str, Enum):
@@ -690,6 +689,29 @@ class EventPublisher:
             self._event(EventType.SYSTEM_CONFIG_CHANGED, data={"file": file, "path": path})
         )
 
+    async def system_config_error(
+        self,
+        file: str,
+        error: str,
+        path: str | None = None,
+    ) -> None:
+        """
+        Description:
+            Publish a system-config-error event.
+
+        Requirements:
+            - Include the config file name and validation error text.
+            - Include the config path only when supplied.
+
+        :param file: Config file name that failed validation.
+        :param error: Validation or reload error text.
+        :param path: Optional config file path.
+        """
+        data: dict[str, Any] = {"file": file, "error": error}
+        if path is not None:
+            data["path"] = path
+        await self.publish(self._event(EventType.SYSTEM_CONFIG_ERROR, data=data))
+
     async def system_container_started(self, container_name: str, container_type: str) -> None:
         """
         Description:
@@ -744,6 +766,96 @@ class EventPublisher:
             )
         )
 
+
+    async def batch_complete(
+        self,
+        batch_id: str,
+        results: list[dict[str, Any]],
+        count: int | None = None,
+    ) -> None:
+        """
+        Description:
+            Publish a batch-complete event.
+
+        Requirements:
+            - Include the batch identifier and buffered result payloads.
+            - Default the count to the number of supplied results.
+
+        :param batch_id: Completion batch identifier.
+        :param results: Buffered completion result payloads.
+        :param count: Optional explicit result count override.
+        """
+        await self.publish(
+            self._event(
+                EventType.BATCH_COMPLETE,
+                data={
+                    "batch_id": batch_id,
+                    "results": results,
+                    "count": len(results) if count is None else count,
+                },
+            )
+        )
+
+    async def batch_timeout(
+        self,
+        batch_id: str,
+        completed_results: list[dict[str, Any]],
+        still_pending: list[str],
+    ) -> None:
+        """
+        Description:
+            Publish a batch-timeout event.
+
+        Requirements:
+            - Include both the completed results and the task identifiers still pending.
+            - Record completed and pending counts explicitly.
+
+        :param batch_id: Completion batch identifier.
+        :param completed_results: Buffered results received before timeout.
+        :param still_pending: Task identifiers still outstanding when the timeout fired.
+        """
+        await self.publish(
+            self._event(
+                EventType.BATCH_TIMEOUT,
+                data={
+                    "batch_id": batch_id,
+                    "completed_results": completed_results,
+                    "completed_count": len(completed_results),
+                    "still_pending": still_pending,
+                    "pending_count": len(still_pending),
+                },
+            )
+        )
+
+    async def batch_partial(
+        self,
+        batch_id: str,
+        results: list[dict[str, Any]],
+        still_pending: list[str],
+    ) -> None:
+        """
+        Description:
+            Publish a batch-partial event.
+
+        Requirements:
+            - Include the buffered results and the remaining pending task identifiers.
+            - Record the number of completed results explicitly.
+
+        :param batch_id: Completion batch identifier.
+        :param results: Buffered results received so far.
+        :param still_pending: Task identifiers still outstanding.
+        """
+        await self.publish(
+            self._event(
+                EventType.BATCH_PARTIAL,
+                data={
+                    "batch_id": batch_id,
+                    "results": results,
+                    "count": len(results),
+                    "still_pending": still_pending,
+                },
+            )
+        )
 
 def _now_iso() -> str:
     """
