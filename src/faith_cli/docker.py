@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from faith_cli.paths import compose_file, faith_home
+from faith_cli.paths import compose_file, faith_home, is_editable_install
 
 
 def compose_project_directory() -> Path:
@@ -44,6 +44,8 @@ def run_compose(*args: str, capture_output: bool = False) -> subprocess.Complete
 def compose_up() -> subprocess.CompletedProcess[str]:
     """Start the extracted FAITH bootstrap stack."""
 
+    if is_editable_install():
+        return run_compose("up", "-d", "--remove-orphans", "--build")
     return run_compose("up", "-d", "--remove-orphans")
 
 
@@ -70,3 +72,4 @@ def is_running() -> bool:
 
     result = run_compose("ps", "--status", "running", "-q", capture_output=True)
     return result.returncode == 0 and bool((result.stdout or "").strip())
+

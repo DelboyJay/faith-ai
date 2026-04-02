@@ -258,3 +258,39 @@ def test_compose_file_uses_installed_bundle(monkeypatch, tmp_path: Path) -> None
     installed.write_text("services: {}\n", encoding="utf-8")
 
     assert paths.compose_file() == installed
+
+def test_init_writes_repo_backed_compose_for_editable_install(monkeypatch, tmp_path: Path) -> None:
+    """
+    Description:
+        Verify editable installs bootstrap a compose file that builds from the
+        local repository rather than pulling stale published images.
+
+    Requirements:
+        - This test is needed to prevent `faith init` from starting outdated
+          image-based services while the local checkout contains newer code.
+        - Verify the generated compose file references the repository root as
+          the PA and Web UI build context.
+    """
+
+    home = _fake_home(monkeypatch, tmp_path)
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    monkeypatch.setattr("faith_cli.cli.check_python_version", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.check_git", lambda: None)
+    monkeypatch.setattr(
+        "faith_cli.cli.compose_up", lambda: subprocess.CompletedProcess(["docker"], 0)
+    )
+    monkeypatch.setattr("faith_cli.cli.wait_and_open_browser", lambda: True)
+    monkeypatch.setattr("faith_cli.paths.source_root", lambda: repo_root)
+    monkeypatch.setattr("faith_cli.paths.is_editable_install", lambda: True)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["init"])
+
+    assert result.exit_code == 0
+    compose_text = (home / "docker-compose.yml").read_text(encoding="utf-8")
+    expected_root = repo_root.as_posix()
+    assert f"context: {expected_root}" in compose_text
+    assert "ghcr.io/faith/faith-project-agent:latest" not in compose_text
+    assert "ghcr.io/faith/faith-web-ui:latest" not in compose_text
