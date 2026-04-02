@@ -20,3 +20,18 @@ Use that file as the project code-style authority for:
 - testing expectations
 
 If the task does not involve code changes, loading `coding-style.md` is not required.
+
+## Requirements Source of Truth
+
+The Functional Requirements Specification at
+[`.agents/FRS-Multi-Agent-AI-Framework.md`](E:\ClaudeSharedFolder\AI Agent Framework\.agents\FRS-Multi-Agent-AI-Framework.md)
+is the source of truth for product behaviour, architecture, and acceptance intent.
+
+Task documents under
+[`.agents/tasks/`](E:\ClaudeSharedFolder\AI Agent Framework\.agents\tasks)
+are derived implementation briefs only.
+
+If a task document conflicts with the FRS, the FRS takes precedence.
+
+If such a conflict is found, the task document must be updated to match the FRS
+before the task is treated as fully implementable or complete.

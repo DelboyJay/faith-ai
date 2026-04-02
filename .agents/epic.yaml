@@ -87,7 +87,7 @@ phases:
         summary: 'Implement schema version detection on startup for all config files (`.faith/system.yaml`, `.faith/security.yaml`, `.faith/tools/*.yaml`, `.faith/agents/*/config.yaml`, `config/secrets.yaml`). If version mismatch: display migration guide, offer auto-migrate with backup (`*.bak-vX.Y`), validate after migration. No silent migrations.'
   - id: 2
     title: 'Compact Protocol & Event System'
-    status: 'TODO'
+    status: 'DONE'
     summary: 'Define the messaging and event data models that underpin all communication.'
     task_count: 4
     tasks:
@@ -104,7 +104,7 @@ phases:
         name: 'Event System Data Models & Publisher'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-008-event-system-publisher.md'
         dependencies: ['FAITH-002']
         frs_reference: 'Section 3.7.1–3.7.4'
@@ -159,7 +159,7 @@ phases:
         task_doc: 'tasks/FAITH-013-llm-api-client.md'
         dependencies: ['FAITH-010']
         frs_reference: 'Section 3.6.4, 3.6.5'
-        summary: 'Implement unified LLM API client supporting both Ollama (`/api/chat`) and OpenRouter (`/api/v1/chat/completions`) endpoints. Include exponential backoff retry (3 retries, 2s→4s→8s). Classify errors: retry on 429/503/timeout, fail on 400/401/404. Fallback model support. Publish `agent:error` after 3 failures. Model config from `.faith/agents/{id}/config.yaml` with `.faith/system.yaml` defaults.'
+        summary: 'Implement unified LLM API client supporting both Ollama (`/api/chat`) and OpenRouter (`/api/v1/chat/completions`) endpoints. Ollama access must support bundled-container and external-host endpoints, resolved in a platform-aware way (Linux container-first when accelerator support is confirmed, Windows container only when WSL2/Docker GPU support is confirmed otherwise host Ollama, macOS host Ollama by default). Include startup capability probing for local models (working GPU path, usable VRAM, RAM fallback, lightweight inference check), exponential backoff retry (3 retries, 2s→4s→8s), error classification, fallback model support, and `agent:error` publication after retry exhaustion. Model config from `.faith/agents/{id}/config.yaml` with `.faith/system.yaml` defaults.'
   - id: 4
     title: 'PA Core'
     status: 'TODO'
@@ -543,7 +543,7 @@ phases:
         task_doc: 'tasks/FAITH-049-first-run-wizard.md'
         dependencies: ['FAITH-036', 'FAITH-003', 'FAITH-014', 'FAITH-057']
         frs_reference: 'Section 9.3'
-        summary: 'Implement the 6-step first-run wizard in the Web UI: (1) Docker socket disclosure + acknowledgement, including the distinction between PA host-level Docker control and disposable sandbox root access, (2) Privacy profile selection with plain-language descriptions plus an Ollama enable/disable choice, (3) PA model selection (OpenRouter vs local Ollama, with bundled containerized Ollama available by default and external-host override for advanced users), (4) Default specialist model selection, (5) First project setup — create `.faith/` directory, generate `system.yaml`, tool configs, and propose agent team, (6) Launch all containers + onboarding overlay. The wizard must also support reopening after setup in an edit mode that preloads current settings and writes changes back through the same config pipeline. For existing codebase: create `.faith/` inside project, warn about write access, auto-generate draft `.faith/docs/frs.md` from codebase analysis. Secrets (API keys, DB passwords) go to framework-level `config/secrets.yaml`, not project config.'
+        summary: 'Implement the 6-step first-run wizard in the Web UI: (1) Docker socket disclosure + acknowledgement, including the distinction between PA host-level Docker control and disposable sandbox root access, (2) Privacy profile selection with plain-language descriptions plus an Ollama enable/disable choice, (3) PA model selection (OpenRouter vs local Ollama, using platform-aware Ollama routing: Linux prefers bundled container Ollama when accelerator support is confirmed, Windows uses bundled container Ollama only when WSL2/Docker GPU support is confirmed otherwise native host Ollama, macOS defaults to native host Ollama), (4) Default specialist model selection, (5) First project setup — create `.faith/` directory, generate `system.yaml`, tool configs, and propose agent team, (6) Launch all containers + onboarding overlay. Local-model recommendations must be based on measured runtime capability (working GPU path, usable VRAM, RAM fallback, inference probe), not static model names. The wizard must also support reopening after setup in an edit mode that preloads current settings and writes changes back through the same config pipeline. For existing codebase: create `.faith/` inside project, warn about write access, auto-generate draft `.faith/docs/frs.md` from codebase analysis. Secrets (API keys, DB passwords) go to framework-level `config/secrets.yaml`, not project config.'
       - id: 'FAITH-053'
         name: 'First-Run Wizard: Detailed Specification'
         complexity: 'M'
@@ -570,7 +570,7 @@ phases:
         task_doc: 'tasks/FAITH-051-ollama-model-download.md'
         dependencies: ['FAITH-049', 'FAITH-057']
         frs_reference: 'Section 10.5'
-        summary: 'During first-run wizard: bundled Docker Ollama is available by default, but the user may disable it or switch to an external Ollama endpoint. If the user selects Ollama models, display licence summary and link for each model. Require acknowledgement before download. Trigger `ollama pull <model>` for selected models. Include `nomic-embed-text` for RAG embeddings. Show download progress in wizard UI.'
+        summary: 'During first-run wizard: Ollama is available through the resolved local endpoint, not a hard-coded host assumption. Endpoint selection must follow the platform-aware routing policy (Linux container-first when accelerator support is confirmed, Windows container only when WSL2/Docker GPU support is confirmed otherwise native host Ollama, macOS native host Ollama by default). If the user selects Ollama models, display licence summary and link for each model. Require acknowledgement before download. Trigger `ollama pull <model>` against the resolved endpoint. Include `nomic-embed-text` for RAG embeddings. Show download progress in wizard UI.'
   - id: 11
     title: 'CLI & Skill Execution'
     status: 'TODO'
@@ -628,6 +628,7 @@ phases:
         dependencies: ['All previous phases']
         frs_reference: 'Section 12'
         summary: 'Adapt FAITH for cloud deployment: Kubernetes orchestration (replace Docker socket with scoped service account), OAuth2/SSO via control plane, per-project namespace isolation, S3-compatible object storage, server-side layout persistence, per-project or shared Redis. Build the FAITH Management Service: user auth, project CRUD, billing integration, licence enforcement. Ensure PA/agent/tool code is identical between local and cloud — only orchestration layer differs.'
+
 
 
 

@@ -15,7 +15,12 @@ import json
 
 import pytest
 
-from faith_shared.protocol.events import EventPublisher, EventType, FaithEvent
+from faith_shared.protocol.events import (
+    EventPublisher,
+    EventType,
+    FaithEvent,
+    SYSTEM_EVENTS_CHANNEL,
+)
 
 
 class FakeRedis:
@@ -119,7 +124,7 @@ async def test_publisher_emits_json_to_system_channel() -> None:
 
     assert len(redis.messages) == 1
     channel, payload = redis.messages[0]
-    assert channel == "system-events"
+    assert channel == SYSTEM_EVENTS_CHANNEL
     parsed = json.loads(payload)
     assert parsed["event"] == "agent:task_complete"
     assert parsed["source"] == "pa"
@@ -181,3 +186,87 @@ async def test_publisher_helpers_cover_common_event_shapes() -> None:
     assert second["source"] == "filesystem"
     assert third["event"] == "approval:requested"
     assert third["data"]["request_id"] == "req-1"
+
+
+def test_event_publisher_exposes_helpers_for_all_canonical_events() -> None:
+    """
+    Description:
+        Verify the event publisher exposes helper methods for every canonical
+        event shape used by the Phase 2 protocol layer.
+
+    Requirements:
+        - This test is needed to prove the publisher surface stays aligned with
+          the shared event vocabulary.
+        - Verify no helper is missing for the current canonical event set.
+    """
+    expected_helpers = {
+        "agent_task_complete",
+        "agent_task_blocked",
+        "agent_needs_input",
+        "agent_error",
+        "agent_heartbeat",
+        "agent_model_escalation",
+        "agent_context_summary",
+        "channel_stalled",
+        "channel_goal_achieved",
+        "channel_loop_detected",
+        "tool_call_started",
+        "tool_call_complete",
+        "tool_permission_denied",
+        "tool_error",
+        "file_changed",
+        "file_created",
+        "file_deleted",
+        "approval_requested",
+        "approval_decision",
+        "resource_token_threshold",
+        "resource_token_critical",
+        "system_config_changed",
+        "system_config_error",
+        "system_container_started",
+        "system_container_stopped",
+        "system_container_error",
+        "batch_complete",
+        "batch_timeout",
+        "batch_partial",
+    }
+    publisher_members = set(dir(EventPublisher))
+    assert expected_helpers - publisher_members == set()
+
+
+@pytest.mark.asyncio
+async def test_publisher_emits_config_error_and_batch_events() -> None:
+    """
+    Description:
+        Verify the remaining Phase 2 publisher helpers emit stable payloads for
+        config-error and batching workflows.
+
+    Requirements:
+        - This test is needed to prove the helper gap that previously existed in
+          the event publisher stays closed.
+        - Verify the config-error, batch-timeout, and batch-partial payloads use
+          the expected event names and counts.
+    """
+    redis = FakeRedis()
+    publisher = EventPublisher(redis_client=redis, source="pa")
+
+    await publisher.system_config_error(
+        "system.yaml",
+        "validation failed",
+        path=".faith/system.yaml",
+    )
+    await publisher.batch_timeout("batch-1", [{"task": "a"}], ["b", "c"])
+    await publisher.batch_partial("batch-2", [{"task": "a"}, {"task": "b"}], ["c"])
+
+    config_error = json.loads(redis.messages[0][1])
+    timeout_event = json.loads(redis.messages[1][1])
+    partial_event = json.loads(redis.messages[2][1])
+
+    assert config_error["event"] == "system:config_error"
+    assert config_error["data"]["file"] == "system.yaml"
+    assert config_error["data"]["path"] == ".faith/system.yaml"
+    assert timeout_event["event"] == "batch:timeout"
+    assert timeout_event["data"]["completed_count"] == 1
+    assert timeout_event["data"]["pending_count"] == 2
+    assert partial_event["event"] == "batch:partial"
+    assert partial_event["data"]["count"] == 2

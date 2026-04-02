@@ -18,8 +18,12 @@ from typing import Any
 
 import redis.asyncio as aioredis
 
-from faith_pa.utils.redis_client import SYSTEM_EVENTS_CHANNEL
-from faith_shared.protocol.events import EventPublisher, EventType, FaithEvent
+from faith_shared.protocol.events import (
+    EventPublisher,
+    EventType,
+    FaithEvent,
+    SYSTEM_EVENTS_CHANNEL,
+)
 
 logger = logging.getLogger("faith.protocol.subscriber")
 
