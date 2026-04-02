@@ -10,6 +10,9 @@ Requirements:
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import signal
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -26,8 +29,11 @@ from faith_pa.utils.tokens import (
     over_context_threshold,
     truncate_text_to_token_limit,
 )
+from faith_shared.protocol.compact import ChannelMessageStore, CompactMessage
+from faith_shared.protocol.events import EventPublisher, EventType, FaithEvent
 
 DEFAULT_CONTEXT_WINDOW = 128_000
+logger = logging.getLogger("faith_pa.agent.base")
 
 
 @dataclass(slots=True)
@@ -135,6 +141,8 @@ class BaseAgent:
     :param project_root: Optional project root used for CAG document loading.
     :param context_summary: Optional preloaded context summary.
     :param context_window_tokens: Total context window available to the model.
+    :param redis_client: Optional Redis client used for channel subscriptions and event publishing.
+    :param llm_client: Optional LLM client override used for chat completions.
     """
 
     def __init__(
@@ -147,6 +155,8 @@ class BaseAgent:
         project_root: Path | None = None,
         context_summary: str = "",
         context_window_tokens: int = DEFAULT_CONTEXT_WINDOW,
+        redis_client: Any | None = None,
+        llm_client: Any | None = None,
     ) -> None:
         """Description:
             Initialise the base agent runtime.
@@ -162,6 +172,8 @@ class BaseAgent:
         :param project_root: Optional project root used for CAG document loading.
         :param context_summary: Optional preloaded context summary.
         :param context_window_tokens: Total context window available to the model.
+        :param redis_client: Optional Redis client used for channel subscriptions and event publishing.
+        :param llm_client: Optional LLM client override used for chat completions.
         """
 
         self.agent_id = agent_id
@@ -171,6 +183,7 @@ class BaseAgent:
         self.project_root = project_root.resolve() if project_root else None
         self.context_window_tokens = context_window_tokens
         self.recent_messages: list[AgentMessage] = []
+        self.redis = redis_client
 
         faith_dir = (self.project_root / ".faith") if self.project_root else Path(".faith")
         self.summariser = ContextSummariser(
@@ -181,10 +194,20 @@ class BaseAgent:
             faith_dir=faith_dir,
         )
         self.context_summary = context_summary.strip() or self.summariser.load_summary()
-        self.llm_client = LLMClient(
+        self.llm_client = llm_client or LLMClient(
             model=self.model_name,
             fallback_model=self.system_config.pa.fallback_model,
+            ollama_host=self.system_config.ollama.endpoint if self.system_config.ollama.enabled else None,
         )
+        self.event_publisher = (
+            EventPublisher(self.redis, source=self.agent_id) if self.redis is not None else None
+        )
+        self._channel_stores: dict[str, ChannelMessageStore] = {}
+        self._subscribed_channels: set[str] = set()
+        self._running = False
+        self._heartbeat_task: asyncio.Task | None = None
+        self._listener_task: asyncio.Task | None = None
+        self._pubsub: Any | None = None
 
     @property
     def model_name(self) -> str:
@@ -222,6 +245,91 @@ class BaseAgent:
         if len(self.recent_messages) > max_messages:
             self.recent_messages = self.recent_messages[-max_messages:]
 
+    async def run(self) -> None:
+        """Description:
+            Start the asynchronous base-agent runtime loop.
+
+        Requirements:
+            - Require a Redis client before starting runtime subscriptions.
+            - Subscribe to the personal PA channel for the agent.
+            - Start the heartbeat and listener loops.
+            - Shut down gracefully when signalled or cancelled.
+
+        :raises RuntimeError: If no Redis client is configured.
+        """
+
+        if self.redis is None:
+            raise RuntimeError("BaseAgent runtime requires a Redis client.")
+
+        self._running = True
+        self._install_signal_handlers()
+        self._pubsub = self.redis.pubsub()
+        self._heartbeat_task = asyncio.create_task(
+            self._heartbeat_loop(), name=f"{self.agent_id}-heartbeat"
+        )
+        await self.subscribe_channel(f"pa-{self.agent_id}")
+        self._listener_task = asyncio.create_task(
+            self._listen_loop(), name=f"{self.agent_id}-listener"
+        )
+
+        try:
+            await self._listener_task
+        except asyncio.CancelledError:
+            logger.debug("Listener task cancelled for %s.", self.agent_id)
+        finally:
+            await self._shutdown()
+
+    def _install_signal_handlers(self) -> None:
+        """Description:
+            Register graceful-shutdown signal handlers when the platform supports them.
+
+        Requirements:
+            - Ignore unsupported signal-handler registration environments.
+        """
+
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            try:
+                loop.add_signal_handler(sig, self._signal_shutdown)
+            except NotImplementedError:
+                continue
+
+    async def subscribe_channel(self, channel: str) -> None:
+        """Description:
+            Subscribe the runtime to one Redis channel and ensure a message store exists.
+
+        Requirements:
+            - Ignore duplicate channel subscriptions.
+            - Require an active Redis pubsub object before subscribing.
+
+        :param channel: Redis channel name to subscribe.
+        :raises RuntimeError: If the pubsub connection has not been initialised.
+        """
+
+        if channel in self._subscribed_channels:
+            return
+        if self._pubsub is None:
+            raise RuntimeError("Pubsub connection is not initialised.")
+        await self._pubsub.subscribe(channel)
+        self._subscribed_channels.add(channel)
+        self._channel_stores.setdefault(channel, ChannelMessageStore(channel))
+
+    async def unsubscribe_channel(self, channel: str) -> None:
+        """Description:
+            Unsubscribe the runtime from one Redis channel.
+
+        Requirements:
+            - Ignore requests for channels that are not currently subscribed.
+            - Preserve any accumulated channel store for later inspection.
+
+        :param channel: Redis channel name to unsubscribe.
+        """
+
+        if channel not in self._subscribed_channels or self._pubsub is None:
+            return
+        await self._pubsub.unsubscribe(channel)
+        self._subscribed_channels.discard(channel)
+
     def build_role_reminder(self) -> str:
         """Description:
             Build the short role-reminder block included in the system prompt.
@@ -233,7 +341,11 @@ class BaseAgent:
         """
 
         tools = ", ".join(self.config.tools) if self.config.tools else "none"
-        return f"Agent: {self.config.name} ({self.config.role})\nTools: {tools}"
+        return (
+            f"Agent: {self.config.name} ({self.config.role})\n"
+            f"Tools: {tools}\n"
+            "Use the FAITH compact protocol when replying to channel work."
+        )
 
     def load_cag_documents(self) -> list[str]:
         """Description:
@@ -405,6 +517,163 @@ class BaseAgent:
             raw_response=response,
             token_usage=response.input_tokens + response.output_tokens,
         )
+
+    async def _listen_loop(self) -> None:
+        """Description:
+            Poll subscribed Redis channels and dispatch compact-protocol messages.
+
+        Requirements:
+            - Ignore non-message pubsub frames.
+            - Decode byte payloads before parsing.
+            - Continue running after non-fatal handler errors.
+        """
+
+        while self._running and self._pubsub is not None:
+            try:
+                message = await self._pubsub.get_message(
+                    ignore_subscribe_messages=True,
+                    timeout=1.0,
+                )
+                if not message or message.get("type") != "message":
+                    continue
+                raw = message.get("data")
+                channel = message.get("channel", "")
+                if isinstance(raw, bytes):
+                    raw = raw.decode("utf-8")
+                if isinstance(channel, bytes):
+                    channel = channel.decode("utf-8")
+                await self._handle_message(str(raw), str(channel))
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                logger.exception("Agent listener loop failed for %s.", self.agent_id)
+
+    async def _handle_message(self, raw_message: str, channel: str) -> None:
+        """Description:
+            Parse one compact-protocol message, store it, and execute the LLM path.
+
+        Requirements:
+            - Ignore malformed compact messages without crashing the runtime.
+            - Store valid messages under the originating channel.
+            - Use the compact message summary as the current task text for the LLM call.
+
+        :param raw_message: Raw compact-protocol JSON payload.
+        :param channel: Channel on which the message arrived.
+        """
+
+        try:
+            message = CompactMessage.from_json(raw_message)
+        except Exception:
+            logger.exception("Failed to parse compact message on %s.", channel)
+            return
+
+        self._channel_stores.setdefault(channel, ChannelMessageStore(channel)).add(message)
+        self.add_message(
+            "user",
+            message.to_compact_summary(),
+            disposable=message.disposable,
+            name=message.from_agent,
+        )
+        response = await self._call_llm(message.summary)
+        await self._handle_llm_response(message, response, channel)
+
+    async def _handle_llm_response(
+        self,
+        original_message: CompactMessage,
+        response: AgentResponse,
+        channel: str,
+    ) -> None:
+        """Description:
+            Record the normalised LLM response and emit a task-complete event.
+
+        Requirements:
+            - Append the assistant response to recent-message history.
+            - Publish an ``agent:task_complete`` event when an event publisher is available.
+
+        :param original_message: Incoming compact message that triggered the LLM call.
+        :param response: Normalised agent response.
+        :param channel: Channel associated with the response.
+        """
+
+        del original_message
+        self.add_message("assistant", response.content, name=self.agent_id)
+        if self.event_publisher is not None:
+            await self.event_publisher.agent_task_complete(
+                channel=channel,
+                task=response.content or "completed",
+            )
+
+    async def _heartbeat_loop(self, *, interval_seconds: float | None = None) -> None:
+        """Description:
+            Publish periodic heartbeat events while the runtime is active.
+
+        Requirements:
+            - Use the configured system heartbeat interval when no override is supplied.
+            - Exit cleanly when cancelled or when the runtime stops.
+
+        :param interval_seconds: Optional heartbeat interval override.
+        """
+
+        if self.event_publisher is None:
+            return
+
+        interval = interval_seconds or float(self.system_config.heartbeat_interval_seconds)
+        try:
+            while self._running:
+                await self.event_publisher.publish(
+                    FaithEvent(
+                        event=EventType.AGENT_HEARTBEAT,
+                        source=self.agent_id,
+                        data=self.heartbeat_payload(),
+                    )
+                )
+                await asyncio.sleep(interval)
+        except asyncio.CancelledError:
+            raise
+
+    def _signal_shutdown(self) -> None:
+        """Description:
+            Mark the runtime for shutdown and cancel the active listener task.
+
+        Requirements:
+            - Leave the final cleanup to ``_shutdown()``.
+        """
+
+        self._running = False
+        if self._listener_task is not None and not self._listener_task.done():
+            self._listener_task.cancel()
+
+    async def _shutdown(self) -> None:
+        """Description:
+            Stop background tasks, unsubscribe channels, and close the pubsub connection.
+
+        Requirements:
+            - Cancel the heartbeat task when it is still running.
+            - Unsubscribe every active channel before closing the pubsub object.
+            - Support both ``aclose()`` and ``close()`` pubsub shutdown APIs.
+        """
+
+        self._running = False
+        if self._heartbeat_task is not None and not self._heartbeat_task.done():
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._pubsub is not None:
+            for channel in list(self._subscribed_channels):
+                try:
+                    await self._pubsub.unsubscribe(channel)
+                except Exception:
+                    logger.exception("Failed to unsubscribe %s for %s.", channel, self.agent_id)
+            close = getattr(self._pubsub, "aclose", None)
+            if callable(close):
+                await close()
+            else:
+                await self._pubsub.close()
+
+        self._subscribed_channels.clear()
 
     async def compact_context(self, llm_call: Callable[[str], Awaitable[Any]] | None = None) -> str:
         """Description:

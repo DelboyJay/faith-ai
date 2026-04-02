@@ -12,18 +12,69 @@ from __future__ import annotations
 
 import asyncio
 import os
+import platform
 import time
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
-OLLAMA_DEFAULT_HOST = "http://host.docker.internal:11434"
+OLLAMA_CONTAINER_HOST = "http://ollama:11434"
+OLLAMA_HOST_BRIDGE = "http://host.docker.internal:11434"
+OLLAMA_DEFAULT_HOST = OLLAMA_HOST_BRIDGE
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 RETRYABLE_STATUS_CODES = {429, 503}
 PERMANENT_STATUS_CODES = {400, 401, 404}
 RETRY_DELAYS = (2, 4, 8)
 DEFAULT_TIMEOUT = 120.0
+
+
+@dataclass(frozen=True, slots=True)
+class OllamaEndpointResolution:
+    """Description:
+        Describe the resolved Ollama endpoint selected for the current runtime.
+
+    Requirements:
+        - Preserve the endpoint URL, route kind, platform name, and whether the route came from an explicit override.
+
+    :param endpoint: Resolved Ollama base URL.
+    :param route_kind: Route category such as ``container``, ``host``, or ``explicit``.
+    :param platform_name: Normalised platform name used during resolution.
+    :param from_override: Whether the route came from an explicit override.
+    """
+
+    endpoint: str
+    route_kind: str
+    platform_name: str
+    from_override: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class LocalModelCapability:
+    """Description:
+        Describe the observed capability of one resolved local-model route.
+
+    Requirements:
+        - Preserve whether inference succeeded, whether GPU acceleration is considered available, and the main resource signals used for recommendation.
+
+    :param endpoint: Ollama endpoint that was probed.
+    :param route_kind: Route category such as ``container`` or ``host``.
+    :param inference_available: Whether the inference probe succeeded.
+    :param gpu_acceleration: Whether GPU acceleration is available for the route.
+    :param usable_vram_mb: Estimated usable VRAM in megabytes.
+    :param system_ram_mb: Estimated system RAM in megabytes.
+    :param probe_model: Model used for the inference probe.
+    :param notes: Human-readable notes describing the probe result.
+    """
+
+    endpoint: str
+    route_kind: str
+    inference_available: bool
+    gpu_acceleration: bool
+    usable_vram_mb: int
+    system_ram_mb: int | None
+    probe_model: str
+    notes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +216,60 @@ def parse_model_string(model: str) -> tuple[str, str]:
     raise ValueError(f"Unknown model prefix in '{model}'")
 
 
+def _normalise_platform_name(platform_name: str | None) -> str:
+    """Description:
+        Normalise platform names into the values used by the Ollama route policy.
+
+    Requirements:
+        - Convert Python platform names and common aliases into stable identifiers.
+
+    :param platform_name: Raw platform name or alias.
+    :returns: Normalised platform identifier.
+    """
+
+    raw = (platform_name or platform.system()).strip().lower()
+    if raw in {"windows", "win32"}:
+        return "windows"
+    if raw in {"darwin", "mac", "macos", "osx"}:
+        return "darwin"
+    return "linux"
+
+
+def _env_flag(name: str) -> bool:
+    """Description:
+        Parse a boolean environment flag used by FAITH runtime hints.
+
+    Requirements:
+        - Treat common truthy strings as ``True`` and all other values as ``False``.
+
+    :param name: Environment variable name.
+    :returns: Parsed boolean flag.
+    """
+
+    value = os.getenv(name, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str) -> int | None:
+    """Description:
+        Parse an integer environment hint used by FAITH runtime capability probing.
+
+    Requirements:
+        - Return ``None`` when the variable is unset or invalid.
+
+    :param name: Environment variable name.
+    :returns: Parsed integer value or ``None``.
+    """
+
+    value = os.getenv(name)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
 class LLMClient:
     """Description:
         Execute asynchronous chat completions against Ollama or OpenRouter.
@@ -180,6 +285,9 @@ class LLMClient:
     :param event_publisher: Optional event publisher for failure notifications.
     :param ollama_host: Optional Ollama base URL override.
     :param openrouter_api_key: Optional explicit OpenRouter API key.
+    :param platform_name: Optional explicit platform override for route selection.
+    :param docker_gpu_supported: Optional Docker GPU availability hint for platform-aware Ollama routing.
+    :param system_ram_mb: Optional system RAM hint used by capability reporting.
     """
 
     def __init__(
@@ -191,6 +299,9 @@ class LLMClient:
         event_publisher: Any = None,
         ollama_host: str | None = None,
         openrouter_api_key: str | None = None,
+        platform_name: str | None = None,
+        docker_gpu_supported: bool | None = None,
+        system_ram_mb: int | None = None,
     ) -> None:
         """Description:
             Initialise the LLM client.
@@ -204,14 +315,241 @@ class LLMClient:
         :param event_publisher: Optional event publisher for failure notifications.
         :param ollama_host: Optional Ollama base URL override.
         :param openrouter_api_key: Optional explicit OpenRouter API key.
+        :param platform_name: Optional explicit platform override for route selection.
+        :param docker_gpu_supported: Optional Docker GPU availability hint for platform-aware Ollama routing.
+        :param system_ram_mb: Optional system RAM hint used by capability reporting.
         """
 
         self.model = model
         self.fallback_model = fallback_model
         self.timeout = timeout
         self.event_publisher = event_publisher
-        self.ollama_host = ollama_host or os.getenv("OLLAMA_HOST", OLLAMA_DEFAULT_HOST)
+        self.platform_name = _normalise_platform_name(platform_name)
+        self.docker_gpu_supported = (
+            docker_gpu_supported
+            if docker_gpu_supported is not None
+            else _env_flag("FAITH_DOCKER_GPU_SUPPORTED")
+        )
+        self.system_ram_mb = system_ram_mb or _env_int("FAITH_SYSTEM_RAM_MB")
+        explicit_ollama_host = ollama_host or os.getenv("OLLAMA_HOST")
+        self.ollama_resolution = self.resolve_ollama_endpoint(
+            endpoint_override=explicit_ollama_host,
+            platform_name=self.platform_name,
+            docker_gpu_supported=self.docker_gpu_supported,
+        )
+        self.ollama_host = self.ollama_resolution.endpoint
         self.openrouter_api_key = openrouter_api_key or os.getenv("OPENROUTER_API_KEY")
+
+    def resolve_ollama_endpoint(
+        self,
+        *,
+        endpoint_override: str | None = None,
+        platform_name: str | None = None,
+        docker_gpu_supported: bool | None = None,
+    ) -> OllamaEndpointResolution:
+        """Description:
+            Resolve the preferred Ollama endpoint for the current runtime.
+
+        Requirements:
+            - Honour an explicit endpoint override when one is provided.
+            - Prefer the bundled container on Linux when Docker GPU support is confirmed.
+            - Prefer the host route on Windows when Docker GPU support is not confirmed.
+            - Prefer the host route on macOS by default.
+
+        :param endpoint_override: Optional explicit endpoint override.
+        :param platform_name: Optional explicit platform override.
+        :param docker_gpu_supported: Optional Docker GPU availability hint.
+        :returns: Resolved Ollama endpoint description.
+        """
+
+        resolved_platform = _normalise_platform_name(platform_name or self.platform_name)
+        docker_gpu = (
+            self.docker_gpu_supported
+            if docker_gpu_supported is None
+            else docker_gpu_supported
+        )
+        if endpoint_override:
+            return OllamaEndpointResolution(
+                endpoint=endpoint_override,
+                route_kind="explicit",
+                platform_name=resolved_platform,
+                from_override=True,
+            )
+        if resolved_platform == "windows":
+            if docker_gpu:
+                return OllamaEndpointResolution(
+                    endpoint=OLLAMA_CONTAINER_HOST,
+                    route_kind="container",
+                    platform_name=resolved_platform,
+                )
+            return OllamaEndpointResolution(
+                endpoint=OLLAMA_HOST_BRIDGE,
+                route_kind="host",
+                platform_name=resolved_platform,
+            )
+        if resolved_platform == "darwin":
+            return OllamaEndpointResolution(
+                endpoint=OLLAMA_HOST_BRIDGE,
+                route_kind="host",
+                platform_name=resolved_platform,
+            )
+        if docker_gpu:
+            return OllamaEndpointResolution(
+                endpoint=OLLAMA_CONTAINER_HOST,
+                route_kind="container",
+                platform_name=resolved_platform,
+            )
+        return OllamaEndpointResolution(
+            endpoint=OLLAMA_CONTAINER_HOST,
+            route_kind="container",
+            platform_name=resolved_platform,
+        )
+
+    async def probe_local_model_capability(
+        self,
+        *,
+        probe_model: str | None = None,
+        platform_name: str | None = None,
+        docker_gpu_supported: bool | None = None,
+        system_ram_mb: int | None = None,
+    ) -> LocalModelCapability:
+        """Description:
+            Probe local-model availability and route capability for Ollama-backed models.
+
+        Requirements:
+            - Try candidate routes in platform-aware order until one succeeds.
+            - Confirm actual inference works instead of relying on route assumptions alone.
+            - Report GPU and memory hints for downstream recommendation logic.
+
+        :param probe_model: Optional probe model override.
+        :param platform_name: Optional explicit platform override.
+        :param docker_gpu_supported: Optional Docker GPU availability hint.
+        :param system_ram_mb: Optional system RAM override for the returned capability.
+        :returns: Local-model capability description for the first successful route.
+        :raises LLMRetryableError: If no candidate route passes the inference probe.
+        """
+
+        resolved_platform = _normalise_platform_name(platform_name or self.platform_name)
+        docker_gpu = (
+            self.docker_gpu_supported
+            if docker_gpu_supported is None
+            else docker_gpu_supported
+        )
+        effective_system_ram_mb = system_ram_mb or self.system_ram_mb
+        provider, provider_model = parse_model_string(self.model)
+        effective_probe_model = probe_model or (
+            provider_model if provider == "ollama" else os.getenv("FAITH_OLLAMA_PROBE_MODEL", "llama3:8b")
+        )
+        last_error: LLMRetryableError | None = None
+        for resolution in self._ollama_probe_candidates(
+            platform_name=resolved_platform,
+            docker_gpu_supported=docker_gpu,
+        ):
+            capability = await self._probe_ollama_endpoint(
+                resolution.endpoint,
+                resolution.route_kind,
+                effective_probe_model,
+                system_ram_mb=effective_system_ram_mb,
+                docker_gpu_supported=docker_gpu,
+            )
+            if capability is not None and capability.inference_available:
+                return capability
+            last_error = LLMRetryableError(
+                f"Ollama probe failed for {resolution.endpoint}",
+            )
+        raise last_error or LLMRetryableError("No Ollama endpoint passed the local capability probe")
+
+    def _ollama_probe_candidates(
+        self,
+        *,
+        platform_name: str,
+        docker_gpu_supported: bool | None,
+    ) -> list[OllamaEndpointResolution]:
+        """Description:
+            Build the ordered list of Ollama routes to probe for the current platform.
+
+        Requirements:
+            - Put the preferred platform route first.
+            - Keep the secondary route as a fallback when available.
+
+        :param platform_name: Normalised platform name.
+        :param docker_gpu_supported: Docker GPU availability hint.
+        :returns: Ordered candidate route list.
+        """
+
+        primary = self.resolve_ollama_endpoint(
+            platform_name=platform_name,
+            docker_gpu_supported=docker_gpu_supported,
+        )
+        secondary_route = (
+            OllamaEndpointResolution(
+                endpoint=OLLAMA_HOST_BRIDGE,
+                route_kind="host",
+                platform_name=platform_name,
+            )
+            if primary.route_kind != "host"
+            else OllamaEndpointResolution(
+                endpoint=OLLAMA_CONTAINER_HOST,
+                route_kind="container",
+                platform_name=platform_name,
+            )
+        )
+        candidates = [primary]
+        if secondary_route.endpoint != primary.endpoint:
+            candidates.append(secondary_route)
+        return candidates
+
+    async def _probe_ollama_endpoint(
+        self,
+        endpoint: str,
+        route_kind: str,
+        probe_model: str,
+        *,
+        system_ram_mb: int | None,
+        docker_gpu_supported: bool | None,
+    ) -> LocalModelCapability | None:
+        """Description:
+            Run a lightweight inference probe against one Ollama endpoint.
+
+        Requirements:
+            - Use a minimal non-streaming chat request to confirm inference actually works.
+            - Return ``None`` when the endpoint is unreachable or the probe fails.
+            - Include GPU and memory hints in the returned capability.
+
+        :param endpoint: Ollama endpoint to probe.
+        :param route_kind: Route category such as ``container`` or ``host``.
+        :param probe_model: Model name to use for the probe.
+        :param system_ram_mb: Optional system RAM hint.
+        :param docker_gpu_supported: Docker GPU availability hint.
+        :returns: Local-model capability description when the probe succeeds, otherwise ``None``.
+        """
+
+        payload: dict[str, Any] = {
+            "model": probe_model,
+            "messages": [{"role": "user", "content": "Reply with OK."}],
+            "stream": False,
+            "options": {"temperature": 0.0, "num_predict": 1},
+        }
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(f"{endpoint.rstrip('/')}/api/chat", json=payload)
+            self._raise_for_status(response)
+        except (httpx.HTTPError, LLMError):
+            return None
+
+        return LocalModelCapability(
+            endpoint=endpoint,
+            route_kind=route_kind,
+            inference_available=True,
+            gpu_acceleration=bool(
+                _env_flag("FAITH_OLLAMA_GPU_ACCELERATION")
+                or (route_kind == "container" and docker_gpu_supported)
+            ),
+            usable_vram_mb=_env_int("FAITH_OLLAMA_USABLE_VRAM_MB") or 0,
+            system_ram_mb=system_ram_mb,
+            probe_model=probe_model,
+            notes=("inference probe succeeded",),
+        )
 
     async def chat(
         self,
@@ -518,5 +856,7 @@ __all__ = [
     "LLMPermanentError",
     "LLMResponse",
     "LLMRetryableError",
+    "LocalModelCapability",
+    "OLLAMA_CONTAINER_HOST",
     "parse_model_string",
 ]
