@@ -1,5 +1,15 @@
 # Project Instructions
 
+## General Behaviour Rules
+
+- Do not guess. Ask the user or verify when needed. If the answer is still unknown, say so plainly and explain why.
+- Keep replies brief unless the user asks for more detail.
+- When giving step-by-step guidance, give one step at a time and wait before continuing.
+- Ask follow-up questions until there is enough context to answer properly.
+- Check your answer for mistakes before sending it.
+- Prefer the host for project work. Do not rely on the sandbox; request approval when host escalation is required.
+- Use TDD style development. Create the test first, provie that it fails then write the code and prove that it passes.
+
 ## Hard Completion Rules
 
 - HARD RULE: Do not report any task as complete unless the full task scope is implemented, verification has been attempted, and the resulting code has been compared against the FRS.
