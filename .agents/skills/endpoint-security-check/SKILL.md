@@ -268,6 +268,9 @@ Filename normalization:
 - collapse repeated `_`
 - trim leading and trailing `_`
 
+Folder location:
+- save the report under .agents/security/ and create the folder if it does not exist.
+
 ## Report Structure
 Start with `Check Summary` before the findings list.
 
