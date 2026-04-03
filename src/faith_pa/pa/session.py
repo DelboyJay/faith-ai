@@ -19,6 +19,8 @@ from typing import Any
 
 import yaml
 
+from faith_pa.agent.cag import CAGManager, CAGValidationResult
+from faith_pa.config.loader import load_all_agent_configs
 from faith_pa.config.models import SystemConfig
 
 
@@ -358,6 +360,53 @@ class SessionManager:
             raise RuntimeError("session has not been started")
         return self.session_dir
 
+    def validate_all_agents_cag(self) -> dict[str, CAGValidationResult]:
+        """Description:
+            Validate the configured CAG documents for every agent in the active project.
+
+        Requirements:
+            - Use the validated agent configs from the project `.faith/agents` tree.
+            - Apply each agent's own model override or the system default model for token counting.
+            - Return an empty mapping when no system config is available.
+
+        :returns: Per-agent CAG validation results keyed by agent identifier.
+        """
+
+        if self.system_config is None:
+            return {}
+        results: dict[str, CAGValidationResult] = {}
+        for agent_id, config in load_all_agent_configs(self.project_root).items():
+            manager = CAGManager(
+                project_root=self.project_root,
+                model_name=config.model or self.system_config.default_agent_model,
+                document_paths=list(config.cag_documents),
+                max_tokens=config.cag_max_tokens,
+            )
+            results[agent_id] = manager.load_all()
+        return results
+
+    def format_cag_validation_for_user(
+        self,
+        validation_results: dict[str, CAGValidationResult],
+    ) -> str:
+        """Description:
+            Format per-agent CAG validation outcomes for PA/user reporting.
+
+        Requirements:
+            - Include only agents with warnings or errors in the human-facing report.
+            - Return an empty string when there is nothing actionable to surface.
+
+        :param validation_results: Per-agent CAG validation results.
+        :returns: Human-readable CAG validation report.
+        """
+
+        lines: list[str] = []
+        for agent_id, result in validation_results.items():
+            if not result.errors and not result.warnings:
+                continue
+            lines.append(f"{agent_id}: {result.summary()}")
+        return "\n\n".join(lines)
+
     async def start_session(
         self, trigger: str = "web-ui", source: str | None = None
     ) -> SessionRecord:
@@ -388,6 +437,23 @@ class SessionManager:
             "started_at": _iso(now),
             "tasks": {},
         }
+        cag_validation = self.validate_all_agents_cag()
+        if cag_validation:
+            metadata["cag_validation"] = {
+                "report": self.format_cag_validation_for_user(cag_validation),
+                "agents": {
+                    agent_id: {
+                        "success": result.success,
+                        "total_tokens": result.total_tokens,
+                        "max_tokens": result.max_tokens,
+                        "document_count": result.document_count,
+                        "loaded_count": result.loaded_count,
+                        "errors": list(result.errors),
+                        "warnings": list(result.warnings),
+                    }
+                    for agent_id, result in cag_validation.items()
+                },
+            }
         (session_path / "session.meta.json").write_text(
             json.dumps(metadata, indent=2), encoding="utf-8"
         )

@@ -431,13 +431,15 @@ class ExternalMCPToolConfig(BaseModel):
     """
 
     schema_version: str = "1.0"
+    source_type: str = Field(default="registry", pattern="^registry$")
     registry_ref: str
-    package_version: str | None = None
+    package_version: str
     transport: str = Field(default="stdio", pattern="^stdio$")
     env: dict[str, str] = Field(default_factory=dict)
     env_secret_refs: dict[str, str] = Field(default_factory=dict)
     privacy_tier: PrivacyProfile = PrivacyProfile.INTERNAL
     agents: list[str] = Field(default_factory=list)
+    enabled: bool = True
 
 
 TOOL_CONFIG_MAP: dict[str, type[BaseModel]] = {

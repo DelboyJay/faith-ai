@@ -365,7 +365,7 @@ def test_base_agent_assembles_context_in_expected_order(tmp_path):
         "Context Summary:"
     )
     assert assembly.system_prompt.index("Context Summary:") < assembly.system_prompt.index(
-        "# CAG Document: docs/frs.md"
+        "--- CAG Reference: docs/frs.md ---"
     )
     assert assembly.recent_messages[0].content == "Previous reply"
     assert assembly.current_task == "Implement the feature"
@@ -459,23 +459,19 @@ def test_base_agent_limits_recent_messages():
     ]
 
 
-def test_base_agent_cag_documents_obey_token_budget(tmp_path, monkeypatch):
+def test_base_agent_cag_documents_report_budget_validation(tmp_path, monkeypatch):
     """Description:
-        Verify CAG document loading respects the configured token budget.
+        Verify CAG document loading reports budget overruns through the validation result.
 
     Requirements:
-        - This test is needed to prove oversized CAG documents are truncated before entering the prompt.
-        - Verify the truncated content length matches the configured token budget in the fallback path.
+        - This test is needed to prove oversized CAG documents are flagged during session-start validation.
+        - Verify the validation result is unsuccessful and includes a warning when the budget is exceeded.
 
     :param tmp_path: Temporary project workspace.
     :param monkeypatch: Pytest monkeypatch fixture.
     """
 
-    monkeypatch.setattr("faith_pa.agent.base.count_text_tokens", lambda text, model=None: len(text))
-    monkeypatch.setattr(
-        "faith_pa.agent.base.truncate_text_to_token_limit",
-        lambda text, token_limit, model=None: text[:token_limit],
-    )
+    monkeypatch.setattr("faith_pa.agent.cag.count_text_tokens", lambda text, model=None: len(text))
 
     doc = tmp_path / "docs" / "big.md"
     doc.parent.mkdir(parents=True, exist_ok=True)
@@ -490,9 +486,10 @@ def test_base_agent_cag_documents_obey_token_budget(tmp_path, monkeypatch):
         project_root=tmp_path,
     )
 
-    docs = agent.load_cag_documents()
-    assert len(docs) == 1
-    assert len(docs[0]) == 30
+    result = agent.load_cag_documents()
+    assert result.success is False
+    assert len(result.warnings) == 1
+    assert "rag" in result.warnings[0].lower()
 
 
 def test_context_needs_compaction_when_threshold_exceeded(monkeypatch):

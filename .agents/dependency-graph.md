@@ -42,8 +42,8 @@
 | FAITH-031 | Web Search MCP Server | 6 (Tool Servers) | TODO | FAITH-003 | S | Haiku / GPT-5.4-mini |
 | FAITH-032 | Full-Text Search MCP Server | 6 (Tool Servers) | TODO | FAITH-022 | S | Haiku / GPT-5.4-mini |
 | FAITH-033 | Key-Value Store MCP Server | 6 (Tool Servers) | TODO | FAITH-002 | S | Haiku / GPT-5.4-mini |
-| FAITH-034 | CAG Implementation | 7 (CAG & External MCP) | TODO | FAITH-010, FAITH-022 | M | Sonnet / GPT-5.4 |
-| FAITH-035 | External MCP Server Registration & Lifecycle | 7 (CAG & External MCP) | TODO | FAITH-014, FAITH-003 | M | Opus / GPT-5.4 high reasoning |
+| FAITH-034 | CAG Implementation | 7 (CAG & External MCP) | DONE | FAITH-010, FAITH-022 | M | Sonnet / GPT-5.4 |
+| FAITH-035 | External MCP Server Registration & Lifecycle | 7 (CAG & External MCP) | DONE | FAITH-014, FAITH-003 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-036 | FastAPI Server Setup & WebSocket Endpoints | 8 (Web UI) | DONE | FAITH-002, FAITH-008 | M | Sonnet / GPT-5.4 |
 | FAITH-037 | GoldenLayout Panel Framework | 8 (Web UI) | TODO | FAITH-036 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-038 | Agent Panel Component (xterm.js + Vue 3) | 8 (Web UI) | TODO | FAITH-037 | M | Sonnet / GPT-5.4 |
@@ -122,8 +122,8 @@ flowchart TD
     FAITH-033["FAITH-033<br/>Key-Value Store MCP Server<br/>Phase 6 | TODO | S"]
 
     %% ── Phase 7: CAG & External MCP ──
-    FAITH-034["FAITH-034<br/>CAG Implementation<br/>Phase 7 | TODO | M"]
-    FAITH-035["FAITH-035<br/>External MCP Server Registration & Lifecycle<br/>Phase 7 | TODO | M"]
+    FAITH-034["FAITH-034<br/>CAG Implementation<br/>Phase 7 | DONE | M"]
+    FAITH-035["FAITH-035<br/>External MCP Server Registration & Lifecycle<br/>Phase 7 | DONE | M"]
 
     %% ── Phase 8: Web UI ──
     FAITH-036["FAITH-036<br/>FastAPI Server Setup & WebSocket Endpoints<br/>Phase 8 | DONE | M"]
@@ -419,7 +419,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 ### Wave 6
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
-| FAITH-035 | External MCP Server Registration & Lifecycle | 7 (CAG & External MCP) | TODO | M |
+| FAITH-035 | External MCP Server Registration & Lifecycle | 7 (CAG & External MCP) | DONE | M |
 | FAITH-038 | Agent Panel Component (xterm.js + Vue 3) | 8 (Web UI) | TODO | M |
 | FAITH-039 | Approval Panel Component | 8 (Web UI) | TODO | M |
 | FAITH-040 | Status Bar & System Health Panel | 8 (Web UI) | TODO | S |
@@ -448,7 +448,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-027 | Code Index MCP Server (tree-sitter) | 6 (Tool Servers) | TODO | L |
 | FAITH-028 | RAG / ChromaDB MCP Server | 6 (Tool Servers) | TODO | L |
 | FAITH-032 | Full-Text Search MCP Server | 6 (Tool Servers) | TODO | S |
-| FAITH-034 | CAG Implementation | 7 (CAG & External MCP) | TODO | M |
+| FAITH-034 | CAG Implementation | 7 (CAG & External MCP) | DONE | M |
 | FAITH-043 | Project Switcher UI | 8 (Web UI) | TODO | S |
 | FAITH-046 | Session & Task Log Writer | 9 (Logging) | TODO | M |
 | FAITH-050 | Privacy Profile Enforcement & Provider Knowledge Base | 10 (First Run) | TODO | M |

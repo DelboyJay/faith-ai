@@ -30,10 +30,13 @@
       "type": "object",
       "properties": {
         "schema_version": {"type": "string"},
+        "source_type": {"enum": ["registry"]},
         "registry_ref": {"type": "string"},
-        "transport": {"enum": ["stdio"]}
+        "package_version": {"type": "string"},
+        "transport": {"enum": ["stdio"]},
+        "enabled": {"type": "boolean"}
       },
-      "required": ["schema_version", "registry_ref"]
+      "required": ["schema_version", "registry_ref", "package_version"]
     }
   ]
 }

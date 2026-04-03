@@ -211,6 +211,46 @@ async def test_session_manager_persists_task_and_session_metadata(
 
 
 @pytest.mark.asyncio
+async def test_session_manager_validates_agent_cag_at_session_start(
+    tmp_path: Path,
+    system_config: SystemConfig,
+) -> None:
+    """Description:
+        Verify session start records per-agent CAG validation results in session metadata.
+
+    Requirements:
+        - This test is needed to prove the PA performs Phase 7 CAG validation when a session starts.
+        - Verify missing CAG documents are recorded in the session metadata report for the affected agent.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
+    """
+
+    agent_dir = tmp_path / ".faith" / "agents" / "developer"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    (agent_dir / "config.yaml").write_text(
+        """
+name: Developer
+role: implementation
+model: gpt-5.4-mini
+cag_documents:
+  - docs/missing.md
+""".strip(),
+        encoding="utf-8",
+    )
+    manager = SessionManager(project_root=tmp_path, system_config=system_config)
+
+    session = await manager.start_session(trigger="web-ui")
+
+    session_meta = json.loads((session.path / "session.meta.json").read_text(encoding="utf-8"))
+    assert "cag_validation" in session_meta
+    assert "developer" in session_meta["cag_validation"]["agents"]
+    assert session_meta["cag_validation"]["agents"]["developer"]["success"] is False
+    assert session_meta["cag_validation"]["agents"]["developer"]["errors"]
+    assert "developer" in session_meta["cag_validation"]["report"]
+
+
+@pytest.mark.asyncio
 async def test_session_manager_end_session_completes_active_tasks(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
