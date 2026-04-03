@@ -410,7 +410,7 @@ phases:
         name: 'GoldenLayout Panel Framework'
         complexity: 'M'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-037-goldenlayout-panels.md'
         dependencies: ['FAITH-036']
         frs_reference: 'Section 6.4'

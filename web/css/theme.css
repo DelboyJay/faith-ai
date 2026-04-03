@@ -1,11 +1,12 @@
 :root {
   color-scheme: dark;
-  --bg: #101317;
-  --panel: #171c22;
-  --line: #2a333d;
-  --text: #e7edf4;
-  --muted: #93a1b2;
-  --accent: #d48936;
+  --bg: #0d1117;
+  --panel: #161b22;
+  --line: #30363d;
+  --text: #c9d1d9;
+  --muted: #8b949e;
+  --accent: #58a6ff;
+  --accent-strong: #d48936;
 }
 
 * {
@@ -16,51 +17,155 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: "Segoe UI", Arial, sans-serif;
-  background: radial-gradient(circle at top, #19222c 0%, var(--bg) 55%);
+  background: var(--bg);
   color: var(--text);
 }
 
-.shell {
-  max-width: 1040px;
-  margin: 0 auto;
-  padding: 32px 20px 48px;
+.faith-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 52px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(22, 27, 34, 0.98), rgba(13, 17, 23, 0.98));
 }
 
-.hero {
-  margin-bottom: 24px;
+.faith-toolbar__brand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.eyebrow {
-  margin: 0 0 8px;
-  color: var(--accent);
+.faith-toolbar__eyebrow {
+  color: var(--accent-strong);
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  font-size: 0.8rem;
+  font-size: 0.7rem;
 }
 
-.hero h1 {
-  margin: 0 0 8px;
-  font-size: clamp(2rem, 6vw, 3.2rem);
+.faith-toolbar__title {
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 
-.lede {
+.faith-toolbar__controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.faith-toolbar__add-wrapper {
+  position: relative;
+}
+
+.faith-toolbar__button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #21262d;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.faith-toolbar__button:hover,
+.faith-toolbar__menu-item:hover {
+  background: #30363d;
+}
+
+.faith-toolbar__button--add {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.faith-toolbar__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 170px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(22, 27, 34, 0.98);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  z-index: 20;
+}
+
+.faith-toolbar__menu[hidden] {
+  display: none;
+}
+
+.faith-toolbar__menu-item {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.faith-layout-container {
+  height: calc(100vh - 52px);
+  min-height: 520px;
+}
+
+.lm_goldenlayout {
+  background: var(--bg);
+}
+
+.lm_header {
+  background: var(--panel) !important;
+  border-bottom: 1px solid var(--line);
+}
+
+.lm_header .lm_tab {
+  background: #21262d;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.lm_header .lm_tab.lm_active {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.lm_content {
+  background: var(--bg);
+}
+
+.lm_splitter {
+  background: var(--line);
+}
+
+.faith-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+  min-height: 100%;
+  padding: 18px;
+  border: 1px solid rgba(48, 54, 61, 0.55);
+  background:
+    radial-gradient(circle at top right, rgba(88, 166, 255, 0.08), transparent 40%),
+    linear-gradient(180deg, rgba(22, 27, 34, 0.96), rgba(13, 17, 23, 0.96));
+}
+
+.faith-panel__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.faith-panel__placeholder {
   margin: 0;
   color: var(--muted);
-  max-width: 720px;
-}
-
-.panels {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
-}
-
-.panel {
-  background: rgba(23, 28, 34, 0.9);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 18px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+  line-height: 1.5;
 }
 
 pre {
@@ -70,4 +175,3 @@ pre {
   font-family: Consolas, "Cascadia Code", monospace;
   color: #9ad1ff;
 }
-

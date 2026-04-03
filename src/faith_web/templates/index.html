@@ -4,26 +4,56 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>FAITH Web UI</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/dist/css/goldenlayout-base.css"
+      onerror="window.faithSwapStylesheetFallback(this, '/static/js/vendor/goldenlayout-base.css')"
+    >
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/dist/css/themes/goldenlayout-dark-theme.css"
+      onerror="window.faithSwapStylesheetFallback(this, '/static/js/vendor/goldenlayout-dark-theme.css')"
+    >
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/xterm@5.5.0/css/xterm.min.css"
+      onerror="window.faithSwapStylesheetFallback(this, '/static/js/vendor/xterm.min.css')"
+    >
     <link rel="stylesheet" href="/static/css/theme.css">
+    <script>
+      window.faithSwapStylesheetFallback = function faithSwapStylesheetFallback(node, fallbackHref) {
+        node.onerror = null;
+        node.href = fallbackHref;
+      };
+
+      window.faithLoadVendoredFallback = function faithLoadVendoredFallback(lib) {
+        const script = document.createElement("script");
+        script.src = `/static/js/vendor/${lib}.umd.js`;
+        document.head.appendChild(script);
+      };
+    </script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/dist/goldenlayout.umd.js"
+      onerror="window.faithLoadVendoredFallback('goldenlayout')"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"
+      onerror="window.faithLoadVendoredFallback('vue.global.prod')"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/xterm@5.5.0/lib/xterm.min.js"
+      onerror="window.faithLoadVendoredFallback('xterm.min')"
+    ></script>
+    <script src="/static/js/layout.js"></script>
   </head>
   <body>
-    <main class="shell">
-      <section class="hero">
-        <p class="eyebrow">FAITH</p>
-        <h1>Web Control Surface</h1>
-        <p class="lede">FastAPI shell with Redis-backed HTTP and WebSocket endpoints for the panel UI.</p>
-      </section>
-      <section class="panels">
-        <article class="panel">
-          <h2>Status</h2>
-          <pre id="status-output">Waiting for /api/status...</pre>
-        </article>
-        <article class="panel">
-          <h2>Notes</h2>
-          <p>GoldenLayout and richer panels are added in later tasks. This task provides the backend transport surface.</p>
-        </article>
-      </section>
-    </main>
+    <div id="faith-toolbar" class="faith-toolbar">
+      <div class="faith-toolbar__brand">
+        <span class="faith-toolbar__eyebrow">FAITH</span>
+        <span class="faith-toolbar__title">Panel Workspace</span>
+      </div>
+    </div>
+    <div id="faith-layout" class="faith-layout-container" aria-label="FAITH panel workspace"></div>
     <script src="/static/js/app.js"></script>
   </body>
 </html>

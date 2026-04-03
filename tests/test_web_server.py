@@ -12,6 +12,7 @@ import asyncio
 import base64
 import json
 import warnings
+from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -327,6 +328,60 @@ def test_static_assets_are_served(client: TestClient) -> None:
     assert "--bg" in css_response.text
     assert js_response.status_code == 200
     assert "refreshStatus" in js_response.text
+
+
+def test_index_bootstraps_goldenlayout_shell(client: TestClient) -> None:
+    """Description:
+        Verify the main HTML shell includes the GoldenLayout mount points and asset bootstrapping.
+
+    Requirements:
+        - This test is needed to prove the browser receives the panel-framework shell required by FAITH-037.
+        - Verify the index page includes the toolbar, layout container, and GoldenLayout/layout asset references.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'id="faith-toolbar"' in response.text
+    assert 'id="faith-layout"' in response.text
+    assert "goldenlayout" in response.text.lower()
+    assert "vue" in response.text.lower()
+    assert "xterm" in response.text.lower()
+    assert "/static/js/layout.js" in response.text
+
+
+def test_layout_asset_is_served(client: TestClient) -> None:
+    """Description:
+        Verify the dedicated GoldenLayout asset is served as a static file.
+
+    Requirements:
+        - This test is needed to prove the browser can load the panel framework JavaScript without a server error.
+        - Verify the script exposes the expected FAITH layout API surface.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/layout.js")
+    assert response.status_code == 200
+    assert "faithLayout" in response.text
+    assert "faith_layout_v1" in response.text
+
+
+def test_layout_support_files_exist() -> None:
+    """Description:
+        Verify the FAITH-037 support files exist in the repository.
+
+    Requirements:
+        - This test is needed to prove the offline-vendor guidance and manual layout harness ship with the task.
+        - Verify the vendored fallback README and the manual layout test harness are present.
+    """
+
+    project_root = Path(__file__).resolve().parents[1]
+    vendor_readme = project_root / "web" / "js" / "vendor" / "README.md"
+    layout_harness = project_root / "tests" / "test_layout.html"
+    assert vendor_readme.exists()
+    assert layout_harness.exists()
 
 
 @pytest.mark.asyncio
