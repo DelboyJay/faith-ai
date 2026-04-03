@@ -27,9 +27,9 @@
 | FAITH-016 | PA Event Dispatcher & Intervention Logic | 4 (PA Core) | DONE | FAITH-015, FAITH-009 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-017 | Loop Detection | 4 (PA Core) | DONE | FAITH-016 | M | Sonnet / GPT-5.4 |
 | FAITH-018 | Living FRS Management | 4 (PA Core) | DONE | FAITH-015 | M | Opus / GPT-5.4 high reasoning |
-| FAITH-019 | Security YAML Schema & Regex Approval Engine | 5 (Security) | IN PROGRESS | FAITH-003 | M | Opus / GPT-5.4 high reasoning |
-| FAITH-020 | Approval Request/Response Flow | 5 (Security) | IN PROGRESS | FAITH-019, FAITH-008 | M | Opus / GPT-5.4 high reasoning |
-| FAITH-021 | Audit Log System | 5 (Security) | IN PROGRESS | FAITH-008 | M | Sonnet / GPT-5.4 |
+| FAITH-019 | Security YAML Schema & Regex Approval Engine | 5 (Security) | DONE | FAITH-003 | M | Opus / GPT-5.4 high reasoning |
+| FAITH-020 | Approval Request/Response Flow | 5 (Security) | DONE | FAITH-019, FAITH-008 | M | Opus / GPT-5.4 high reasoning |
+| FAITH-021 | Audit Log System | 5 (Security) | DONE | FAITH-008 | M | Sonnet / GPT-5.4 |
 | FAITH-022 | Filesystem MCP Server | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008, FAITH-057 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-023 | Filesystem File History | 6 (Tool Servers) | TODO | FAITH-022 | M | Sonnet / GPT-5.4 |
 | FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008, FAITH-057 | M | Opus / GPT-5.4 high reasoning |
@@ -103,9 +103,9 @@ flowchart TD
     FAITH-057["FAITH-057<br/>Disposable Sandbox Lifecycle & Scheduling<br/>Phase 4 | DONE | L"]
 
     %% ── Phase 5: Security ──
-    FAITH-019["FAITH-019<br/>Security YAML Schema & Regex Approval Engine<br/>Phase 5 | IN PROGRESS | M"]
-    FAITH-020["FAITH-020<br/>Approval Request/Response Flow<br/>Phase 5 | IN PROGRESS | M"]
-    FAITH-021["FAITH-021<br/>Audit Log System<br/>Phase 5 | IN PROGRESS | M"]
+    FAITH-019["FAITH-019<br/>Security YAML Schema & Regex Approval Engine<br/>Phase 5 | DONE | M"]
+    FAITH-020["FAITH-020<br/>Approval Request/Response Flow<br/>Phase 5 | DONE | M"]
+    FAITH-021["FAITH-021<br/>Audit Log System<br/>Phase 5 | DONE | M"]
 
     %% ── Phase 6: Tool Servers ──
     FAITH-022["FAITH-022<br/>Filesystem MCP Server<br/>Phase 6 | TODO | L"]
@@ -388,7 +388,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-006 | Config Migration System | 1 (Foundation) | DONE | S |
 | FAITH-007 | Compact Protocol Data Models & Serialisation | 2 (Protocol & Events) | DONE | M |
 | FAITH-008 | Event System Data Models & Publisher | 2 (Protocol & Events) | DONE | M |
-| FAITH-019 | Security YAML Schema & Regex Approval Engine | 5 (Security) | IN PROGRESS | M |
+| FAITH-019 | Security YAML Schema & Regex Approval Engine | 5 (Security) | DONE | M |
 | FAITH-031 | Web Search MCP Server | 6 (Tool Servers) | TODO | S |
 | FAITH-033 | Key-Value Store MCP Server | 6 (Tool Servers) | TODO | S |
 
@@ -397,8 +397,8 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 |------|------|-------|--------|------------|
 | FAITH-009 | Event Subscriber & Dispatcher | 2 (Protocol & Events) | DONE | M |
 | FAITH-010 | Base Agent Class | 3 (Agent Runtime) | DONE | L |
-| FAITH-020 | Approval Request/Response Flow | 5 (Security) | IN PROGRESS | M |
-| FAITH-021 | Audit Log System | 5 (Security) | IN PROGRESS | M |
+| FAITH-020 | Approval Request/Response Flow | 5 (Security) | DONE | M |
+| FAITH-021 | Audit Log System | 5 (Security) | DONE | M |
 | FAITH-025 | PostgreSQL Database MCP Server | 6 (Tool Servers) | TODO | M |
 | FAITH-026 | Browser Automation MCP Server (Playwright) | 6 (Tool Servers) | TODO | L |
 | FAITH-029 | Git MCP Server | 6 (Tool Servers) | TODO | M |

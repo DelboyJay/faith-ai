@@ -30,8 +30,8 @@ class UserApprovalDecision(str, Enum):
     """Description:
         Enumerate the user decisions supported by the approval flow.
 
-    Requirements:
-        - Cover one-off, session, persistent allow, persistent ask, and denial outcomes.
+        Requirements:
+            - Cover one-off, session, persistent allow, persistent ask, and denial outcomes.
     """
 
     ALLOW_ONCE = "allow_once"
@@ -47,6 +47,8 @@ PERMANENT_RULE_SECTION = {
     UserApprovalDecision.ALWAYS_ASK: "always_ask_learned",
     UserApprovalDecision.DENY_PERMANENTLY: "always_deny_learned",
 }
+
+FILESYSTEM_SCOPE_OPTIONS = ["exact", "folder", "glob"]
 
 
 @dataclass(slots=True)
@@ -68,7 +70,10 @@ class ApprovalRequest:
     :param created_at: Request creation timestamp.
     :param resolved: Whether the request has been resolved.
     :param decision: Final user decision when resolved.
-    :param generated_rule: Generated persistent rule, when relevant.
+    :param generated_rule: Generated or edited persistent rule, when relevant.
+    :param suggested_rule: Default rule preview shown to the user before persistence.
+    :param suggested_scope: Default rule scope shown to the user.
+    :param scope_options: Available scope options for the request.
     """
 
     request_id: str
@@ -83,6 +88,9 @@ class ApprovalRequest:
     resolved: bool = False
     decision: UserApprovalDecision | None = None
     generated_rule: str | None = None
+    suggested_rule: str | None = None
+    suggested_scope: str = "exact"
+    scope_options: list[str] = field(default_factory=lambda: ["exact"])
 
 
 class ApprovalFlow:
@@ -161,8 +169,7 @@ class ApprovalFlow:
         :returns: Final user decision.
         """
 
-        request = ApprovalRequest(
-            request_id=self._next_request_id(),
+        request = self._build_request(
             agent_id=agent_id,
             tool=tool,
             action=action,
@@ -229,13 +236,16 @@ class ApprovalFlow:
         decision_enum = UserApprovalDecision(decision)
         request.decision = decision_enum
         request.resolved = True
+        effective_scope = scope or request.suggested_scope
 
         if decision_enum == UserApprovalDecision.APPROVE_SESSION:
             self.approval_engine.record_session_approval(
-                request.agent_id, self._action_key(request)
+                request.agent_id,
+                self._action_key(request),
+                scope=effective_scope,
             )
         elif decision_enum in PERMANENT_RULE_SECTION:
-            request.generated_rule = rule_override or self.generate_rule(request, scope=scope)
+            request.generated_rule = rule_override or self.generate_rule(request, scope=effective_scope)
             self._write_learned_rule(
                 request.agent_id, PERMANENT_RULE_SECTION[decision_enum], request.generated_rule
             )
@@ -260,7 +270,7 @@ class ApprovalFlow:
                 tool=request.tool,
                 action=request.action,
                 target=request.target or request.action,
-                approval_tier=decision_enum.value,
+                approval_tier=self._audit_tier_for_decision(decision_enum),
                 rule_matched=request.generated_rule,
                 decision=(
                     "approved"
@@ -282,6 +292,87 @@ class ApprovalFlow:
             future.set_result(decision_enum)
 
         return request
+
+    def build_websocket_payload(self, request: ApprovalRequest) -> dict[str, Any]:
+        """Description:
+            Build the enriched WebSocket payload for one approval request.
+
+        Requirements:
+            - Expose UI metadata for the six supported approval options.
+            - Surface the generated rule preview and available scope choices for filesystem actions.
+
+        :param request: Approval request to serialise.
+        :returns: JSON-serialisable payload for the Web UI.
+        """
+
+        return {
+            "request_id": request.request_id,
+            "agent_id": request.agent_id,
+            "tool": request.tool,
+            "action": request.action,
+            "target": request.target,
+            "detail": request.detail,
+            "channel": request.channel,
+            "msg_id": request.msg_id,
+            "created_at": request.created_at,
+            "suggested_rule": request.suggested_rule,
+            "suggested_scope": request.suggested_scope,
+            "scope_options": list(request.scope_options),
+            "options": [
+                {
+                    "key": UserApprovalDecision.ALLOW_ONCE.value,
+                    "label": "Allow once",
+                    "permanent": False,
+                    "de_emphasise": False,
+                },
+                {
+                    "key": UserApprovalDecision.APPROVE_SESSION.value,
+                    "label": "Approve for this session",
+                    "permanent": False,
+                    "de_emphasise": False,
+                },
+                {
+                    "key": UserApprovalDecision.ALWAYS_ALLOW.value,
+                    "label": "Always allow",
+                    "permanent": True,
+                    "de_emphasise": True,
+                },
+                {
+                    "key": UserApprovalDecision.ALWAYS_ASK.value,
+                    "label": "Always ask",
+                    "permanent": True,
+                    "de_emphasise": True,
+                },
+                {
+                    "key": UserApprovalDecision.DENY_ONCE.value,
+                    "label": "Deny once",
+                    "permanent": False,
+                    "de_emphasise": False,
+                },
+                {
+                    "key": UserApprovalDecision.DENY_PERMANENTLY.value,
+                    "label": "Deny permanently",
+                    "permanent": True,
+                    "de_emphasise": True,
+                },
+            ],
+        }
+
+    def clear_session(self) -> None:
+        """Description:
+            Clear session-scoped approval memory and cancel pending requests.
+
+        Requirements:
+            - Wipe the approval engine session memory.
+            - Cancel any unresolved futures so callers do not wait indefinitely.
+        """
+
+        self.approval_engine.clear_session_memory()
+        for future in self._futures.values():
+            if not future.done():
+                future.cancel()
+        self._futures.clear()
+        self.pending.clear()
 
     @classmethod
     def generate_rule(cls, request: ApprovalRequest, *, scope: str | None = None) -> str:
@@ -307,12 +398,56 @@ class ApprovalFlow:
             prefix = re.escape(f"{request.tool}:{request.action}:")
             normalized_target = cls._normalize_target(request.target)
             if scope_kind == "folder":
-                folder = normalized_target.rstrip("/")
+                folder = normalized_target.rsplit("/", 1)[0] if "/" in normalized_target else normalized_target
+                folder = folder.rstrip("/")
                 return rf"^{prefix}{re.escape(folder)}(?:/.*)?$"
             if scope_kind == "glob":
                 return rf"^{prefix}{cls._glob_to_regex(normalized_target)}$"
 
         return rf"^{re.escape(action_key)}$"
+
+    def _build_request(
+        self,
+        *,
+        agent_id: str,
+        tool: str,
+        action: str,
+        target: str = "",
+        detail: str = "",
+        channel: str | None = None,
+        msg_id: int | None = None,
+    ) -> ApprovalRequest:
+        """Description:
+            Build one approval request with rule-review metadata populated.
+
+        Requirements:
+            - Advertise filesystem scope options for path-based approvals.
+            - Precompute the suggested exact-match rule for review in the UI.
+
+        :param agent_id: Agent requesting approval.
+        :param tool: Tool involved in the request.
+        :param action: Action verb being requested.
+        :param target: Optional action target such as a path or command.
+        :param detail: Optional human-readable detail text.
+        :param channel: Optional event channel associated with the request.
+        :param msg_id: Optional message identifier associated with the request.
+        :returns: Constructed approval request.
+        """
+
+        request = ApprovalRequest(
+            request_id=self._next_request_id(),
+            agent_id=agent_id,
+            tool=tool,
+            action=action,
+            target=target,
+            detail=detail,
+            channel=channel,
+            msg_id=msg_id,
+        )
+        if tool == "filesystem" and target:
+            request.scope_options = list(FILESYSTEM_SCOPE_OPTIONS)
+        request.suggested_rule = self.generate_rule(request, scope=request.suggested_scope)
+        return request
 
     def _write_learned_rule(self, agent_id: str, section: str, rule: str) -> None:
         """Description:
@@ -463,3 +598,26 @@ class ApprovalFlow:
             else:
                 parts.append(re.escape(char))
         return "".join(parts)
+
+    @staticmethod
+    def _audit_tier_for_decision(decision: UserApprovalDecision) -> str:
+        """Description:
+            Map one user decision to the canonical audit approval tier vocabulary.
+
+        Requirements:
+            - Keep permanent deny decisions in the canonical ``always_deny`` form.
+            - Collapse unsupported one-off deny wording to ``unknown``.
+
+        :param decision: User decision being audited.
+        :returns: Canonical audit approval tier string.
+        """
+
+        mapping = {
+            UserApprovalDecision.ALLOW_ONCE: "allow_once",
+            UserApprovalDecision.APPROVE_SESSION: "approve_session",
+            UserApprovalDecision.ALWAYS_ALLOW: "always_allow",
+            UserApprovalDecision.ALWAYS_ASK: "always_ask",
+            UserApprovalDecision.DENY_ONCE: "unknown",
+            UserApprovalDecision.DENY_PERMANENTLY: "always_deny",
+        }
+        return mapping[decision]

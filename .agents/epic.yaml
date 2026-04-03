@@ -222,7 +222,7 @@ phases:
         summary: 'Implement the PA''s FRS workflow: receive user natural language → classify as new requirement / refinement / correction / question → update `.faith/docs/frs.md` with numbered REQ/DEC entries → publish `file:changed` → determine affected agents/tasks → issue updated instructions. Maintain consistent FRS structure (Requirements, Decisions, Out of Scope, Open Questions).'
   - id: 5
     title: 'Security & Approval System'
-    status: 'TODO'
+    status: 'DONE'
     summary: ''
     task_count: 4
     tasks:
@@ -230,7 +230,7 @@ phases:
         name: 'Security YAML Schema & Regex Approval Engine'
         complexity: 'M'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-019-security-approval-engine.md'
         dependencies: ['FAITH-003']
         frs_reference: 'Section 5.1, 5.3'
@@ -239,7 +239,7 @@ phases:
         name: 'Approval Request/Response Flow'
         complexity: 'M'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-020-approval-request-response.md'
         dependencies: ['FAITH-019', 'FAITH-008']
         frs_reference: 'Section 5.6'
@@ -248,7 +248,7 @@ phases:
         name: 'Audit Log System'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-021-audit-log-system.md'
         dependencies: ['FAITH-008']
         frs_reference: 'Section 5.5'
