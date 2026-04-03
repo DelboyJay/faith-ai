@@ -62,9 +62,9 @@ class SecretResolver:
             env_path = Path(config_dir) / ".env"
         self.secrets_path = Path(secrets_path) if secrets_path is not None else None
         self.env_path = Path(env_path) if env_path is not None else None
-        self.environment = dict(os.environ)
+        self.environment = dict(self._load_env_file())
+        self.environment.update(dict(os.environ))
         self.environment.update(environment or {})
-        self.environment.update(self._load_env_file())
         self.secrets = self._load_secrets()
 
     def _load_env_file(self) -> dict[str, str]:
@@ -214,3 +214,80 @@ class SecretResolver:
         """
 
         return self.resolve_environment(env=env, env_secret_refs=env_secret_refs)
+
+    def resolve_tool_config(self, tool_config: dict[str, Any]) -> dict[str, Any]:
+        """Description:
+            Resolve secret-backed values embedded in one tool configuration mapping.
+
+        Requirements:
+            - Preserve the original config structure while replacing secret references with runtime values.
+            - Remove the ``env_secret_refs`` helper mapping after resolution.
+            - Recursively expand nested ``secret_ref`` keys without overwriting explicit values.
+
+        :param tool_config: Tool configuration mapping to resolve.
+        :returns: Resolved tool configuration mapping.
+        """
+
+        return self._resolve_tool_value(tool_config)
+
+    def _resolve_tool_value(self, value: Any) -> Any:
+        """Description:
+            Recursively resolve secret-backed values inside one tool-config payload node.
+
+        Requirements:
+            - Resolve nested mappings and lists recursively.
+            - Merge `secret_ref` payloads into the surrounding mapping without overwriting explicit values.
+            - Resolve `env` and `env_secret_refs` helper mappings before returning the node.
+
+        :param value: Tool-config payload node to resolve.
+        :returns: Resolved payload node.
+        """
+
+        if isinstance(value, list):
+            return [self._resolve_tool_value(item) for item in value]
+
+        if not isinstance(value, dict):
+            return value
+
+        resolved = {
+            key: self._resolve_tool_value(item)
+            for key, item in value.items()
+            if key != "env_secret_refs"
+        }
+
+        env = self.resolve_environment(
+            env=resolved.get("env"),
+            env_secret_refs=value.get("env_secret_refs"),
+        )
+        if env:
+            resolved["env"] = env
+        elif "env" in resolved and not resolved["env"]:
+            resolved.pop("env", None)
+
+        if "secret_ref" in value:
+            secret_value = self.resolve_secret_ref(str(value["secret_ref"]))
+            if isinstance(secret_value, dict):
+                for key, item in secret_value.items():
+                    resolved.setdefault(key, item)
+            else:
+                resolved.setdefault("value", secret_value)
+            resolved.pop("secret_ref", None)
+
+        return resolved
+
+    def build_env_dict(self, secret_ref: str) -> dict[str, str]:
+        """Description:
+            Build an environment mapping from one named secret reference.
+
+        Requirements:
+            - Upper-case scalar keys for runtime environment injection.
+            - Return ``VALUE`` for scalar secret payloads.
+
+        :param secret_ref: Secret reference name to expand.
+        :returns: Environment mapping derived from the resolved secret.
+        """
+
+        secret = self.resolve_secret_ref(secret_ref)
+        if isinstance(secret, dict):
+            return {key.upper(): str(value) for key, value in secret.items()}
+        return {"VALUE": str(secret)}
