@@ -45,7 +45,7 @@
 | FAITH-034 | CAG Implementation | 7 (CAG & External MCP) | DONE | FAITH-010, FAITH-022 | M | Sonnet / GPT-5.4 |
 | FAITH-035 | External MCP Server Registration & Lifecycle | 7 (CAG & External MCP) | DONE | FAITH-014, FAITH-003 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-036 | FastAPI Server Setup & WebSocket Endpoints | 8 (Web UI) | DONE | FAITH-002, FAITH-008 | M | Sonnet / GPT-5.4 |
-| FAITH-037 | GoldenLayout Panel Framework | 8 (Web UI) | TODO | FAITH-036 | M | Opus / GPT-5.4 high reasoning |
+| FAITH-037 | GoldenLayout Panel Framework | 8 (Web UI) | DONE | FAITH-036 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-038 | Agent Panel Component (xterm.js + Vue 3) | 8 (Web UI) | TODO | FAITH-037 | M | Sonnet / GPT-5.4 |
 | FAITH-039 | Approval Panel Component | 8 (Web UI) | TODO | FAITH-037, FAITH-020 | M | Sonnet / GPT-5.4 |
 | FAITH-040 | Status Bar & System Health Panel | 8 (Web UI) | TODO | FAITH-037 | S | Haiku / GPT-5.4-mini |
@@ -127,7 +127,7 @@ flowchart TD
 
     %% ── Phase 8: Web UI ──
     FAITH-036["FAITH-036<br/>FastAPI Server Setup & WebSocket Endpoints<br/>Phase 8 | DONE | M"]
-    FAITH-037["FAITH-037<br/>GoldenLayout Panel Framework<br/>Phase 8 | TODO | M"]
+    FAITH-037["FAITH-037<br/>GoldenLayout Panel Framework<br/>Phase 8 | DONE | M"]
     FAITH-038["FAITH-038<br/>Agent Panel Component (xterm.js + Vue 3)<br/>Phase 8 | TODO | M"]
     FAITH-039["FAITH-039<br/>Approval Panel Component<br/>Phase 8 | TODO | M"]
     FAITH-040["FAITH-040<br/>Status Bar & System Health Panel<br/>Phase 8 | TODO | S"]
@@ -412,7 +412,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-013 | LLM API Client (Ollama + OpenRouter) | 3 (Agent Runtime) | DONE | M |
 | FAITH-014 | PA Container Setup & Docker SDK Integration | 4 (PA Core) | DONE | M |
 | FAITH-030 | Pricing MCP Server | 6 (Tool Servers) | TODO | M |
-| FAITH-037 | GoldenLayout Panel Framework | 8 (Web UI) | TODO | M |
+| FAITH-037 | GoldenLayout Panel Framework | 8 (Web UI) | DONE | M |
 | FAITH-045 | Event Log Writer | 9 (Logging) | TODO | S |
 | FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | IN PROGRESS | S |
 
