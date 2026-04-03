@@ -6,6 +6,7 @@ Requirements:
     - Capture stdout, stderr, return values, and tracebacks separately.
     - Enforce execution timeouts deterministically.
     - Keep execution rooted in an explicit working directory.
+    - Support package-install helpers with input sanitisation.
 """
 
 from __future__ import annotations
@@ -50,6 +51,8 @@ _WRAPPER = textwrap.dedent(
     """
 )
 
+_INVALID_PACKAGE_CHARS = set(";|&$`'\"\n\r")
+
 
 @dataclass(slots=True)
 class SandboxConfig:
@@ -59,6 +62,7 @@ class SandboxConfig:
 
     Requirements:
         - Preserve timeout, executable, working directory, and environment overrides.
+        - Preserve the execution target label used for audit and debugging.
 
     :param timeout_seconds: Maximum execution time before the subprocess is killed.
     :param python_executable: Python interpreter used for execution.
@@ -70,6 +74,7 @@ class SandboxConfig:
     python_executable: str = sys.executable
     working_directory: Path | None = None
     environment: dict[str, str] = field(default_factory=dict)
+    execution_target: str = "sandbox"
 
 
 @dataclass(slots=True)
@@ -79,7 +84,8 @@ class ExecutionResult:
         Capture the structured result of one Python execution request.
 
     Requirements:
-        - Preserve stdout, stderr, return value, traceback, exit status, and duration.
+        - Preserve stdout, stderr, return value, traceback, exit status, duration,
+          and execution target.
         - Report whether execution timed out.
     """
 
@@ -90,6 +96,7 @@ class ExecutionResult:
     exit_code: int = 0
     timed_out: bool = False
     duration_seconds: float = 0.0
+    execution_target: str = "sandbox"
 
     @property
     def success(self) -> bool:
@@ -137,7 +144,7 @@ def execute_code(code: str, config: SandboxConfig) -> ExecutionResult:
     :returns: Structured execution result.
     """
 
-    result = ExecutionResult()
+    result = ExecutionResult(execution_target=config.execution_target)
     start = time.perf_counter()
     working_directory = Path(config.working_directory or Path.cwd())
     working_directory.mkdir(parents=True, exist_ok=True)
@@ -182,3 +189,134 @@ def execute_code(code: str, config: SandboxConfig) -> ExecutionResult:
 
     result.duration_seconds = time.perf_counter() - start
     return result
+
+
+def install_packages(packages: list[str], config: SandboxConfig) -> ExecutionResult:
+    """
+    Description:
+        Install Python packages with ``pip`` inside the selected execution target.
+
+    Requirements:
+        - Reject package specifiers containing shell-metacharacter input.
+        - Return a structured subprocess result without invoking a shell.
+
+    :param packages: Python package specifiers to install.
+    :param config: Subprocess sandbox configuration.
+    :returns: Structured package-install execution result.
+    """
+
+    if not packages:
+        return ExecutionResult(execution_target=config.execution_target)
+    _validate_package_inputs(packages, "package")
+    return _run_subprocess(
+        [config.python_executable, "-m", "pip", "install", "--no-input", *packages],
+        config,
+    )
+
+
+def install_os_packages(packages: list[str], config: SandboxConfig) -> ExecutionResult:
+    """
+    Description:
+        Install OS packages inside the selected execution target.
+
+    Requirements:
+        - Reject package specifiers containing shell-metacharacter input.
+        - Run package-manager commands without invoking a shell.
+
+    :param packages: OS package names to install.
+    :param config: Subprocess sandbox configuration.
+    :returns: Structured OS-package-install execution result.
+    """
+
+    if not packages:
+        return ExecutionResult(execution_target=config.execution_target)
+    _validate_package_inputs(packages, "OS package")
+    update_result = _run_subprocess(
+        ["apt-get", "update"],
+        config,
+        timeout_seconds=max(config.timeout_seconds, 120),
+    )
+    if not update_result.success:
+        return update_result
+    install_result = _run_subprocess(
+        ["apt-get", "install", "-y", "--no-install-recommends", *packages],
+        config,
+        timeout_seconds=max(config.timeout_seconds, 120),
+    )
+    install_result.stdout = f"{update_result.stdout}{install_result.stdout}"
+    install_result.stderr = f"{update_result.stderr}{install_result.stderr}"
+    return install_result
+
+
+def _run_subprocess(
+    args: list[str],
+    config: SandboxConfig,
+    *,
+    timeout_seconds: int | None = None,
+) -> ExecutionResult:
+    """
+    Description:
+        Run one subprocess command and capture its structured result.
+
+    Requirements:
+        - Capture stdout and stderr separately.
+        - Honour the configured timeout without invoking a shell.
+
+    :param args: Subprocess argument vector.
+    :param config: Subprocess sandbox configuration.
+    :param timeout_seconds: Optional timeout override for the subprocess.
+    :returns: Structured subprocess execution result.
+    """
+
+    result = ExecutionResult(execution_target=config.execution_target)
+    start = time.perf_counter()
+    working_directory = Path(config.working_directory or Path.cwd())
+    working_directory.mkdir(parents=True, exist_ok=True)
+    env = None
+    if config.environment:
+        env = dict(os.environ)
+        env.update(config.environment)
+    try:
+        completed = subprocess.run(
+            args,
+            cwd=working_directory,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds or config.timeout_seconds,
+            env=env,
+        )
+        result.stdout = completed.stdout
+        result.stderr = completed.stderr
+        result.exit_code = completed.returncode
+    except subprocess.TimeoutExpired as exc:
+        result.stdout = exc.stdout or ""
+        result.stderr = exc.stderr or ""
+        result.exit_code = -1
+        result.timed_out = True
+        result.duration_seconds = time.perf_counter() - start
+        return result
+    except FileNotFoundError as exc:
+        result.exit_code = -1
+        result.stderr = str(exc)
+        result.duration_seconds = time.perf_counter() - start
+        return result
+    result.duration_seconds = time.perf_counter() - start
+    return result
+
+
+def _validate_package_inputs(values: list[str], label: str) -> None:
+    """
+    Description:
+        Validate package names before they are passed to a subprocess command.
+
+    Requirements:
+        - Reject shell-metacharacter input rather than attempting to escape it.
+
+    :param values: Package names or package specifiers to validate.
+    :param label: Human-readable item label used in validation errors.
+    :raises ValueError: If any value contains shell-metacharacter input.
+    """
+
+    for value in values:
+        if any(character in value for character in _INVALID_PACKAGE_CHARS):
+            raise ValueError(f"Invalid {label} name: {value!r}")
