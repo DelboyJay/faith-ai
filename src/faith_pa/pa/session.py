@@ -55,28 +55,51 @@ class AgentState:
         Represent a lightweight persisted agent state snapshot.
 
     Requirements:
-        - Preserve the agent identifier, status, and a short summary string.
+        - Preserve the agent identifier, current task, progress, channel assignments, file watches, and summary text.
 
     :param agent_id: Agent identifier.
-    :param status: Agent runtime status.
+    :param current_task: Current task description.
+    :param progress: Human-readable progress summary.
+    :param channel_assignments: Channel identifiers assigned to the agent.
+    :param file_watches: File-watch patterns assigned to the agent.
     :param summary: Human-readable summary of the current state.
+    :param status: Optional agent runtime status.
     """
 
     agent_id: str
-    status: str
+    current_task: str = ""
+    progress: str = ""
+    channel_assignments: list[str] = field(default_factory=list)
+    file_watches: list[str] = field(default_factory=list)
     summary: str = ""
+    status: str = "idle"
 
     def to_markdown(self) -> str:
         """Description:
             Render the agent state as a simple markdown-backed metadata file.
 
         Requirements:
-            - Preserve the three key state fields in a stable plain-text format.
+            - Preserve the task, progress, channel, file-watch, summary, and status fields in a readable stable format.
 
         :returns: Markdown representation of the agent state.
         """
 
-        return f"# Agent State\nagent_id: {self.agent_id}\nstatus: {self.status}\nsummary: {self.summary}\n"
+        channels = (
+            "\n".join(f"- {channel}" for channel in self.channel_assignments) or "- (none)"
+        )
+        file_watches = "\n".join(f"- {path}" for path in self.file_watches) or "- (none)"
+        current_task = self.current_task or "(none)"
+        progress = self.progress or "(none)"
+        summary = self.summary or "(none)"
+        return (
+            f"# Agent State: {self.agent_id}\n\n"
+            f"status: {self.status}\n"
+            f"current_task: {current_task}\n"
+            f"progress: {progress}\n\n"
+            f"## Channels\n{channels}\n\n"
+            f"## File Watches\n{file_watches}\n\n"
+            f"## Summary\n{summary}\n"
+        )
 
     @classmethod
     def from_markdown(cls, markdown: str) -> AgentState:
@@ -84,22 +107,54 @@ class AgentState:
             Parse an agent state from its markdown-backed metadata representation.
 
         Requirements:
-            - Ignore heading lines and malformed lines without ``:`` separators.
+            - Ignore malformed lines outside the recognised metadata sections.
+            - Parse channel and file-watch bullet lists from their dedicated sections.
 
         :param markdown: Markdown text to parse.
         :returns: Parsed agent state.
         """
 
         values: dict[str, str] = {}
-        for line in markdown.splitlines():
+        channel_assignments: list[str] = []
+        file_watches: list[str] = []
+        summary_lines: list[str] = []
+        current_section = ""
+        for raw_line in markdown.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if line.startswith("# Agent State:"):
+                values["agent_id"] = line.split(":", 1)[1].strip()
+                continue
+            if line.startswith("## "):
+                current_section = line[3:].strip().lower()
+                continue
+            if current_section == "channels" and line.startswith("- "):
+                value = line[2:].strip()
+                if value != "(none)":
+                    channel_assignments.append(value)
+                continue
+            if current_section == "file watches" and line.startswith("- "):
+                value = line[2:].strip()
+                if value != "(none)":
+                    file_watches.append(value)
+                continue
+            if current_section == "summary":
+                if line != "(none)":
+                    summary_lines.append(raw_line.strip())
+                continue
             if ":" not in line or line.startswith("#"):
                 continue
             key, value = line.split(":", 1)
             values[key.strip()] = value.strip()
         return cls(
             agent_id=values.get("agent_id", ""),
-            status=values.get("status", ""),
-            summary=values.get("summary", ""),
+            current_task="" if values.get("current_task") == "(none)" else values.get("current_task", ""),
+            progress="" if values.get("progress") == "(none)" else values.get("progress", ""),
+            channel_assignments=channel_assignments,
+            file_watches=file_watches,
+            summary="\n".join(summary_lines).strip(),
+            status=values.get("status", "idle"),
         )
 
 
@@ -109,18 +164,20 @@ class SessionRecord:
         Represent one persisted PA session.
 
     Requirements:
-        - Preserve the session identifier, metadata path, trigger, and start time.
+        - Preserve the session identifier, metadata path, trigger, start time, and active task pointer.
 
     :param session_id: Session identifier.
     :param path: Session metadata directory.
     :param trigger: Trigger that created the session.
     :param started_at: Session start timestamp.
+    :param active_task_id: Optional active task identifier.
     """
 
     session_id: str
     path: Path
     trigger: str
     started_at: str
+    active_task_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -421,6 +478,7 @@ class SessionManager:
         for phase, agents in (staged_agents or {}).items():
             task.stage_agents(str(phase), agents)
         self.tasks[task_id] = task
+        self.current_session.active_task_id = task_id
         self._write_task_meta(task)
         self._update_session_tasks(task)
         return task
@@ -572,6 +630,26 @@ class SessionManager:
             task_id: task.goal for task_id, task in self.tasks.items() if task.status == "active"
         }
 
+    def get_active_task(self) -> TaskRecord | None:
+        """Description:
+            Return the most recent active task record.
+
+        Requirements:
+            - Prefer the explicit session active-task pointer when it is set.
+            - Fall back to scanning the active task map when needed.
+
+        :returns: Active task record, if any.
+        """
+
+        if self.current_session and self.current_session.active_task_id:
+            task = self.tasks.get(self.current_session.active_task_id)
+            if task and task.status == "active":
+                return task
+        for task in reversed(list(self.tasks.values())):
+            if task.status == "active":
+                return task
+        return None
+
     def get_active_agent_ids(self) -> list[str]:
         """Description:
             Return the sorted active agent identifiers across active tasks.
@@ -649,11 +727,27 @@ class SessionManager:
 
         if not self.current_session:
             return
+        for task in self.tasks.values():
+            if task.status == "active":
+                task.finish("complete")
+                self._write_task_meta(task)
+                self._update_session_tasks(task)
         meta_path = self.current_session.path / "session.meta.json"
         data = json.loads(meta_path.read_text(encoding="utf-8"))
         data["status"] = "ended"
         data["ended_at"] = _iso(_now())
+        active_agents = self.get_active_agent_ids()
+        data["task_count"] = len(self.tasks)
+        data["agents_active"] = active_agents
+        data["active_task_id"] = None
         meta_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        self.current_session.active_task_id = None
+        if self._idle_task and not self._idle_task.done():
+            self._idle_task.cancel()
+            try:
+                await self._idle_task
+            except asyncio.CancelledError:
+                pass
         self.current_session = None
         self.session_id = None
         self.session_dir = None

@@ -11,6 +11,7 @@ Requirements:
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -123,6 +124,41 @@ async def test_idle_monitor_ends_session(tmp_path: Path, system_config: SystemCo
     assert manager.current_session is None
 
 
+@pytest.mark.asyncio
+async def test_session_manager_persists_task_phase_and_session_summary(
+    tmp_path: Path, system_config: SystemConfig
+) -> None:
+    """Description:
+        Verify task metadata and session summary capture staged agents, active agents, and sandbox identity.
+
+        Requirements:
+            - This test is needed to prove FAITH persists enough task/session detail to reconstruct work after restart or project switch.
+            - Verify task metadata includes staged phases and sandbox assignment, and session metadata reflects the task summary.
+
+        :param tmp_path: Temporary pytest directory fixture.
+        :param system_config: Baseline system configuration fixture.
+    """
+
+    manager = SessionManager(project_root=tmp_path, system_config=system_config)
+    await manager.start_session(trigger="web-ui")
+    task = manager.create_task(
+        "Review auth flow",
+        channels=["ch-auth-review"],
+        staged_agents={"review": ["security", "qa"]},
+        sandbox_id="sbx-0001",
+    )
+
+    activated = manager.activate_phase(task.task_id, "review")
+
+    task_meta = (task.path / "task.meta.json").read_text(encoding="utf-8")
+    session_meta = (manager.session_path() / "session.meta.json").read_text(encoding="utf-8")
+
+    assert activated == ["security", "qa"]
+    assert "\"sandbox_id\": \"sbx-0001\"" in task_meta
+    assert "\"review\": [" in task_meta
+    assert "\"channel\": \"ch-auth-review\"" in session_meta
+
+
 def test_agent_state_roundtrip() -> None:
     """Description:
         Verify lightweight agent-state markdown round-trips back into the same object.
@@ -132,7 +168,69 @@ def test_agent_state_roundtrip() -> None:
             - Verify the parsed state equals the original state object.
     """
 
-    state = AgentState(agent_id="developer", status="idle", summary="Waiting for review")
+    state = AgentState(
+        agent_id="developer",
+        current_task="Review login flow",
+        progress="2 of 4 checks complete",
+        channel_assignments=["ch-auth", "ch-review"],
+        file_watches=["src/auth.py"],
+        summary="Waiting for review",
+    )
     parsed = AgentState.from_markdown(state.to_markdown())
 
     assert parsed == state
+
+
+@pytest.mark.asyncio
+async def test_session_manager_persists_task_and_session_metadata(
+    tmp_path: Path, system_config: SystemConfig
+) -> None:
+    """Description:
+        Verify the session manager writes structured metadata for sessions and tasks.
+
+        Requirements:
+            - This test is needed to prove Phase 4 session/task state survives beyond in-memory runtime state.
+            - Verify both the session and task metadata files contain the expected identifiers and status fields.
+
+        :param tmp_path: Temporary pytest directory fixture.
+        :param system_config: Baseline system configuration fixture.
+    """
+
+    manager = SessionManager(project_root=tmp_path, system_config=system_config)
+    session = await manager.start_session(trigger="web-ui")
+    task = manager.create_task("Implement phase 4", channels=["ch-phase4"], sandbox_id="sbx-0001")
+
+    session_meta = json.loads((session.path / "session.meta.json").read_text(encoding="utf-8"))
+    task_meta = json.loads((task.path / "task.meta.json").read_text(encoding="utf-8"))
+
+    assert session_meta["session_id"] == session.session_id
+    assert session_meta["status"] == "active"
+    assert task_meta["task_id"] == task.task_id
+    assert task_meta["sandbox_id"] == "sbx-0001"
+    assert "ch-phase4" in task_meta["channels"]
+
+
+@pytest.mark.asyncio
+async def test_session_manager_end_session_completes_active_tasks(
+    tmp_path: Path, system_config: SystemConfig
+) -> None:
+    """Description:
+        Verify ending a session completes active tasks and clears the active-session pointer.
+
+        Requirements:
+            - This test is needed to prove session teardown leaves no active tasks behind.
+            - Verify the task status becomes complete and the active-session pointer is cleared.
+
+        :param tmp_path: Temporary pytest directory fixture.
+        :param system_config: Baseline system configuration fixture.
+    """
+
+    manager = SessionManager(project_root=tmp_path, system_config=system_config)
+    await manager.start_session()
+    task = manager.create_task("Finish me")
+
+    await manager.end_session()
+
+    task_meta = json.loads((task.path / "task.meta.json").read_text(encoding="utf-8"))
+    assert task_meta["status"] == "complete"
+    assert manager.current_session is None

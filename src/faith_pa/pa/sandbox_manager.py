@@ -5,19 +5,24 @@ Requirements:
     - Reuse one shared sandbox when the request does not require isolation.
     - Allocate isolated sandboxes for destructive or isolation-required work.
     - Enforce the configured concurrent sandbox quota.
+    - Emit sandbox lifecycle events and audit entries when integrations are supplied.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 from faith_pa.pa.container_manager import ContainerSpec
 from faith_pa.pa.sandbox_models import (
     ResourceQuota,
     SandboxAllocationMode,
+    SandboxPolicy,
     SandboxQuota,
     SandboxRecord,
     SandboxRequest,
     SandboxState,
 )
+from faith_shared.protocol.events import EventType, FaithEvent
 
 
 class SandboxQuotaExceeded(RuntimeError):
@@ -41,6 +46,8 @@ class SandboxManager:
     :param runtime: Runtime abstraction used to create and destroy sandboxes.
     :param quota: Sandbox quota configuration.
     :param image: Sandbox image reference.
+    :param event_publisher: Optional event publisher used for sandbox lifecycle notifications.
+    :param audit_logger: Optional audit logger used for sandbox lifecycle decisions.
     """
 
     def __init__(
@@ -49,6 +56,8 @@ class SandboxManager:
         *,
         quota: SandboxQuota | ResourceQuota | None = None,
         image: str = "ghcr.io/faith/sandbox:latest",
+        event_publisher: Any | None = None,
+        audit_logger: Any | None = None,
     ):
         """Description:
             Initialise the sandbox manager.
@@ -59,11 +68,15 @@ class SandboxManager:
         :param runtime: Runtime abstraction used to create and destroy sandboxes.
         :param quota: Sandbox quota configuration.
         :param image: Sandbox image reference.
+        :param event_publisher: Optional event publisher used for sandbox lifecycle notifications.
+        :param audit_logger: Optional audit logger used for sandbox lifecycle decisions.
         """
 
         self.runtime = runtime
         self.quota = quota or SandboxQuota()
         self.image = image
+        self.event_publisher = event_publisher
+        self.audit_logger = audit_logger
         self._counter = 0
         self._sandboxes: dict[str, SandboxRecord] = {}
         self._shared_sandbox_id: str | None = None
@@ -123,12 +136,87 @@ class SandboxManager:
             name=record.container_name,
             image=self.image,
             container_type="sandbox",
+            mounts=dict(record.policy.approved_mounts),
             labels={
                 "faith.role": "sandbox",
                 "faith.sandbox_id": record.sandbox_id,
                 "faith.session_id": record.session_id,
                 "faith.task_id": record.task_id,
+                "faith.allocation_mode": record.allocation_mode.value,
+                "faith.network_mode": record.policy.network_mode,
             },
+        )
+
+    async def _publish_event(self, event: EventType | str, **data: Any) -> None:
+        """Description:
+            Publish one sandbox lifecycle event when an event publisher is configured.
+
+        Requirements:
+            - Prefer a generic ``publish`` method.
+            - Preserve the event name and structured data unchanged.
+
+        :param event: Sandbox lifecycle event name.
+        :param data: Structured event data payload.
+        """
+
+        if self.event_publisher is None or not hasattr(self.event_publisher, "publish"):
+            return
+        if isinstance(event, EventType):
+            payload: Any = FaithEvent(event=event, source="sandbox_manager", data=data)
+        else:
+            payload = {"event": event, "source": "sandbox_manager", "data": data}
+        await self.event_publisher.publish(payload)
+
+    async def _audit(self, action: str, record: SandboxRecord, **extra: Any) -> None:
+        """Description:
+            Emit one sandbox audit entry when an audit logger is configured.
+
+        Requirements:
+            - Include the sandbox identity, task ownership, allocation mode, and action name.
+
+        :param action: Sandbox lifecycle action.
+        :param record: Sandbox record associated with the audit entry.
+        :param extra: Additional audit metadata.
+        """
+
+        if self.audit_logger is None or not hasattr(self.audit_logger, "record"):
+            return
+        await self.audit_logger.record(
+            action=action,
+            sandbox_id=record.sandbox_id,
+            session_id=record.session_id,
+            task_id=record.task_id,
+            allocation_mode=record.allocation_mode.value,
+            **extra,
+        )
+
+    def _build_policy(self, request: SandboxRequest) -> SandboxPolicy:
+        """Description:
+            Build the hardened sandbox policy for one allocation request.
+
+        Requirements:
+            - Allow approved mounts only.
+            - Never allow privileged mode, host networking, or Docker socket access.
+            - Carry the quota-derived CPU, memory, and disk settings into the policy.
+
+        :param request: Sandbox allocation request.
+        :returns: Hardened sandbox policy.
+        """
+
+        cleaned_mounts = {
+            host_path: mount_path
+            for host_path, mount_path in request.approved_mounts.items()
+            if "docker.sock" not in host_path.lower()
+        }
+        return SandboxPolicy(
+            approved_mounts=cleaned_mounts,
+            network_mode="bridge",
+            privileged=False,
+            docker_socket_allowed=False,
+            linux_capabilities=list(request.linux_capabilities),
+            cpu_limit=self.quota.cpu_limit,
+            memory_mb=self.quota.memory_mb,
+            disk_mb=self.quota.disk_mb,
         )
 
     async def _create_runtime(self, record: SandboxRecord) -> None:
@@ -186,6 +274,13 @@ class SandboxManager:
             record = self._sandboxes[self._shared_sandbox_id]
             record.agents.add(request.agent_id)
             record.reuse_count += 1
+            await self._publish_event(
+                "sandbox:reused",
+                sandbox_id=record.sandbox_id,
+                task_id=record.task_id,
+                agent_id=request.agent_id,
+            )
+            await self._audit("reuse", record, agent_id=request.agent_id)
             return record
 
         if self._active_count() >= self.quota.max_concurrent:
@@ -206,12 +301,26 @@ class SandboxManager:
             image=self.image,
             container_name=self._container_name(sandbox_id),
             agents={request.agent_id},
+            policy=self._build_policy(request),
         )
         self._sandboxes[sandbox_id] = record
         if allocation_mode is SandboxAllocationMode.SHARED:
             self._shared_sandbox_id = sandbox_id
         await self._create_runtime(record)
         record.state = SandboxState.READY
+        await self._publish_event(
+            EventType.SYSTEM_CONTAINER_STARTED,
+            container_name=record.container_name,
+            container_type="sandbox",
+        )
+        await self._publish_event(
+            "sandbox:created",
+            sandbox_id=record.sandbox_id,
+            task_id=record.task_id,
+            agent_id=request.agent_id,
+            allocation_mode=record.allocation_mode.value,
+        )
+        await self._audit("create", record, agent_id=request.agent_id)
         return record
 
     async def reset(self, sandbox_id: str) -> SandboxRecord:
@@ -231,6 +340,8 @@ class SandboxManager:
         await self._destroy_runtime(record)
         await self._create_runtime(record)
         record.state = SandboxState.READY
+        await self._publish_event("sandbox:reset", sandbox_id=record.sandbox_id)
+        await self._audit("reset", record)
         return record
 
     async def release(self, sandbox_id: str, *, agent_id: str) -> None:
@@ -248,8 +359,29 @@ class SandboxManager:
 
         record = self._sandboxes[sandbox_id]
         record.agents.discard(agent_id)
+        await self._audit("release", record, agent_id=agent_id)
         if record.allocation_mode is SandboxAllocationMode.ISOLATED or not record.agents:
             await self._destroy_runtime(record)
             record.state = SandboxState.DESTROYED
             if self._shared_sandbox_id == sandbox_id:
                 self._shared_sandbox_id = None
+            await self._publish_event(
+                EventType.SYSTEM_CONTAINER_STOPPED,
+                container_name=record.container_name,
+                reason="destroyed",
+            )
+            await self._publish_event("sandbox:destroyed", sandbox_id=record.sandbox_id)
+            await self._audit("destroy", record)
+
+    def get(self, sandbox_id: str) -> SandboxRecord:
+        """Description:
+            Return one tracked sandbox record by identifier.
+
+        Requirements:
+            - Expose the current sandbox record without mutating it.
+
+        :param sandbox_id: Sandbox identifier to inspect.
+        :returns: Tracked sandbox record.
+        """
+
+        return self._sandboxes[sandbox_id]

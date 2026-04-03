@@ -162,7 +162,7 @@ phases:
         summary: 'Implement unified LLM API client supporting both Ollama (`/api/chat`) and OpenRouter (`/api/v1/chat/completions`) endpoints. Ollama access must support bundled-container and external-host endpoints, resolved in a platform-aware way (Linux container-first when accelerator support is confirmed, Windows container only when WSL2/Docker GPU support is confirmed otherwise host Ollama, macOS host Ollama by default). Include startup capability probing for local models (working GPU path, usable VRAM, RAM fallback, lightweight inference check), exponential backoff retry (3 retries, 2s→4s→8s), error classification, fallback model support, and `agent:error` publication after retry exhaustion. Model config from `.faith/agents/{id}/config.yaml` with `.faith/system.yaml` defaults.'
   - id: 4
     title: 'PA Core'
-    status: 'TODO'
+    status: 'DONE'
     summary: 'Build the Project Agent — the brain of the system.'
     task_count: 6
     tasks:
@@ -170,7 +170,7 @@ phases:
         name: 'PA Container Setup & Docker SDK Integration'
         complexity: 'M'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-014-pa-container-setup.md'
         dependencies: ['FAITH-001', 'FAITH-002', 'FAITH-010']
         frs_reference: 'Section 4.6.1, 4.6.2'
@@ -179,7 +179,7 @@ phases:
         name: 'Disposable Sandbox Lifecycle & Scheduling'
         complexity: 'L'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-057-disposable-sandbox-lifecycle-scheduling.md'
         dependencies: ['FAITH-014']
         frs_reference: 'Section 2.3, 4.2'
@@ -188,7 +188,7 @@ phases:
         name: 'PA Session & Task Management'
         complexity: 'L'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-015-pa-session-task-management.md'
         dependencies: ['FAITH-014', 'FAITH-057', 'FAITH-009']
         frs_reference: 'Section 3.2, 8.4'

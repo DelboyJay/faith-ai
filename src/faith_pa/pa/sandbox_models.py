@@ -34,8 +34,10 @@ class SandboxState(str, Enum):
 
     CREATING = "creating"
     READY = "ready"
+    BUSY = "busy"
     RUNNING = "running"
     RESETTING = "resetting"
+    FAILED = "failed"
     DESTROYED = "destroyed"
 
 
@@ -52,12 +54,47 @@ class SandboxQuota:
         - Limit the number of concurrently allocated sandboxes.
 
     :param max_concurrent: Maximum number of concurrently allocated sandboxes.
+    :param cpu_limit: Optional CPU limit applied to one sandbox.
+    :param memory_mb: Optional memory limit applied to one sandbox in megabytes.
+    :param disk_mb: Optional disk-budget hint applied to one sandbox in megabytes.
     """
 
     max_concurrent: int = 4
+    cpu_limit: float | None = None
+    memory_mb: int | None = None
+    disk_mb: int | None = None
 
 
 ResourceQuota = SandboxQuota
+
+
+@dataclass(slots=True)
+class SandboxPolicy:
+    """Description:
+        Define the hard isolation policy attached to one disposable sandbox.
+
+    Requirements:
+        - Preserve approved mounts, network mode, privilege policy, Docker socket policy, and Linux capability allow-list.
+        - Provide the resource limits used when scheduling or creating the sandbox.
+
+    :param approved_mounts: Explicitly approved host-to-container mounts.
+    :param network_mode: Sandbox network mode. Host networking is never allowed for disposable sandboxes.
+    :param privileged: Whether privileged mode is allowed.
+    :param docker_socket_allowed: Whether the Docker socket may be mounted.
+    :param linux_capabilities: Minimal Linux capability allow-list for the sandbox.
+    :param cpu_limit: Optional CPU limit applied to the sandbox.
+    :param memory_mb: Optional memory limit applied to the sandbox in megabytes.
+    :param disk_mb: Optional disk-budget hint applied to the sandbox in megabytes.
+    """
+
+    approved_mounts: dict[str, str] = field(default_factory=dict)
+    network_mode: str = "bridge"
+    privileged: bool = False
+    docker_socket_allowed: bool = False
+    linux_capabilities: list[str] = field(default_factory=list)
+    cpu_limit: float | None = None
+    memory_mb: int | None = None
+    disk_mb: int | None = None
 
 
 @dataclass(slots=True)
@@ -77,6 +114,8 @@ class SandboxRequest:
     :param purpose: Logical purpose label for the sandbox.
     :param requires_isolation: Whether the request explicitly requires isolation.
     :param destructive: Whether the planned work is destructive enough to require isolation.
+    :param approved_mounts: Explicitly approved host-to-container mounts for the sandbox.
+    :param linux_capabilities: Minimal Linux capability allow-list for the sandbox.
     """
 
     session_id: str
@@ -87,6 +126,8 @@ class SandboxRequest:
     purpose: str = "workspace"
     requires_isolation: bool = False
     destructive: bool = False
+    approved_mounts: dict[str, str] = field(default_factory=dict)
+    linux_capabilities: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         """Description:
@@ -131,6 +172,7 @@ class SandboxRecord:
     :param container_name: Docker container name for the sandbox.
     :param agents: Agent identifiers currently attached to the sandbox.
     :param reuse_count: Number of times the sandbox has been reused.
+    :param policy: Hardened sandbox isolation policy.
     """
 
     sandbox_id: str
@@ -144,6 +186,7 @@ class SandboxRecord:
     container_name: str
     agents: set[str] = field(default_factory=set)
     reuse_count: int = 0
+    policy: SandboxPolicy = field(default_factory=SandboxPolicy)
 
     @property
     def mode(self) -> SandboxMode:
