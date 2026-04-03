@@ -1,16 +1,13 @@
-FROM python:3.13-slim
+FROM python:3.12-slim
 
-WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY containers/tool-python/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+WORKDIR /workspace
 
-COPY src/ /app/src/
-COPY web/ /app/web/
+COPY containers/tool-python/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
-ENV PYTHONPATH=/app/src
-ENV PYTHONUNBUFFERED=1
-
-CMD ["python", "-c", "print('FAITH python tool scaffold')"]
-
-
+ENTRYPOINT ["/entrypoint.sh"]

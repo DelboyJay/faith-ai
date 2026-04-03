@@ -539,7 +539,7 @@ phases:
         name: 'First-Run Wizard: Multi-Step UI'
         complexity: 'L'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'TODO'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-049-first-run-wizard.md'
         dependencies: ['FAITH-036', 'FAITH-003', 'FAITH-014', 'FAITH-057']
         frs_reference: 'Section 9.3'
@@ -566,7 +566,7 @@ phases:
         name: 'Ollama Model Download Integration'
         complexity: 'S'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-051-ollama-model-download.md'
         dependencies: ['FAITH-049', 'FAITH-057']
         frs_reference: 'Section 10.5'
@@ -599,7 +599,7 @@ phases:
         name: 'Service Route Discovery & `faith show-urls`'
         complexity: 'S'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-059-service-route-discovery-show-urls.md'
         dependencies: ['FAITH-005', 'FAITH-036']
         frs_reference: 'Section 9.2.2, 9.6.1'
