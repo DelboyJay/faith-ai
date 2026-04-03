@@ -3,6 +3,7 @@
 
 Requirements:
     - Persist audit entries as newline-delimited JSON.
+    - Support canonical approval-tier vocabulary from the FRS.
     - Support log rotation based on file age.
     - Provide simple read and query helpers for the Web UI and debugging workflows.
 """
@@ -16,6 +17,15 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 DEFAULT_RETENTION_DAYS = 90
+CANONICAL_APPROVAL_TIERS = {
+    "always_allow",
+    "approve_session",
+    "allow_once",
+    "always_ask",
+    "always_deny",
+    "unattended",
+    "unknown",
+}
 _audit_counter = 0
 
 
@@ -47,6 +57,30 @@ def _now_iso() -> str:
     """
 
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _normalise_approval_tier(approval_tier: str | None) -> str | None:
+    """Description:
+        Normalise approval-tier values to the canonical FRS vocabulary.
+
+    Requirements:
+        - Convert legacy permanent-deny wording to ``always_deny``.
+        - Collapse unsupported one-off deny wording to ``unknown``.
+        - Leave canonical values untouched.
+
+    :param approval_tier: Raw approval tier value.
+    :returns: Canonical approval tier value, or ``None`` when absent.
+    """
+
+    if approval_tier is None:
+        return None
+    if approval_tier == "deny_permanently":
+        return "always_deny"
+    if approval_tier == "deny_once":
+        return "unknown"
+    if approval_tier in CANONICAL_APPROVAL_TIERS:
+        return approval_tier
+    return "unknown"
 
 
 class AuditEntry(BaseModel):
@@ -199,6 +233,7 @@ class AuditLogger:
 
         Requirements:
             - Preserve tool, action, target, approval, and routing metadata.
+            - Normalise approval tiers to the canonical FRS vocabulary before writing.
 
         :param agent: Agent responsible for the operation.
         :param tool: Tool name involved in the operation.
@@ -217,7 +252,7 @@ class AuditLogger:
             tool=tool,
             action=action,
             target=target,
-            approval_tier=approval_tier,
+            approval_tier=_normalise_approval_tier(approval_tier),
             rule_matched=rule_matched,
             decision=decision,
             channel=channel,
@@ -288,6 +323,26 @@ class AuditLogger:
             approval_tier="allow_once",
             channel=channel,
             msg_id=msg_id,
+        )
+
+    async def record(self, *, action: str, sandbox_id: str, **_: object) -> AuditEntry:
+        """Description:
+            Write one audit entry through the async compatibility interface.
+
+        Requirements:
+            - Support PA components that expect an awaitable ``record`` method.
+            - Record sandbox lifecycle entries under the ``sandbox`` tool name.
+
+        :param action: Sandbox lifecycle action being audited.
+        :param sandbox_id: Sandbox identifier used as the audit target.
+        :returns: Persisted audit entry.
+        """
+
+        return self.log_tool_operation(
+            agent="pa",
+            tool="sandbox",
+            action=action,
+            target=sandbox_id,
         )
 
     def rotate_if_needed(self) -> Path | None:

@@ -8,10 +8,11 @@
       "type": "object",
       "additionalProperties": {
         "type": "object",
-        "properties": {
-          "always_ask": {"type": "array", "items": {"type": "string"}},
-          "always_allow": {"type": "array", "items": {"type": "string"}}
-        },
+      "properties": {
+        "always_ask": {"type": "array", "items": {"type": "string"}},
+        "always_deny": {"type": "array", "items": {"type": "string"}},
+        "always_allow": {"type": "array", "items": {"type": "string"}}
+      },
         "additionalProperties": false
       }
     },

@@ -2,8 +2,9 @@
     Evaluate ask-first approval rules for FAITH tool and filesystem actions.
 
 Requirements:
-    - Load persistent rule sets from ``security.yaml``.
-    - Apply explicit ask, allow, and deny rules before session memory.
+    - Load persistent and learned rule sets from ``security.yaml``.
+    - Apply ask, deny, and allow rules in the FRS precedence order before session memory.
+    - Support filesystem session memory using exact, folder, and path-pattern scopes.
     - Fall back to ask-first behaviour when no rule matches.
 """
 
@@ -27,13 +28,13 @@ class ApprovalTier(str, Enum):
         Enumerate the approval outcomes used by the FAITH approval engine.
 
     Requirements:
-        - Cover persistent allow, session allow, ask-first, and deny outcomes.
+        - Use the canonical v1 approval vocabulary from the FRS.
     """
 
     ALWAYS_ALLOW = "always_allow"
     APPROVE_SESSION = "approve_session"
     ALWAYS_ASK = "always_ask"
-    ALWAYS_DENY = "deny_permanently"
+    ALWAYS_DENY = "always_deny"
     ASK_FIRST = "ask_first"
 
 
@@ -69,10 +70,26 @@ class _CompiledRuleSet:
     """
 
     always_ask: list[tuple[str, re.Pattern[str]]] = field(default_factory=list)
+    always_deny: list[tuple[str, re.Pattern[str]]] = field(default_factory=list)
     always_allow: list[tuple[str, re.Pattern[str]]] = field(default_factory=list)
     always_ask_learned: list[tuple[str, re.Pattern[str]]] = field(default_factory=list)
     always_allow_learned: list[tuple[str, re.Pattern[str]]] = field(default_factory=list)
     always_deny_learned: list[tuple[str, re.Pattern[str]]] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class _SessionMemoryRule:
+    """Description:
+        Hold one remembered session-scoped approval or denial rule.
+
+    Requirements:
+        - Preserve the compiled session pattern and decision tier.
+        - Keep the original rule text for audit and debugging visibility.
+    """
+
+    tier: ApprovalTier
+    pattern_text: str
+    pattern: re.Pattern[str]
 
 
 class ApprovalEngine:
@@ -102,7 +119,7 @@ class ApprovalEngine:
         self._security_yaml_path = self.faith_dir / "security.yaml"
         self._agent_rules: dict[str, _CompiledRuleSet] = {}
         self._trust_levels: dict[str, TrustLevel] = {}
-        self._session_memory: dict[tuple[str, str], ApprovalDecision] = {}
+        self._session_memory: dict[str, list[_SessionMemoryRule]] = {}
 
     def load_rules(self) -> None:
         """Description:
@@ -130,10 +147,8 @@ class ApprovalEngine:
             Evaluate one action against the approval policy for an agent.
 
         Requirements:
-            - Apply explicit ask rules before learned ask rules.
-            - Apply deny rules before allow rules.
-            - Use session memory only after persistent rules have been checked.
-            - Fall back to ask-first when no rule matches.
+            - Apply ask rules before deny rules, deny rules before allow rules, and session memory afterward.
+            - Allow persistent rules to override remembered session decisions.
 
         :param agent_id: Agent identifier requesting the action.
         :param action: Canonical action string to evaluate.
@@ -158,6 +173,15 @@ class ApprovalEngine:
                 rule_matched=match,
                 rule_source="always_ask_learned",
                 requires_approval=True,
+            )
+
+        match = self._match_any(action, ruleset.always_deny)
+        if match:
+            return ApprovalDecision(
+                tier=ApprovalTier.ALWAYS_DENY,
+                rule_matched=match,
+                rule_source="always_deny",
+                requires_approval=False,
             )
 
         match = self._match_any(action, ruleset.always_deny_learned)
@@ -187,15 +211,9 @@ class ApprovalEngine:
                 requires_approval=False,
             )
 
-        remembered = self._session_memory.get((agent_id, action))
+        remembered = self._match_session_memory(agent_id, action)
         if remembered is not None:
-            return ApprovalDecision(
-                tier=ApprovalTier.APPROVE_SESSION,
-                rule_matched=remembered.rule_matched,
-                rule_source="session_memory",
-                requires_approval=False,
-                remembered=True,
-            )
+            return remembered
 
         return ApprovalDecision(
             tier=ApprovalTier.ASK_FIRST,
@@ -208,25 +226,59 @@ class ApprovalEngine:
         agent_id: str,
         action: str,
         *,
+        scope: str | None = None,
         rule_matched: str | None = None,
     ) -> None:
         """Description:
             Remember a one-session approval for a specific action.
 
         Requirements:
-            - Record the remembered decision under the exact agent/action key.
+            - Delegate to the generic session-decision recorder using the approval tier.
 
         :param agent_id: Agent identifier receiving the session approval.
         :param action: Canonical action string that was approved.
-        :param rule_matched: Optional rule string associated with the approval.
+        :param scope: Optional filesystem scope such as ``exact``, ``folder``, or ``glob``.
+        :param rule_matched: Optional explicit rule string associated with the approval.
         """
 
-        self._session_memory[(agent_id, action)] = ApprovalDecision(
-            tier=ApprovalTier.APPROVE_SESSION,
+        self.record_session_decision(
+            agent_id,
+            action,
+            scope=scope,
+            decision=ApprovalTier.APPROVE_SESSION,
             rule_matched=rule_matched,
-            rule_source="approve_session",
-            requires_approval=False,
-            remembered=True,
+        )
+
+    def record_session_decision(
+        self,
+        agent_id: str,
+        action: str,
+        *,
+        scope: str | None = None,
+        decision: ApprovalTier = ApprovalTier.APPROVE_SESSION,
+        rule_matched: str | None = None,
+    ) -> None:
+        """Description:
+            Remember one session-scoped approval or denial rule.
+
+        Requirements:
+            - Support exact, folder, and glob session scopes for filesystem actions.
+            - Preserve the remembered decision tier so both approvals and denials can be replayed.
+
+        :param agent_id: Agent identifier receiving the session rule.
+        :param action: Canonical action string to remember.
+        :param scope: Optional filesystem scope such as ``exact``, ``folder``, or ``glob``.
+        :param decision: Remembered decision tier to replay.
+        :param rule_matched: Optional explicit rule text associated with the remembered decision.
+        """
+
+        pattern_text = rule_matched or self._build_session_pattern(action, scope=scope)
+        self._session_memory.setdefault(agent_id, []).append(
+            _SessionMemoryRule(
+                tier=decision,
+                pattern_text=pattern_text,
+                pattern=re.compile(pattern_text),
+            )
         )
 
     def clear_session_memory(self) -> None:
@@ -238,6 +290,18 @@ class ApprovalEngine:
         """
 
         self._session_memory.clear()
+
+    def clear_agent_session_memory(self, agent_id: str) -> None:
+        """Description:
+            Clear session memory entries for one specific agent.
+
+        Requirements:
+            - Leave other agents' remembered session rules untouched.
+
+        :param agent_id: Agent identifier whose session memory should be cleared.
+        """
+
+        self._session_memory.pop(agent_id, None)
 
     def get_trust_level(self, agent_id: str) -> TrustLevel:
         """Description:
@@ -288,6 +352,9 @@ class ApprovalEngine:
             )
             ruleset.always_ask = self._compile_patterns(
                 raw_rules.get("always_ask", []), agent_id, "always_ask"
+            )
+            ruleset.always_deny = self._compile_patterns(
+                raw_rules.get("always_deny", []), agent_id, "always_deny"
             )
             ruleset.always_allow = self._compile_patterns(
                 raw_rules.get("always_allow", []), agent_id, "always_allow"
@@ -374,3 +441,82 @@ class ApprovalEngine:
             if compiled.search(action):
                 return pattern
         return None
+
+    def _match_session_memory(self, agent_id: str, action: str) -> ApprovalDecision | None:
+        """Description:
+            Return the first remembered session decision that matches an action.
+
+        Requirements:
+            - Evaluate remembered rules only for the requesting agent.
+            - Preserve the remembered rule text in the returned decision.
+
+        :param agent_id: Agent identifier to inspect.
+        :param action: Canonical action string to test.
+        :returns: Matching remembered decision, if one exists.
+        """
+
+        for remembered in self._session_memory.get(agent_id, []):
+            if remembered.pattern.search(action):
+                return ApprovalDecision(
+                    tier=remembered.tier,
+                    rule_matched=remembered.pattern_text,
+                    rule_source="session_memory",
+                    requires_approval=False,
+                    remembered=True,
+                )
+        return None
+
+    @staticmethod
+    def _build_session_pattern(action: str, *, scope: str | None = None) -> str:
+        """Description:
+            Build the regex pattern used for one remembered session decision.
+
+        Requirements:
+            - Use exact matching by default.
+            - Support folder and glob scopes for filesystem action keys.
+
+        :param action: Canonical action string to remember.
+        :param scope: Optional scope hint such as ``exact``, ``folder``, or ``glob``.
+        :returns: Regex pattern string for the remembered session decision.
+        """
+
+        scope_kind = (scope or "exact").lower()
+        if not action.startswith("filesystem:"):
+            return rf"^{re.escape(action)}$"
+
+        try:
+            tool, verb, target = action.split(":", 2)
+        except ValueError:
+            return rf"^{re.escape(action)}$"
+
+        normalized_target = target.replace("\\", "/")
+        prefix = re.escape(f"{tool}:{verb}:")
+        if scope_kind == "folder":
+            folder = normalized_target.rsplit("/", 1)[0] if "/" in normalized_target else normalized_target
+            folder = folder.rstrip("/")
+            return rf"^{prefix}{re.escape(folder)}(?:/.*)?$"
+        if scope_kind == "glob":
+            return rf"^{prefix}{ApprovalEngine._glob_to_regex(normalized_target)}$"
+        return rf"^{re.escape(f'{tool}:{verb}:{normalized_target}')}$"
+
+    @staticmethod
+    def _glob_to_regex(pattern: str) -> str:
+        """Description:
+            Convert a simple glob pattern into a regex fragment.
+
+        Requirements:
+            - Support ``*`` and ``?`` wildcards while escaping all other characters.
+
+        :param pattern: Glob-style pattern to convert.
+        :returns: Regex fragment representing the glob pattern.
+        """
+
+        parts: list[str] = []
+        for char in pattern:
+            if char == "*":
+                parts.append(".*")
+            elif char == "?":
+                parts.append(".")
+            else:
+                parts.append(re.escape(char))
+        return "".join(parts)

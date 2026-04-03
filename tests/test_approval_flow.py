@@ -1,11 +1,11 @@
 """Description:
-    Verify approval requests, resolutions, learned-rule persistence, and audit logging.
+    Verify approval requests, scope-aware session memory, learned rules, and audit logging.
 
 Requirements:
     - Prove approval requests publish request and decision events.
-    - Prove session approvals update the approval engine memory.
-    - Prove permanent denials persist generated rules to ``security.yaml``.
-    - Prove resolved decisions are written to the audit log.
+    - Prove session approvals update the approval engine with filesystem-aware scopes.
+    - Prove persisted decisions expose a reviewable generated rule before writing.
+    - Prove permanent denials persist generated rules to ``security.yaml`` with canonical audit tiers.
 """
 
 from __future__ import annotations
@@ -141,6 +141,43 @@ async def test_approve_session_records_engine_memory(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_approve_session_folder_scope_matches_sibling_paths(tmp_path):
+    """Description:
+        Verify approve-session decisions can be remembered at folder scope for filesystem actions.
+
+        Requirements:
+            - This test is needed to prove filesystem approvals are remembered by target scope rather than exact string only.
+            - Verify a folder-scoped session approval matches a later sibling path.
+
+        :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    faith_dir = tmp_path / ".faith"
+    write_file(faith_dir / "security.yaml", "approval_rules: {}\n")
+    engine = ApprovalEngine(faith_dir)
+    engine.load_rules()
+    flow = ApprovalFlow(approval_engine=engine, security_yaml_path=faith_dir / "security.yaml")
+
+    task = asyncio.create_task(
+        flow.request_approval(
+            agent_id="dev", tool="filesystem", action="write", target="/repo/src/app.py"
+        )
+    )
+    await asyncio.sleep(0)
+    request_id = next(iter(flow.pending))
+    await flow.resolve_request(
+        request_id,
+        UserApprovalDecision.APPROVE_SESSION,
+        scope="folder",
+    )
+    await task
+
+    decision = engine.evaluate("dev", "filesystem:write:/repo/src/utils/helpers.py")
+    assert decision.tier == ApprovalTier.APPROVE_SESSION
+    assert decision.remembered is True
+
+
+@pytest.mark.asyncio
 async def test_deny_permanently_writes_matching_rule(tmp_path):
     """Description:
         Verify permanent denials persist a generated rule and affect later evaluations.
@@ -178,6 +215,40 @@ async def test_deny_permanently_writes_matching_rule(tmp_path):
     assert decision.rule_source == "always_deny_learned"
 
 
+def test_build_websocket_payload_includes_rule_review_metadata(tmp_path):
+    """Description:
+        Verify approval payloads expose the generated rule and scope choices for UI review.
+
+        Requirements:
+            - This test is needed to prove persisted-rule decisions can be reviewed and edited before writing.
+            - Verify filesystem requests advertise exact, folder, and glob scope options.
+
+        :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    faith_dir = tmp_path / ".faith"
+    write_file(faith_dir / "security.yaml", "approval_rules: {}\n")
+    engine = ApprovalEngine(faith_dir)
+    engine.load_rules()
+    flow = ApprovalFlow(approval_engine=engine, security_yaml_path=faith_dir / "security.yaml")
+    request = flow._build_request(
+        agent_id="dev",
+        tool="filesystem",
+        action="write",
+        target="/repo/src/app.py",
+        detail="Modify source file",
+    )
+
+    payload = flow.build_websocket_payload(request)
+
+    assert payload["suggested_rule"] == r"^filesystem:write:/repo/src/app\.py$"
+    assert payload["scope_options"] == ["exact", "folder", "glob"]
+    assert payload["options"][2]["key"] == "always_allow"
+    assert payload["options"][2]["de_emphasise"] is True
+    assert payload["options"][5]["key"] == "deny_permanently"
+    assert payload["options"][5]["permanent"] is True
+
+
 @pytest.mark.asyncio
 async def test_flow_logs_audit_decision(tmp_path):
     """Description:
@@ -211,4 +282,42 @@ async def test_flow_logs_audit_decision(tmp_path):
     entries = audit.read_entries()
     assert len(entries) == 1
     assert entries[0].decision == "denied"
-    assert entries[0].approval_tier == "deny_once"
+    assert entries[0].approval_tier == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_flow_logs_canonical_always_deny_for_permanent_denials(tmp_path):
+    """Description:
+        Verify permanent denials are written to the audit log with the canonical deny tier.
+
+        Requirements:
+            - This test is needed to prove legacy ``deny_permanently`` wording does not leak into audit records.
+            - Verify the audit entry stores ``always_deny`` as the approval tier.
+
+        :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    faith_dir = tmp_path / ".faith"
+    logs_dir = tmp_path / "logs"
+    write_file(faith_dir / "security.yaml", "approval_rules: {}\n")
+    engine = ApprovalEngine(faith_dir)
+    engine.load_rules()
+    audit = AuditLogger(logs_dir)
+    flow = ApprovalFlow(
+        approval_engine=engine, security_yaml_path=faith_dir / "security.yaml", audit_logger=audit
+    )
+
+    task = asyncio.create_task(
+        flow.request_approval(
+            agent_id="dev", tool="filesystem", action="write", target="/repo/secrets.txt"
+        )
+    )
+    await asyncio.sleep(0)
+    request_id = next(iter(flow.pending))
+    await flow.resolve_request(request_id, UserApprovalDecision.DENY_PERMANENTLY)
+    await task
+
+    entries = audit.read_entries()
+    assert len(entries) == 1
+    assert entries[0].decision == "denied"
+    assert entries[0].approval_tier == "always_deny"

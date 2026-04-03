@@ -454,10 +454,11 @@ class AgentApprovalRules(BaseModel):
         Define remembered approval rules for one agent.
 
     Requirements:
-        - Preserve always-ask and always-allow rule sets.
+        - Preserve always-ask, always-deny, and always-allow rule sets.
     """
 
     always_ask: list[str] = Field(default_factory=list)
+    always_deny: list[str] = Field(default_factory=list)
     always_allow: list[str] = Field(default_factory=list)
 
 
