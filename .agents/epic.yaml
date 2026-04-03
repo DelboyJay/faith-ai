@@ -369,7 +369,7 @@ phases:
         summary: 'Redis-backed. Keys namespaced per session (`sess-{id}:{key}`). MCP commands: `set(key, value, ttl?)`, `get(key)`, `delete(key)`, `list(prefix?)`, `exists(key)`. Keys expire on session close unless marked persistent.'
   - id: 7
     title: 'CAG & External MCP Integration'
-    status: 'TODO'
+    status: 'DONE'
     summary: ''
     task_count: 2
     tasks:
@@ -377,7 +377,7 @@ phases:
         name: 'CAG Implementation'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-034-cag-implementation.md'
         dependencies: ['FAITH-010', 'FAITH-022']
         frs_reference: 'Section 4.10'
@@ -386,7 +386,7 @@ phases:
         name: 'External MCP Server Registration & Lifecycle'
         complexity: 'M'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-035-external-mcp-lifecycle.md'
         dependencies: ['FAITH-014', 'FAITH-003']
         frs_reference: 'Section 4.11'

@@ -19,15 +19,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from faith_pa.agent.caching import apply_cache_hints, detect_provider
+from faith_pa.agent.cag import CAGManager, CAGValidationResult
 from faith_pa.agent.llm_client import LLMClient
 from faith_pa.agent.summariser import ContextSummariser
 from faith_pa.config.models import AgentConfig, SystemConfig
 from faith_pa.utils.tokens import (
     context_threshold,
     count_message_tokens,
-    count_text_tokens,
     over_context_threshold,
-    truncate_text_to_token_limit,
 )
 from faith_shared.protocol.compact import ChannelMessageStore, CompactMessage
 from faith_shared.protocol.events import EventPublisher, EventType, FaithEvent
@@ -199,6 +199,28 @@ class BaseAgent:
             fallback_model=self.system_config.pa.fallback_model,
             ollama_host=self.system_config.ollama.endpoint if self.system_config.ollama.enabled else None,
         )
+        self.cag_manager = CAGManager(
+            project_root=self.project_root,
+            model_name=self.model_name,
+            document_paths=list(self.config.cag_documents),
+            max_tokens=self.config.cag_max_tokens,
+        )
+        self.cag_validation = CAGValidationResult(
+            success=True,
+            total_tokens=0,
+            max_tokens=self.config.cag_max_tokens,
+            document_count=len(self.config.cag_documents),
+            loaded_count=0,
+        )
+        llm_api_hint = self.system_config.ollama.endpoint or getattr(
+            self.llm_client,
+            "ollama_host",
+            "",
+        )
+        self._llm_provider = detect_provider(
+            self.model_name,
+            llm_api_hint,
+        )
         self.event_publisher = (
             EventPublisher(self.redis, source=self.agent_id) if self.redis is not None else None
         )
@@ -347,41 +369,44 @@ class BaseAgent:
             "Use the FAITH compact protocol when replying to channel work."
         )
 
-    def load_cag_documents(self) -> list[str]:
+    def load_cag_documents(self) -> CAGValidationResult:
         """Description:
-            Load CAG documents from the project root within the configured token budget.
+            Load and validate the configured CAG documents for the agent.
 
         Requirements:
-            - Skip missing or non-file CAG paths.
-            - Truncate the final included document when it would exceed the remaining budget.
+            - Preserve the last validation result for PA session-start reporting.
+            - Delegate path loading and token-budget validation to the dedicated CAG manager.
 
-        :returns: Loaded CAG document blocks.
+        :returns: Aggregate validation result for the configured CAG documents.
         """
 
-        if not self.project_root:
-            return []
+        self.cag_validation = self.cag_manager.load_all()
+        return self.cag_validation
 
-        loaded: list[str] = []
-        remaining = self.config.cag_max_tokens
-        for relative_path in self.config.cag_documents:
-            path = (self.project_root / relative_path).resolve()
-            if not path.exists() or not path.is_file():
-                continue
-            text = path.read_text(encoding="utf-8")
-            doc_header = f"# CAG Document: {relative_path}\n"
-            doc_text = doc_header + text.strip()
-            doc_tokens = count_text_tokens(doc_text, self.model_name)
-            if remaining <= 0:
-                break
-            if doc_tokens > remaining:
-                doc_text = truncate_text_to_token_limit(doc_text, remaining, self.model_name)
-                if not doc_text.strip():
-                    break
-                loaded.append(doc_text)
-                break
-            loaded.append(doc_text)
-            remaining -= doc_tokens
-        return loaded
+    def handle_cag_file_changed(self, changed_path: str | Path) -> bool:
+        """Description:
+            Reload a CAG document after a matching file-change notification.
+
+        Requirements:
+            - Ignore file changes that do not belong to the configured CAG set.
+            - Append a system note when a CAG document was successfully reloaded.
+
+        :param changed_path: Changed file path received from the filesystem watch flow.
+        :returns: ``True`` when a configured CAG document was reloaded.
+        """
+
+        updated = self.cag_manager.reload_document(changed_path)
+        if updated is None or not updated.loaded:
+            return False
+        self.add_message(
+            "system",
+            (
+                f"CAG document '{updated.relative_path}' was updated on disk and "
+                "reloaded into your reference context."
+            ),
+            disposable=True,
+        )
+        return True
 
     def build_system_prompt(self) -> str:
         """Description:
@@ -403,9 +428,11 @@ class BaseAgent:
         if self.context_summary:
             parts.append(f"Context Summary:\n{self.context_summary}")
 
-        cag_documents = self.load_cag_documents()
-        if cag_documents:
-            parts.append("\n\n".join(cag_documents))
+        if self.config.cag_documents and not self.cag_manager.documents:
+            self.load_cag_documents()
+        formatted_cag = self.cag_manager.format_for_context()
+        if formatted_cag:
+            parts.append(formatted_cag)
 
         return "\n\n".join(part for part in parts if part.strip())
 
@@ -511,7 +538,13 @@ class BaseAgent:
         """
 
         assembly = self.assemble_context(current_task)
-        response = await self.llm_client.chat(assembly.to_messages(), temperature=temperature)
+        messages = assembly.to_messages()
+        cached_messages = apply_cache_hints(
+            messages,
+            provider=self._llm_provider,
+            cag_present=bool(self.cag_manager.documents),
+        )
+        response = await self.llm_client.chat(cached_messages, temperature=temperature)
         return AgentResponse(
             content=response.content,
             raw_response=response,

@@ -6,6 +6,7 @@ Requirements:
     - Resolve environment variables and secret references before container startup.
     - Expose discovery, start, stop, restart, inspect, and destroy operations.
     - Apply the FAITH network and label conventions consistently.
+    - Start the shared `mcp-runtime` with the registry and external-tool metadata needed by Phase 7.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ FAITH_AGENT_LABEL = "faith.agent"
 FAITH_TOOL_LABEL = "faith.tool"
 NETWORK_NAME = "maf-network"
 AGENT_BASE_IMAGE = "faith-agent-base:latest"
+DEFAULT_MCP_REGISTRY_URL = "http://mcp-registry:8080"
 
 
 def _utc_now() -> str:
@@ -1010,6 +1012,7 @@ class ContainerManager:
         Requirements:
             - Mount the project workspace and `.faith/tools` directory for registration access.
             - Publish the runtime as a managed `mcp-runtime` container on the shared network.
+            - Expose the registry URL and version-pinned external tool metadata through the runtime environment.
 
         :param external_tools: External MCP tool configs keyed by tool name.
         :param workspace_path: Project workspace path.
@@ -1019,6 +1022,12 @@ class ContainerManager:
         workspace_path = Path(workspace_path).resolve()
         tools_dir = workspace_path / ".faith" / "tools"
         tool_names = ",".join(sorted(external_tools))
+        pinned_specs = ",".join(
+            sorted(
+                f"{tool_name}:{config.get('registry_ref', '')}@{config.get('package_version', '')}"
+                for tool_name, config in external_tools.items()
+            )
+        )
         return await self.start_container(
             "faith-mcp-runtime",
             image="faith-mcp-runtime:latest",
@@ -1026,6 +1035,8 @@ class ContainerManager:
             environment={
                 "FAITH_EXTERNAL_MCP_COUNT": str(len(external_tools)),
                 "FAITH_EXTERNAL_MCP_TOOLS": tool_names,
+                "FAITH_EXTERNAL_MCP_PACKAGES": pinned_specs,
+                "MCP_REGISTRY_URL": DEFAULT_MCP_REGISTRY_URL,
             },
             mounts={
                 str(workspace_path): "/workspace",
