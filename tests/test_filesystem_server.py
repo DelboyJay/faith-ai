@@ -6,9 +6,44 @@ Description:
 Requirements:
     - Cover a simple write and read round trip through the server facade.
     - Verify the returned payloads reflect the created file state.
+    - Verify lifecycle events and file-watch polling are surfaced.
 """
 
 from faith_mcp.filesystem import FilesystemServer
+
+
+class DummyPublisher:
+    """
+    Description:
+        Record filesystem lifecycle and file-change events for later assertions.
+
+    Requirements:
+        - Preserve the published event objects in call order.
+    """
+
+    def __init__(self) -> None:
+        """
+        Description:
+            Initialise the dummy publisher with no recorded events.
+
+        Requirements:
+            - Start with an empty event list.
+        """
+
+        self.events = []
+
+    async def publish(self, event) -> None:
+        """
+        Description:
+            Record one published event object.
+
+        Requirements:
+            - Preserve the raw event object for assertions.
+
+        :param event: Event payload published by the filesystem server.
+        """
+
+        self.events.append(event)
 
 
 def test_filesystem_server_round_trip(tmp_path) -> None:
@@ -56,3 +91,139 @@ def test_filesystem_server_round_trip(tmp_path) -> None:
         agent_mounts={"workspace": "readwrite"},
     )
     assert payload["content"] == "hello"
+
+
+def test_filesystem_server_restore_version_round_trip(tmp_path) -> None:
+    """
+    Description:
+        Verify the filesystem server can restore a stored history version.
+
+    Requirements:
+        - This test is needed to prove the server facade wires file history restoration correctly.
+        - Verify restoring a previous version rewrites the workspace file content.
+
+    :param tmp_path: Temporary directory provided by pytest.
+    """
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    server = FilesystemServer(
+        tmp_path / ".faith",
+        {
+            "mounts": {
+                "workspace": {
+                    "host_path": str(workspace),
+                    "access": "readwrite",
+                    "history": True,
+                    "history_depth": 3,
+                }
+            }
+        },
+    )
+
+    server.write(
+        "workspace",
+        "notes.txt",
+        "one",
+        agent_id="dev",
+        agent_mounts={"workspace": "readwrite"},
+    )
+    server.write(
+        "workspace",
+        "notes.txt",
+        "two",
+        agent_id="dev",
+        agent_mounts={"workspace": "readwrite"},
+    )
+
+    history = server.list_history("workspace", "notes.txt")
+    assert len(history) >= 1
+    restored = server.restore_version("workspace", "notes.txt", history[0]["version"], agent_id="dev")
+    assert restored is True
+    payload = server.read(
+        "workspace",
+        "notes.txt",
+        agent_id="dev",
+        agent_mounts={"workspace": "readwrite"},
+    )
+    assert payload["content"] == "one"
+
+
+def test_filesystem_server_emits_lifecycle_events(tmp_path) -> None:
+    """
+    Description:
+        Verify filesystem operations publish lifecycle events when a publisher is configured.
+
+    Requirements:
+        - This test is needed to prove the filesystem tool participates in the shared event bus.
+        - Verify a write emits both start and completion events.
+
+    :param tmp_path: Temporary directory provided by pytest.
+    """
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    publisher = DummyPublisher()
+    server = FilesystemServer(
+        tmp_path / ".faith",
+        {
+            "mounts": {
+                "workspace": {
+                    "host_path": str(workspace),
+                    "access": "readwrite",
+                }
+            }
+        },
+        event_publisher=publisher,
+    )
+
+    server.write(
+        "workspace",
+        "notes.txt",
+        "hello",
+        agent_id="dev",
+        agent_mounts={"workspace": "readwrite"},
+    )
+
+    assert [event.event.value for event in publisher.events] == [
+        "tool:call_started",
+        "tool:call_complete",
+    ]
+
+
+def test_filesystem_server_polls_file_events(tmp_path) -> None:
+    """
+    Description:
+        Verify dynamic file-watch subscriptions detect created files.
+
+    Requirements:
+        - This test is needed to prove the filesystem server wires the watcher into a usable facade.
+        - Verify polling a subscribed pattern returns a created-file event for the agent.
+
+    :param tmp_path: Temporary directory provided by pytest.
+    """
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    server = FilesystemServer(
+        tmp_path / ".faith",
+        {
+            "mounts": {
+                "workspace": {
+                    "host_path": str(workspace),
+                    "access": "readwrite",
+                }
+            }
+        },
+    )
+
+    server.register_dynamic_subscription(
+        "dev",
+        "workspace",
+        "*.txt",
+        ["file:created", "file:changed", "file:deleted"],
+    )
+    (workspace / "notes.txt").write_text("hello", encoding="utf-8")
+
+    events = server.poll_file_events()
+    assert events == [{"agent_id": "dev", "event": "file:created", "path": "notes.txt"}]

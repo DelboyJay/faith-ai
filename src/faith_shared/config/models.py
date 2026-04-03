@@ -346,11 +346,12 @@ class PythonToolConfig(BaseModel):
         Define the schema for the Python tool config file.
 
     Requirements:
-        - Preserve schema version and internet-access policy.
+        - Preserve schema version, internet-access policy, and timeout default.
     """
 
     schema_version: str = "1.0"
     internet_access: bool = True
+    timeout_seconds: int = Field(default=60, ge=1, le=3600)
 
 
 class DatabaseConnectionConfig(BaseModel):

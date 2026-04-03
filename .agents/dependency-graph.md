@@ -57,9 +57,9 @@
 | FAITH-046 | Session & Task Log Writer | 9 (Logging) | TODO | FAITH-015 | M | Sonnet / GPT-5.4 |
 | FAITH-047 | Token & Cost Log | 9 (Logging) | TODO | FAITH-013, FAITH-030 | S | Haiku / GPT-5.4-mini |
 | FAITH-048 | Log Retention & Rotation | 9 (Logging) | TODO | FAITH-021, FAITH-045, FAITH-047 | S | Haiku / GPT-5.4-mini |
-| FAITH-049 | First-Run Wizard: Multi-Step UI | 10 (First Run) | TODO | FAITH-036, FAITH-003, FAITH-014, FAITH-057 | L | Opus / GPT-5.4 high reasoning |
+| FAITH-049 | First-Run Wizard: Multi-Step UI | 10 (First Run) | IN PROGRESS | FAITH-036, FAITH-003, FAITH-014, FAITH-057 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-050 | Privacy Profile Enforcement & Provider Knowledge Base | 10 (First Run) | TODO | FAITH-049, FAITH-057, FAITH-003 | M | Sonnet / GPT-5.4 |
-| FAITH-051 | Ollama Model Download Integration | 10 (First Run) | TODO | FAITH-049, FAITH-057 | S | Sonnet / GPT-5.4 |
+| FAITH-051 | Ollama Model Download Integration | 10 (First Run) | DONE | FAITH-049, FAITH-057 | S | Sonnet / GPT-5.4 |
 | FAITH-052 | Cloud Deployment Architecture | 12 (Cloud) | TODO | FAITH-001, FAITH-002, FAITH-003, FAITH-004, FAITH-005, FAITH-006, FAITH-007, FAITH-008, FAITH-009, FAITH-010, FAITH-011, FAITH-012, FAITH-013, FAITH-014, FAITH-015, FAITH-016, FAITH-017, FAITH-018, FAITH-019, FAITH-020, FAITH-021, FAITH-022, FAITH-023, FAITH-024, FAITH-025, FAITH-026, FAITH-027, FAITH-028, FAITH-029, FAITH-030, FAITH-031, FAITH-032, FAITH-033, FAITH-034, FAITH-035, FAITH-036, FAITH-037, FAITH-038, FAITH-039, FAITH-040, FAITH-041, FAITH-042, FAITH-043, FAITH-044, FAITH-045, FAITH-046, FAITH-047, FAITH-048, FAITH-049, FAITH-050, FAITH-051, FAITH-053, FAITH-054, FAITH-055, FAITH-056, FAITH-057, FAITH-058, FAITH-059 | XL | Opus / GPT-5.4 high reasoning |
 | FAITH-053 | First-Run Wizard: Detailed Specification | 10 (First Run) | TODO | FAITH-049, FAITH-057 | M | Sonnet / GPT-5.4 |
 | FAITH-054 | `faith run` Command & Task API | 11 (CLI & Skills) | TODO | FAITH-005, FAITH-036, FAITH-015 | M | Sonnet / GPT-5.4 |
@@ -67,7 +67,7 @@
 | FAITH-056 | Built-in Skill Scheduler | 11 (CLI & Skills) | TODO | FAITH-055, FAITH-004 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-057 | Disposable Sandbox Lifecycle & Scheduling | 4 (PA Core) | DONE | FAITH-014 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-058 | Docker Runtime & Image Panel | 8 (Web UI) | TODO | FAITH-014, FAITH-036, FAITH-037 | M | Sonnet / GPT-5.4 |
-| FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | TODO | FAITH-005, FAITH-036 | S | Sonnet / GPT-5.4 |
+| FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | IN PROGRESS | FAITH-005, FAITH-036 | S | Sonnet / GPT-5.4 |
 
 ---
 
@@ -144,16 +144,16 @@ flowchart TD
     FAITH-048["FAITH-048<br/>Log Retention & Rotation<br/>Phase 9 | TODO | S"]
 
     %% ── Phase 10: First Run ──
-    FAITH-049["FAITH-049<br/>First-Run Wizard: Multi-Step UI<br/>Phase 10 | TODO | L"]
+    FAITH-049["FAITH-049<br/>First-Run Wizard: Multi-Step UI<br/>Phase 10 | IN PROGRESS | L"]
     FAITH-050["FAITH-050<br/>Privacy Profile Enforcement & Provider Knowledge Base<br/>Phase 10 | TODO | M"]
-    FAITH-051["FAITH-051<br/>Ollama Model Download Integration<br/>Phase 10 | TODO | S"]
+    FAITH-051["FAITH-051<br/>Ollama Model Download Integration<br/>Phase 10 | DONE | S"]
     FAITH-053["FAITH-053<br/>First-Run Wizard: Detailed Specification<br/>Phase 10 | TODO | M"]
 
     %% ── Phase 11: CLI & Skills ──
     FAITH-054["FAITH-054<br/>`faith run` Command & Task API<br/>Phase 11 | TODO | M"]
     FAITH-055["FAITH-055<br/>Skill Definitions & Unattended Execution<br/>Phase 11 | TODO | M"]
     FAITH-056["FAITH-056<br/>Built-in Skill Scheduler<br/>Phase 11 | TODO | M"]
-    FAITH-059["FAITH-059<br/>Service Route Discovery & `faith show-urls`<br/>Phase 11 | TODO | S"]
+    FAITH-059["FAITH-059<br/>Service Route Discovery & `faith show-urls`<br/>Phase 11 | IN PROGRESS | S"]
 
     %% ── Phase 12: Cloud ──
     FAITH-052["FAITH-052<br/>Cloud Deployment Architecture<br/>Phase 12 | TODO | XL"]
@@ -414,7 +414,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-030 | Pricing MCP Server | 6 (Tool Servers) | TODO | M |
 | FAITH-037 | GoldenLayout Panel Framework | 8 (Web UI) | TODO | M |
 | FAITH-045 | Event Log Writer | 9 (Logging) | TODO | S |
-| FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | TODO | S |
+| FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | IN PROGRESS | S |
 
 ### Wave 6
 | Task | Name | Phase | Status | Complexity |
@@ -437,7 +437,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-022 | Filesystem MCP Server | 6 (Tool Servers) | TODO | L |
 | FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | TODO | M |
 | FAITH-048 | Log Retention & Rotation | 9 (Logging) | TODO | S |
-| FAITH-049 | First-Run Wizard: Multi-Step UI | 10 (First Run) | TODO | L |
+| FAITH-049 | First-Run Wizard: Multi-Step UI | 10 (First Run) | IN PROGRESS | L |
 
 ### Wave 8
 | Task | Name | Phase | Status | Complexity |
@@ -452,7 +452,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-043 | Project Switcher UI | 8 (Web UI) | TODO | S |
 | FAITH-046 | Session & Task Log Writer | 9 (Logging) | TODO | M |
 | FAITH-050 | Privacy Profile Enforcement & Provider Knowledge Base | 10 (First Run) | TODO | M |
-| FAITH-051 | Ollama Model Download Integration | 10 (First Run) | TODO | S |
+| FAITH-051 | Ollama Model Download Integration | 10 (First Run) | DONE | S |
 | FAITH-053 | First-Run Wizard: Detailed Specification | 10 (First Run) | TODO | M |
 | FAITH-054 | `faith run` Command & Task API | 11 (CLI & Skills) | TODO | M |
 
