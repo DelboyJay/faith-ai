@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -97,6 +98,45 @@ class FileWatcher:
         """
         self._subscriptions.append(subscription)
 
+    def load_static_subscriptions(
+        self,
+        agents_config: dict[str, dict[str, Any]],
+        mount_roots: dict[str, Path],
+    ) -> None:
+        """
+        Description:
+            Load file-watch subscriptions declared in agent configuration.
+
+        Requirements:
+            - Replace only the non-session subscriptions already tracked by the watcher.
+            - Ignore watches referencing unknown mounts.
+
+        :param agents_config: Mapping of agent IDs to parsed agent config payloads.
+        :param mount_roots: Mapping of mount names to their resolved host roots.
+        """
+
+        dynamic_subscriptions = [sub for sub in self._subscriptions if sub.session_scoped]
+        static_subscriptions: list[FileSubscription] = []
+        for agent_id, config in agents_config.items():
+            for watch in config.get("file_watches", []):
+                pattern = str(watch.get("pattern", "")).replace("\\", "/").lstrip("/")
+                if not pattern:
+                    continue
+                mount_name = pattern.split("/", 1)[0]
+                mount_root = mount_roots.get(mount_name)
+                if mount_root is None:
+                    continue
+                static_subscriptions.append(
+                    FileSubscription(
+                        agent_id=agent_id,
+                        pattern=pattern,
+                        events=list(watch.get("events", ["file:changed"])),
+                        mount_root=mount_root,
+                        session_scoped=False,
+                    )
+                )
+        self._subscriptions = static_subscriptions + dynamic_subscriptions
+
     def remove_session_subscriptions(self) -> None:
         """
         Description:
@@ -106,6 +146,11 @@ class FileWatcher:
             - Preserve non-session subscriptions unchanged.
         """
         self._subscriptions = [sub for sub in self._subscriptions if not sub.session_scoped]
+        self._snapshots = {
+            key: snapshot
+            for key, snapshot in self._snapshots.items()
+            if any(sub.agent_id == key[0] for sub in self._subscriptions)
+        }
 
     def _hash_file(self, path: Path) -> FileSnapshot | None:
         """
@@ -150,6 +195,21 @@ class FileWatcher:
             return []
         return [path for path in subscription.mount_root.glob(relative) if path.is_file()]
 
+    def _snapshot_relative_path(self, absolute_path: str, mount_root: Path) -> str:
+        """
+        Description:
+            Convert one stored absolute file path back into a mount-relative path.
+
+        Requirements:
+            - Preserve nested relative paths rather than truncating to the basename.
+
+        :param absolute_path: Absolute path recorded in the snapshot store.
+        :param mount_root: Mount root used to relativise the stored path.
+        :returns: Mount-relative POSIX path.
+        """
+
+        return PurePosixPath(Path(absolute_path).resolve().relative_to(mount_root.resolve()).as_posix()).as_posix()
+
     def poll_once(self) -> list[FileChangeEvent]:
         """
         Description:
@@ -164,10 +224,12 @@ class FileWatcher:
         """
         events: list[FileChangeEvent] = []
         seen_keys: set[tuple[str, str]] = set()
+        subscription_roots: dict[tuple[str, str], Path] = {}
         for subscription in self._subscriptions:
             for path in self._collect_paths(subscription):
                 key = (subscription.agent_id, str(path))
                 seen_keys.add(key)
+                subscription_roots[key] = subscription.mount_root
                 new_snapshot = self._hash_file(path)
                 old_snapshot = self._snapshots.get(key)
                 if new_snapshot is None:
@@ -191,7 +253,26 @@ class FileWatcher:
         removed_keys = [key for key in self._snapshots if key not in seen_keys]
         for key in removed_keys:
             agent_id, absolute = key
-            relative = Path(absolute).name
-            events.append(FileChangeEvent(agent_id, "file:deleted", relative))
+            root = subscription_roots.get(key)
+            if root is None:
+                matching_root = None
+                for subscription in self._subscriptions:
+                    if subscription.agent_id != agent_id:
+                        continue
+                    candidate = Path(absolute)
+                    try:
+                        candidate.resolve().relative_to(subscription.mount_root.resolve())
+                    except ValueError:
+                        continue
+                    matching_root = subscription.mount_root
+                    break
+                root = matching_root or Path(absolute).parent
+            relative = self._snapshot_relative_path(absolute, root)
+            subscribed_delete = any(
+                sub.agent_id == agent_id and "file:deleted" in sub.events
+                for sub in self._subscriptions
+            )
+            if subscribed_delete:
+                events.append(FileChangeEvent(agent_id, "file:deleted", relative))
             del self._snapshots[key]
         return events

@@ -6,10 +6,13 @@ Description:
 Requirements:
     - Cover a simple write and read round trip through the server facade.
     - Verify the returned payloads reflect the created file state.
-    - Verify lifecycle events and file-watch polling are surfaced.
+    - Verify lifecycle events, hot reload, and file-watch polling are surfaced.
 """
 
+from pathlib import Path
+
 from faith_mcp.filesystem import FilesystemServer
+from faith_shared.protocol.events import EventType, FaithEvent
 
 
 class DummyPublisher:
@@ -227,3 +230,109 @@ def test_filesystem_server_polls_file_events(tmp_path) -> None:
 
     events = server.poll_file_events()
     assert events == [{"agent_id": "dev", "event": "file:created", "path": "notes.txt"}]
+
+
+def test_filesystem_server_loads_static_subscriptions(tmp_path: Path) -> None:
+    """
+    Description:
+        Verify static file-watch subscriptions are loaded from agent config payloads.
+
+    Requirements:
+        - This test is needed to prove the filesystem watcher honours file watches declared in agent config.
+        - Verify a static subscription can detect a created file on the configured mount.
+
+    :param tmp_path: Temporary directory provided by pytest.
+    """
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    server = FilesystemServer(
+        tmp_path / ".faith",
+        {"mounts": {"workspace": {"host_path": str(workspace), "access": "readwrite"}}},
+    )
+    server.load_static_subscriptions(
+        {
+            "dev": {
+                "file_watches": [
+                    {"pattern": "workspace/*.txt", "events": ["file:created", "file:changed"]},
+                ]
+            }
+        }
+    )
+    (workspace / "watched.txt").write_text("hello", encoding="utf-8")
+    assert server.poll_file_events() == [
+        {"agent_id": "dev", "event": "file:created", "path": "watched.txt"}
+    ]
+
+
+def test_filesystem_server_handles_config_change_reload(tmp_path: Path) -> None:
+    """
+    Description:
+        Verify the filesystem server reloads mount config in response to a filesystem config change event.
+
+    Requirements:
+        - This test is needed to prove filesystem config hot reload works without restarting the server.
+        - Verify a new mount becomes available after the reload handler runs.
+
+    :param tmp_path: Temporary directory provided by pytest.
+    """
+
+    workspace = tmp_path / "workspace"
+    docs = tmp_path / "docs"
+    workspace.mkdir()
+    docs.mkdir()
+    server = FilesystemServer(
+        tmp_path / ".faith",
+        {"mounts": {"workspace": {"host_path": str(workspace), "access": "readwrite"}}},
+    )
+    changed = server.handle_config_changed(
+        FaithEvent(
+            event=EventType.SYSTEM_CONFIG_CHANGED,
+            source="config-watcher",
+            data={"file": "filesystem.yaml", "path": str(tmp_path / ".faith" / "tools" / "filesystem.yaml")},
+        ),
+        {"mounts": {
+            "workspace": {"host_path": str(workspace), "access": "readwrite"},
+            "docs": {"host_path": str(docs), "access": "readonly"},
+        }},
+    )
+    assert changed is True
+    assert server.mount_registry.get("docs") is not None
+
+
+def test_filesystem_server_dispatches_handle_tool_call(tmp_path: Path) -> None:
+    """
+    Description:
+        Verify the filesystem server exposes a stable MCP-facing dispatch surface.
+
+    Requirements:
+        - This test is needed to prove callers can use action names instead of direct method calls.
+        - Verify the dispatch surface can perform a write followed by a read.
+
+    :param tmp_path: Temporary directory provided by pytest.
+    """
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    server = FilesystemServer(
+        tmp_path / ".faith",
+        {"mounts": {"workspace": {"host_path": str(workspace), "access": "readwrite"}}},
+    )
+    payload = __import__("asyncio").run(
+        server.handle_tool_call(
+            "write",
+            {"mount": "workspace", "path": "notes.txt", "content": "hello"},
+            agent_id="dev",
+            agent_mounts={"workspace": "readwrite"},
+        )
+    )
+    assert payload["created"] is True
+    read_payload = __import__("asyncio").run(
+        server.handle_tool_call(
+            "read",
+            {"mount": "workspace", "path": "notes.txt"},
+            agent_id="dev",
+            agent_mounts={"workspace": "readwrite"},
+        )
+    )
+    assert read_payload["content"] == "hello"

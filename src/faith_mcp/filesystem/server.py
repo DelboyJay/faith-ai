@@ -7,13 +7,19 @@ Requirements:
     - Load mount configuration and history settings.
     - Expose read, write, list, stat, delete, mkdir, history, and restore
       helpers through one object.
+    - Support hot-reload and a stable MCP-facing dispatch surface.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import sys
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from faith_mcp.filesystem.history import FileHistoryManager, make_metadata
 from faith_mcp.filesystem.mounts import MountRegistry
@@ -71,6 +77,24 @@ class FilesystemServer:
         if config is not None:
             self.reload_config(config)
 
+    def mount_roots(self) -> dict[str, Path]:
+        """
+        Description:
+            Return the resolved host roots for every configured mount.
+
+        Requirements:
+            - Expose only currently configured mounts.
+
+        :returns: Mapping of mount names to resolved host paths.
+        """
+
+        roots: dict[str, Path] = {}
+        for mount_name in self.mount_registry.list_mounts():
+            mount = self.mount_registry.get(mount_name)
+            if mount is not None:
+                roots[mount_name] = mount.host_path
+        return roots
+
     def reload_config(self, config: dict[str, Any]) -> None:
         """
         Description:
@@ -95,6 +119,59 @@ class FilesystemServer:
                 depth=mount.history_depth,
                 enabled=mount.history,
             )
+
+    def load_static_subscriptions(self, agents_config: dict[str, dict[str, Any]]) -> None:
+        """
+        Description:
+            Load static file-watch subscriptions from parsed agent config payloads.
+
+        Requirements:
+            - Replace static subscriptions while preserving existing session-scoped watches.
+
+        :param agents_config: Mapping of agent IDs to parsed agent config payloads.
+        """
+
+        self.watcher.load_static_subscriptions(agents_config, self.mount_roots())
+
+    def handle_config_changed(self, event: FaithEvent, config: dict[str, Any] | None = None) -> bool:
+        """
+        Description:
+            Apply a filesystem configuration reload when a matching config-changed event arrives.
+
+        Requirements:
+            - Ignore unrelated config-changed events.
+            - Reload the supplied config mapping or read the on-disk filesystem config.
+
+        :param event: Event that may describe a filesystem config change.
+        :param config: Optional already-parsed filesystem config payload.
+        :returns: ``True`` when the server reloaded its config, otherwise ``False``.
+        """
+
+        if event.event is not EventType.SYSTEM_CONFIG_CHANGED:
+            return False
+        payload = event.data or {}
+        file_name = str(payload.get("file", ""))
+        path_text = str(payload.get("path", ""))
+        if file_name != "filesystem.yaml" and not path_text.replace("\\", "/").endswith("/filesystem.yaml"):
+            return False
+        self.reload_config(config or self._read_config_file())
+        return True
+
+    def _read_config_file(self) -> dict[str, Any]:
+        """
+        Description:
+            Read the filesystem tool config from disk.
+
+        Requirements:
+            - Return an empty mount set when the config file does not exist.
+
+        :returns: Parsed filesystem config payload.
+        """
+
+        config_path = self.faith_dir / "tools" / "filesystem.yaml"
+        if not config_path.exists():
+            return {"mounts": {}}
+        return json.loads(json.dumps(yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}))
 
     def _history(self, mount_name: str) -> FileHistoryManager | None:
         """
@@ -179,9 +256,78 @@ class FilesystemServer:
             self._emit_event(
                 EventType(payload["event"]),
                 source="filesystem",
+                channel=f"pa-{payload['agent_id']}",
                 data={"agent": payload["agent_id"], "path": payload["path"]},
             )
         return payloads
+
+    async def handle_tool_call(
+        self,
+        action: str,
+        args: dict[str, Any],
+        *,
+        agent_id: str,
+        agent_mounts: dict[str, str],
+    ) -> dict[str, Any]:
+        """
+        Description:
+            Dispatch one MCP-style filesystem tool call by action name.
+
+        Requirements:
+            - Support the canonical filesystem actions and history helpers.
+            - Raise a structured error when the action is unknown.
+
+        :param action: Filesystem action name to dispatch.
+        :param args: Filesystem action arguments.
+        :param agent_id: Agent performing the action.
+        :param agent_mounts: Mount permissions granted to the agent.
+        :returns: Structured filesystem response payload.
+        :raises FilesystemError: If the action is unknown.
+        """
+
+        mount_name = str(args.get("mount", ""))
+        relative_path = str(args.get("path", ""))
+        if action == "read":
+            return self.read(mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts)
+        if action == "write":
+            return self.write(
+                mount_name,
+                relative_path,
+                str(args.get("content", "")),
+                agent_id=agent_id,
+                agent_mounts=agent_mounts,
+            )
+        if action == "list":
+            return self.list_dir(mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts)
+        if action == "stat":
+            return self.stat(mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts)
+        if action == "delete":
+            return self.delete(mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts)
+        if action == "mkdir":
+            return self.mkdir(mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts)
+        if action == "list_history":
+            return {"versions": self.list_history(mount_name, relative_path)}
+        if action == "restore_version":
+            restored = self.restore_version(
+                mount_name,
+                relative_path,
+                int(args["version"]),
+                agent_id=agent_id,
+                summary=str(args.get("summary", "restore")),
+            )
+            return {"restored": restored}
+        if action == "register_watch":
+            self.register_dynamic_subscription(
+                agent_id,
+                mount_name,
+                str(args.get("pattern", "")),
+                list(args.get("events", ["file:changed"])),
+                session_scoped=bool(args.get("session_scoped", True)),
+            )
+            return {"registered": True}
+        if action == "poll_events":
+            return {"events": self.poll_file_events()}
+        raise FilesystemError("UNKNOWN_ACTION", f"Unknown filesystem action '{action}'")
 
     def read(
         self,
@@ -520,7 +666,14 @@ class FilesystemServer:
         }
         self._emit_event(event_type, source="filesystem", data=payload)
 
-    def _emit_event(self, event_type: EventType, *, source: str, data: dict[str, Any]) -> None:
+    def _emit_event(
+        self,
+        event_type: EventType,
+        *,
+        source: str,
+        data: dict[str, Any],
+        channel: str | None = None,
+    ) -> None:
         """
         Description:
             Publish one filesystem event through the configured event publisher.
@@ -532,11 +685,12 @@ class FilesystemServer:
         :param event_type: Event type to emit.
         :param source: Event source identifier.
         :param data: Structured event payload.
+        :param channel: Optional agent or task channel associated with the event.
         """
 
         if self.event_publisher is None:
             return
-        event = FaithEvent(event=event_type, source=source, data=data)
+        event = FaithEvent(event=event_type, source=source, channel=channel, data=data)
         publish = getattr(self.event_publisher, "publish", None)
         if not callable(publish):
             return
@@ -546,3 +700,43 @@ class FilesystemServer:
             asyncio.run(publish(event))
             return
         loop.create_task(publish(event))
+
+
+def main() -> None:
+    """
+    Description:
+        Start the filesystem MCP server entry point.
+
+    Requirements:
+        - Provide a stable line-oriented stdio process for the dedicated filesystem container.
+        - Keep the request protocol simple: one JSON object per line in, one JSON object per line out.
+    """
+    faith_dir = Path(os.environ.get("FAITH_DIR", ".faith"))
+    config_path = faith_dir / "tools" / "filesystem.yaml"
+    config = {"mounts": {}}
+    if config_path.exists():
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {"mounts": {}}
+    server = FilesystemServer(faith_dir, config)
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        request = json.loads(line)
+        try:
+            result = asyncio.run(
+                server.handle_tool_call(
+                    str(request.get("action", "")),
+                    dict(request.get("args", {})),
+                    agent_id=str(request.get("agent_id", "unknown")),
+                    agent_mounts=dict(request.get("agent_mounts", {})),
+                )
+            )
+            response = {"ok": True, "result": result}
+        except Exception as exc:  # pragma: no cover - stdio guard rail
+            response = {"ok": False, "error": str(exc)}
+        sys.stdout.write(json.dumps(response) + "\n")
+        sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    main()

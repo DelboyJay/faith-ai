@@ -3,7 +3,7 @@
 **Phase:** 6 — MCP Tool Servers (Built-in)
 **Complexity:** L
 **Model:** Opus / GPT-5.4 high reasoning
-**Status:** IN PROGRESS
+**Status:** DONE
 **Dependencies:** FAITH-003, FAITH-008
 **FRS Reference:** Section 4.3, 5.4
 

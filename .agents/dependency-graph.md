@@ -30,9 +30,9 @@
 | FAITH-019 | Security YAML Schema & Regex Approval Engine | 5 (Security) | DONE | FAITH-003 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-020 | Approval Request/Response Flow | 5 (Security) | DONE | FAITH-019, FAITH-008 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-021 | Audit Log System | 5 (Security) | DONE | FAITH-008 | M | Sonnet / GPT-5.4 |
-| FAITH-022 | Filesystem MCP Server | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008, FAITH-057 | L | Opus / GPT-5.4 high reasoning |
-| FAITH-023 | Filesystem File History | 6 (Tool Servers) | TODO | FAITH-022 | M | Sonnet / GPT-5.4 |
-| FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008, FAITH-057 | M | Opus / GPT-5.4 high reasoning |
+| FAITH-022 | Filesystem MCP Server | 6 (Tool Servers) | DONE | FAITH-003, FAITH-008, FAITH-057 | L | Opus / GPT-5.4 high reasoning |
+| FAITH-023 | Filesystem File History | 6 (Tool Servers) | DONE | FAITH-022 | M | Sonnet / GPT-5.4 |
+| FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | DONE | FAITH-003, FAITH-008, FAITH-057 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-025 | PostgreSQL Database MCP Server | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008 | M | Sonnet / GPT-5.4 |
 | FAITH-026 | Browser Automation MCP Server (Playwright) | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008 | L | Sonnet / GPT-5.4 |
 | FAITH-027 | Code Index MCP Server (tree-sitter) | 6 (Tool Servers) | TODO | FAITH-022 | L | Opus / GPT-5.4 high reasoning |
@@ -108,9 +108,9 @@ flowchart TD
     FAITH-021["FAITH-021<br/>Audit Log System<br/>Phase 5 | DONE | M"]
 
     %% ── Phase 6: Tool Servers ──
-    FAITH-022["FAITH-022<br/>Filesystem MCP Server<br/>Phase 6 | TODO | L"]
-    FAITH-023["FAITH-023<br/>Filesystem File History<br/>Phase 6 | TODO | M"]
-    FAITH-024["FAITH-024<br/>Python Execution MCP Server<br/>Phase 6 | TODO | M"]
+    FAITH-022["FAITH-022<br/>Filesystem MCP Server<br/>Phase 6 | DONE | L"]
+    FAITH-023["FAITH-023<br/>Filesystem File History<br/>Phase 6 | DONE | M"]
+    FAITH-024["FAITH-024<br/>Python Execution MCP Server<br/>Phase 6 | DONE | M"]
     FAITH-025["FAITH-025<br/>PostgreSQL Database MCP Server<br/>Phase 6 | TODO | M"]
     FAITH-026["FAITH-026<br/>Browser Automation MCP Server (Playwright)<br/>Phase 6 | TODO | L"]
     FAITH-027["FAITH-027<br/>Code Index MCP Server (tree-sitter)<br/>Phase 6 | TODO | L"]
@@ -434,8 +434,8 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
 | FAITH-015 | PA Session & Task Management | 4 (PA Core) | DONE | L |
-| FAITH-022 | Filesystem MCP Server | 6 (Tool Servers) | TODO | L |
-| FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | TODO | M |
+| FAITH-022 | Filesystem MCP Server | 6 (Tool Servers) | DONE | L |
+| FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | DONE | M |
 | FAITH-048 | Log Retention & Rotation | 9 (Logging) | TODO | S |
 | FAITH-049 | First-Run Wizard: Multi-Step UI | 10 (First Run) | IN PROGRESS | L |
 
@@ -444,7 +444,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 |------|------|-------|--------|------------|
 | FAITH-016 | PA Event Dispatcher & Intervention Logic | 4 (PA Core) | DONE | L |
 | FAITH-018 | Living FRS Management | 4 (PA Core) | DONE | M |
-| FAITH-023 | Filesystem File History | 6 (Tool Servers) | TODO | M |
+| FAITH-023 | Filesystem File History | 6 (Tool Servers) | DONE | M |
 | FAITH-027 | Code Index MCP Server (tree-sitter) | 6 (Tool Servers) | TODO | L |
 | FAITH-028 | RAG / ChromaDB MCP Server | 6 (Tool Servers) | TODO | L |
 | FAITH-032 | Full-Text Search MCP Server | 6 (Tool Servers) | TODO | S |

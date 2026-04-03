@@ -263,7 +263,7 @@ phases:
         name: 'Filesystem MCP Server'
         complexity: 'L'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-022-filesystem-mcp-server.md'
         dependencies: ['FAITH-003', 'FAITH-008', 'FAITH-057']
         frs_reference: 'Section 4.3'
@@ -272,7 +272,7 @@ phases:
         name: 'Filesystem File History'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-023-filesystem-file-history.md'
         dependencies: ['FAITH-022']
         frs_reference: 'Section 4.3.5'
@@ -281,7 +281,7 @@ phases:
         name: 'Python Execution MCP Server'
         complexity: 'M'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-024-python-execution-mcp.md'
         dependencies: ['FAITH-003', 'FAITH-008', 'FAITH-057']
         frs_reference: 'Section 4.2'

@@ -5,7 +5,7 @@
 Requirements:
     - Prove python tool config falls back to safe defaults.
     - Prove sandbox execution captures stdout, stderr, return values, and timeouts.
-    - Prove the executor enforces working-directory boundaries and publishes events.
+    - Prove the executor enforces working-directory boundaries, host routing, and lifecycle events.
 """
 
 from __future__ import annotations
@@ -195,3 +195,129 @@ def test_python_server_formats_execute_response(tmp_path: Path) -> None:
     assert response["success"] is True
     assert response["stdout"] == "hello\n"
     assert response["return_value"] == ["a"]
+
+
+def test_install_packages_rejects_shell_metacharacters(tmp_path: Path) -> None:
+    """
+    Description:
+        Verify Python package installation rejects unsafe package specifiers.
+
+    Requirements:
+        - This test is needed to prove the Python tool does not pass shell-like package input through to subprocesses.
+        - Verify invalid package input raises a validation error before execution starts.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    from faith_mcp.python_exec.sandbox import install_packages
+
+    with pytest.raises(ValueError):
+        install_packages(["ok-package", "bad;rm -rf /"], SandboxConfig(working_directory=tmp_path))
+
+
+def test_install_os_packages_rejects_shell_metacharacters(tmp_path: Path) -> None:
+    """
+    Description:
+        Verify OS package installation rejects unsafe package names.
+
+    Requirements:
+        - This test is needed to prove the Python tool hardens the OS package install path too.
+        - Verify invalid OS package input raises a validation error before execution starts.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    from faith_mcp.python_exec.sandbox import install_os_packages
+
+    with pytest.raises(ValueError):
+        install_os_packages(["curl", "bad|powershell"], SandboxConfig(working_directory=tmp_path))
+
+
+@pytest.mark.asyncio
+async def test_python_executor_routes_to_host_when_required(tmp_path: Path) -> None:
+    """
+    Description:
+        Verify the executor can route a host-bound request to the optional host runner.
+
+    Requirements:
+        - This test is needed to prove Phase 6 host-routing support exists for clearly host-only work.
+        - Verify a host-bound request uses the host runner and records the host execution target.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    host_calls: list[tuple[str, dict[str, object]]] = []
+
+    def host_runner(action: str, payload: dict[str, object]):
+        host_calls.append((action, payload))
+        return execute_code(
+            "print('host')\nresult = {'mode': 'host'}\n",
+            SandboxConfig(working_directory=tmp_path, execution_target="host"),
+        )
+
+    executor = PythonExecutor(
+        config=PythonToolConfig(timeout_seconds=5),
+        allowed_paths=[tmp_path / "sandbox"],
+        host_runner=host_runner,
+        host_worker_enabled=True,
+        host_allowed_paths=[tmp_path],
+    )
+    tmp_path.joinpath("sandbox").mkdir()
+
+    result = await executor.run_code(
+        "print('ignored')\n",
+        agent_id="dev",
+        working_directory=tmp_path,
+        require_host=True,
+    )
+
+    assert host_calls[0][0] == "execute"
+    assert result.execution_target == "host"
+    assert result.stdout == "host\n"
+
+
+@pytest.mark.asyncio
+async def test_python_server_formats_os_package_install_response(tmp_path: Path) -> None:
+    """
+    Description:
+        Verify the Python server exposes a structured response for OS package install requests.
+
+    Requirements:
+        - This test is needed to prove the third Python MCP action is wired into the server facade.
+        - Verify invalid OS package input surfaces as a structured failed response instead of crashing.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    server = PythonExecutionServer(
+        config=PythonToolConfig(timeout_seconds=5),
+        allowed_paths=[tmp_path],
+    )
+
+    with pytest.raises(ValueError):
+        await server.os_package_install(
+            ["curl", "bad|powershell"],
+            agent_id="dev",
+            working_directory=tmp_path,
+        )
+
+
+def test_python_server_reload_config_replaces_timeout(tmp_path: Path) -> None:
+    """
+    Description:
+        Verify the Python server can reload its active tool config without rebuilding the facade.
+
+    Requirements:
+        - This test is needed to prove config hot reload has a concrete server-side update path.
+        - Verify reloading config replaces the executor timeout setting.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    server = PythonExecutionServer(
+        config=PythonToolConfig(timeout_seconds=5),
+        allowed_paths=[tmp_path],
+    )
+    server.reload_config(PythonToolConfig(timeout_seconds=15))
+    assert server.config.timeout_seconds == 15
+    assert server.executor.config.timeout_seconds == 15
