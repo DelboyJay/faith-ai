@@ -208,7 +208,9 @@ class FileWatcher:
         :returns: Mount-relative POSIX path.
         """
 
-        return PurePosixPath(Path(absolute_path).resolve().relative_to(mount_root.resolve()).as_posix()).as_posix()
+        return PurePosixPath(
+            Path(absolute_path).resolve().relative_to(mount_root.resolve()).as_posix()
+        ).as_posix()
 
     def poll_once(self) -> list[FileChangeEvent]:
         """

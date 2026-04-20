@@ -283,7 +283,9 @@ class PythonExecutor:
         if require_host:
             if not self.host_worker_enabled or self.host_runner is None:
                 raise PermissionError("Host execution requested but the host worker is not enabled")
-            self._ensure_allowed_path(working_directory, self.host_allowed_paths or self.allowed_paths)
+            self._ensure_allowed_path(
+                working_directory, self.host_allowed_paths or self.allowed_paths
+            )
             return "host"
         self._ensure_allowed_path(working_directory, self.allowed_paths)
         return "sandbox"
@@ -348,7 +350,9 @@ class PythonExecutor:
                 return
             except ValueError:
                 continue
-        raise PermissionError(f"Working directory '{working_directory}' is outside the allowed paths")
+        raise PermissionError(
+            f"Working directory '{working_directory}' is outside the allowed paths"
+        )
 
     async def _publish(self, event_type: EventType, *, tool: str, data: dict[str, Any]) -> None:
         """

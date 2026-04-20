@@ -101,11 +101,11 @@ class FakePubSub:
 @pytest.mark.asyncio
 async def test_dispatcher_runs_typed_and_wildcard_handlers() -> None:
     """Description:
-        Verify both typed and wildcard handlers run for a matching event.
+    Verify both typed and wildcard handlers run for a matching event.
 
-        Requirements:
-            - This test is needed to prove the dispatcher fans out events to all relevant handlers.
-            - Verify intervention results from both handlers are recorded.
+    Requirements:
+        - This test is needed to prove the dispatcher fans out events to all relevant handlers.
+        - Verify intervention results from both handlers are recorded.
     """
 
     dispatcher = PAEventDispatcher(FakeRedis())
@@ -151,11 +151,11 @@ async def test_dispatcher_runs_typed_and_wildcard_handlers() -> None:
 @pytest.mark.asyncio
 async def test_dispatcher_registers_stall_detector_resources() -> None:
     """Description:
-        Verify dispatcher helper methods register channels and agents with the stall detector.
+    Verify dispatcher helper methods register channels and agents with the stall detector.
 
-        Requirements:
-            - This test is needed to prove PA orchestration can track channels and agent heartbeats.
-            - Verify the registered channel and agent appear in the underlying stall detector state.
+    Requirements:
+        - This test is needed to prove PA orchestration can track channels and agent heartbeats.
+        - Verify the registered channel and agent appear in the underlying stall detector state.
     """
 
     dispatcher = PAEventDispatcher(FakeRedis())

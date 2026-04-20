@@ -55,12 +55,12 @@ class FakeRedis:
 @pytest.fixture
 def system_config() -> SystemConfig:
     """Description:
-        Create a baseline system configuration for session-manager tests.
+    Create a baseline system configuration for session-manager tests.
 
-        Requirements:
-            - Provide a valid PA model configuration for session-manager initialisation.
+    Requirements:
+        - Provide a valid PA model configuration for session-manager initialisation.
 
-        :returns: Baseline system configuration.
+    :returns: Baseline system configuration.
     """
 
     return SystemConfig(
@@ -75,14 +75,14 @@ async def test_session_manager_creates_session_and_task(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
     """Description:
-        Verify the session manager creates a session, task metadata, and phase-activation notifications.
+    Verify the session manager creates a session, task metadata, and phase-activation notifications.
 
-        Requirements:
-            - This test is needed to prove session and task state is persisted for active work.
-            - Verify the session and task identifiers are generated, task metadata is written, and agent activation is published.
+    Requirements:
+        - This test is needed to prove session and task state is persisted for active work.
+        - Verify the session and task identifiers are generated, task metadata is written, and agent activation is published.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     redis = FakeRedis()
@@ -103,14 +103,14 @@ async def test_session_manager_creates_session_and_task(
 @pytest.mark.asyncio
 async def test_idle_monitor_ends_session(tmp_path: Path, system_config: SystemConfig) -> None:
     """Description:
-        Verify the idle monitor ends the session after the configured timeout.
+    Verify the idle monitor ends the session after the configured timeout.
 
-        Requirements:
-            - This test is needed to prove sessions do not remain active indefinitely when idle timeout is configured.
-            - Verify the active session reference is cleared after the timeout expires.
+    Requirements:
+        - This test is needed to prove sessions do not remain active indefinitely when idle timeout is configured.
+        - Verify the active session reference is cleared after the timeout expires.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     manager = SessionManager(
@@ -129,14 +129,14 @@ async def test_session_manager_persists_task_phase_and_session_summary(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
     """Description:
-        Verify task metadata and session summary capture staged agents, active agents, and sandbox identity.
+    Verify task metadata and session summary capture staged agents, active agents, and sandbox identity.
 
-        Requirements:
-            - This test is needed to prove FAITH persists enough task/session detail to reconstruct work after restart or project switch.
-            - Verify task metadata includes staged phases and sandbox assignment, and session metadata reflects the task summary.
+    Requirements:
+        - This test is needed to prove FAITH persists enough task/session detail to reconstruct work after restart or project switch.
+        - Verify task metadata includes staged phases and sandbox assignment, and session metadata reflects the task summary.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     manager = SessionManager(project_root=tmp_path, system_config=system_config)
@@ -154,18 +154,18 @@ async def test_session_manager_persists_task_phase_and_session_summary(
     session_meta = (manager.session_path() / "session.meta.json").read_text(encoding="utf-8")
 
     assert activated == ["security", "qa"]
-    assert "\"sandbox_id\": \"sbx-0001\"" in task_meta
-    assert "\"review\": [" in task_meta
-    assert "\"channel\": \"ch-auth-review\"" in session_meta
+    assert '"sandbox_id": "sbx-0001"' in task_meta
+    assert '"review": [' in task_meta
+    assert '"channel": "ch-auth-review"' in session_meta
 
 
 def test_agent_state_roundtrip() -> None:
     """Description:
-        Verify lightweight agent-state markdown round-trips back into the same object.
+    Verify lightweight agent-state markdown round-trips back into the same object.
 
-        Requirements:
-            - This test is needed to prove project-switch and recovery flows can persist and restore lightweight agent state.
-            - Verify the parsed state equals the original state object.
+    Requirements:
+        - This test is needed to prove project-switch and recovery flows can persist and restore lightweight agent state.
+        - Verify the parsed state equals the original state object.
     """
 
     state = AgentState(
@@ -186,14 +186,14 @@ async def test_session_manager_persists_task_and_session_metadata(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
     """Description:
-        Verify the session manager writes structured metadata for sessions and tasks.
+    Verify the session manager writes structured metadata for sessions and tasks.
 
-        Requirements:
-            - This test is needed to prove Phase 4 session/task state survives beyond in-memory runtime state.
-            - Verify both the session and task metadata files contain the expected identifiers and status fields.
+    Requirements:
+        - This test is needed to prove Phase 4 session/task state survives beyond in-memory runtime state.
+        - Verify both the session and task metadata files contain the expected identifiers and status fields.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     manager = SessionManager(project_root=tmp_path, system_config=system_config)
@@ -255,14 +255,14 @@ async def test_session_manager_end_session_completes_active_tasks(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
     """Description:
-        Verify ending a session completes active tasks and clears the active-session pointer.
+    Verify ending a session completes active tasks and clears the active-session pointer.
 
-        Requirements:
-            - This test is needed to prove session teardown leaves no active tasks behind.
-            - Verify the task status becomes complete and the active-session pointer is cleared.
+    Requirements:
+        - This test is needed to prove session teardown leaves no active tasks behind.
+        - Verify the task status becomes complete and the active-session pointer is cleared.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     manager = SessionManager(project_root=tmp_path, system_config=system_config)

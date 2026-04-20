@@ -105,13 +105,13 @@ def watcher_env(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_valid_system_change_publishes_changed_event(watcher_env):
     """Description:
-        Verify a valid system configuration edit publishes a config-changed event.
+    Verify a valid system configuration edit publishes a config-changed event.
 
-        Requirements:
-            - This test is needed to prove valid project-system edits are accepted and announced.
-            - Verify the registered handler is invoked and the published event type is ``system:config_changed``.
+    Requirements:
+        - This test is needed to prove valid project-system edits are accepted and announced.
+        - Verify the registered handler is invoked and the published event type is ``system:config_changed``.
 
-        :param watcher_env: Temporary watcher environment fixture.
+    :param watcher_env: Temporary watcher environment fixture.
     """
 
     project_root, faith_dir = watcher_env
@@ -156,13 +156,13 @@ async def test_valid_system_change_publishes_changed_event(watcher_env):
 @pytest.mark.asyncio
 async def test_invalid_yaml_publishes_error_and_keeps_hash(watcher_env):
     """Description:
-        Verify an invalid YAML edit publishes an error event and preserves the prior snapshot.
+    Verify an invalid YAML edit publishes an error event and preserves the prior snapshot.
 
-        Requirements:
-            - This test is needed to prove invalid config changes are rejected safely.
-            - Verify the watcher does not advance the stored hash when validation fails.
+    Requirements:
+        - This test is needed to prove invalid config changes are rejected safely.
+        - Verify the watcher does not advance the stored hash when validation fails.
 
-        :param watcher_env: Temporary watcher environment fixture.
+    :param watcher_env: Temporary watcher environment fixture.
     """
 
     project_root, faith_dir = watcher_env
@@ -183,13 +183,13 @@ async def test_invalid_yaml_publishes_error_and_keeps_hash(watcher_env):
 @pytest.mark.asyncio
 async def test_prompt_change_skips_validation_and_publishes(watcher_env):
     """Description:
-        Verify prompt file changes bypass YAML validation and still publish a change event.
+    Verify prompt file changes bypass YAML validation and still publish a change event.
 
-        Requirements:
-            - This test is needed to prove non-YAML prompt edits can trigger reload flows.
-            - Verify the prompt handler runs and the change event is published.
+    Requirements:
+        - This test is needed to prove non-YAML prompt edits can trigger reload flows.
+        - Verify the prompt handler runs and the change event is published.
 
-        :param watcher_env: Temporary watcher environment fixture.
+    :param watcher_env: Temporary watcher environment fixture.
     """
 
     project_root, faith_dir = watcher_env

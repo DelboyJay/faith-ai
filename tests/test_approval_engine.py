@@ -34,13 +34,13 @@ def write_file(path: Path, contents: str) -> None:
 
 def test_engine_respects_precedence(tmp_path):
     """Description:
-        Verify explicit ask rules take precedence over broader allow rules.
+    Verify explicit ask rules take precedence over broader allow rules.
 
-        Requirements:
-            - This test is needed to prove the engine follows the intended rule precedence.
-            - Verify a matching ``always_ask`` rule wins over a broader ``always_allow`` rule.
+    Requirements:
+        - This test is needed to prove the engine follows the intended rule precedence.
+        - Verify a matching ``always_ask`` rule wins over a broader ``always_allow`` rule.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"
@@ -68,13 +68,13 @@ def test_engine_respects_precedence(tmp_path):
 
 def test_session_approval_is_remembered(tmp_path):
     """Description:
-        Verify session approvals are remembered for later evaluations.
+    Verify session approvals are remembered for later evaluations.
 
-        Requirements:
-            - This test is needed to prove ``approve_session`` decisions suppress repeat prompts within the session.
-            - Verify the remembered decision is returned with the session tier.
+    Requirements:
+        - This test is needed to prove ``approve_session`` decisions suppress repeat prompts within the session.
+        - Verify the remembered decision is returned with the session tier.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"
@@ -89,13 +89,13 @@ def test_session_approval_is_remembered(tmp_path):
 
 def test_persistent_always_deny_rule_blocks_without_prompt(tmp_path):
     """Description:
-        Verify persistent ``always_deny`` rules in ``approval_rules`` block matching actions.
+    Verify persistent ``always_deny`` rules in ``approval_rules`` block matching actions.
 
-        Requirements:
-            - This test is needed to prove the engine honours the canonical deny tier from user-authored rules.
-            - Verify the returned decision uses the canonical ``always_deny`` tier value.
+    Requirements:
+        - This test is needed to prove the engine honours the canonical deny tier from user-authored rules.
+        - Verify the returned decision uses the canonical ``always_deny`` tier value.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"
@@ -119,13 +119,13 @@ def test_persistent_always_deny_rule_blocks_without_prompt(tmp_path):
 
 def test_deny_learned_blocks_without_prompt(tmp_path):
     """Description:
-        Verify learned deny rules block matching actions without prompting.
+    Verify learned deny rules block matching actions without prompting.
 
-        Requirements:
-            - This test is needed to prove permanently denied actions are rejected automatically.
-            - Verify the decision tier is the deny tier and does not require approval.
+    Requirements:
+        - This test is needed to prove permanently denied actions are rejected automatically.
+        - Verify the decision tier is the deny tier and does not require approval.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"
@@ -147,13 +147,13 @@ def test_deny_learned_blocks_without_prompt(tmp_path):
 
 def test_filesystem_folder_session_approval_matches_descendants(tmp_path):
     """Description:
-        Verify filesystem session approvals can be remembered at folder scope.
+    Verify filesystem session approvals can be remembered at folder scope.
 
-        Requirements:
-            - This test is needed to prove filesystem approvals are path-based instead of exact-string only.
-            - Verify a folder-scoped approval matches later actions under the same directory tree.
+    Requirements:
+        - This test is needed to prove filesystem approvals are path-based instead of exact-string only.
+        - Verify a folder-scoped approval matches later actions under the same directory tree.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"
@@ -175,13 +175,13 @@ def test_filesystem_folder_session_approval_matches_descendants(tmp_path):
 
 def test_filesystem_glob_session_deny_blocks_matching_paths(tmp_path):
     """Description:
-        Verify filesystem session memory can remember a denying path pattern.
+    Verify filesystem session memory can remember a denying path pattern.
 
-        Requirements:
-            - This test is needed to prove remembered filesystem decisions include both scope and decision type.
-            - Verify a glob-scoped deny blocks matching paths without surfacing another approval.
+    Requirements:
+        - This test is needed to prove remembered filesystem decisions include both scope and decision type.
+        - Verify a glob-scoped deny blocks matching paths without surfacing another approval.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"
@@ -203,13 +203,13 @@ def test_filesystem_glob_session_deny_blocks_matching_paths(tmp_path):
 
 def test_unknown_agent_defaults_to_ask_first(tmp_path):
     """Description:
-        Verify unknown agents fall back to ask-first behaviour.
+    Verify unknown agents fall back to ask-first behaviour.
 
-        Requirements:
-            - This test is needed to prove the engine fails closed for agents with no configured rules.
-            - Verify the default decision requires approval.
+    Requirements:
+        - This test is needed to prove the engine fails closed for agents with no configured rules.
+        - Verify the default decision requires approval.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"

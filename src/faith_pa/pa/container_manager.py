@@ -305,7 +305,9 @@ class DockerContainerRuntime:
     :param network_name: Default FAITH network name for managed containers.
     """
 
-    def __init__(self, docker_client: Any | None = None, *, network_name: str = NETWORK_NAME) -> None:
+    def __init__(
+        self, docker_client: Any | None = None, *, network_name: str = NETWORK_NAME
+    ) -> None:
         """Description:
             Initialise the Docker-backed runtime.
 
@@ -325,13 +327,13 @@ class DockerContainerRuntime:
 
     def ensure_network(self, name: str) -> None:
         """Description:
-            Ensure one Docker bridge network exists.
+        Ensure one Docker bridge network exists.
 
-            Requirements:
-                - Reuse an existing network when it is already present.
-                - Create the network with the bridge driver otherwise.
+        Requirements:
+            - Reuse an existing network when it is already present.
+            - Create the network with the bridge driver otherwise.
 
-            :param name: Docker network name.
+        :param name: Docker network name.
         """
 
         try:
@@ -481,7 +483,9 @@ class DockerContainerRuntime:
         )
         return ContainerInfo(
             name=container.name,
-            image=image_tags if isinstance(image_tags, str) else (image_tags[0] if image_tags else ""),
+            image=image_tags
+            if isinstance(image_tags, str)
+            else (image_tags[0] if image_tags else ""),
             status=getattr(container, "status", "unknown"),
             labels=labels,
             command=list(attrs.get("Config", {}).get("Cmd") or []),
@@ -566,7 +570,10 @@ class ContainerManager:
 
         if client is None:
             self.client = DockerContainerRuntime(network_name=network_name)
-        elif all(hasattr(client, attr) for attr in ("create_or_update", "stop", "restart", "destroy", "inspect", "list")):
+        elif all(
+            hasattr(client, attr)
+            for attr in ("create_or_update", "stop", "restart", "destroy", "inspect", "list")
+        ):
             self.client = client
         elif hasattr(client, "containers") and hasattr(client, "networks"):
             self.client = DockerContainerRuntime(client, network_name=network_name)
@@ -576,7 +583,9 @@ class ContainerManager:
         self.secret_resolver = (
             secret_resolver
             if secret_resolver is not None
-            else SecretResolver(config_dir) if config_dir is not None else None
+            else SecretResolver(config_dir)
+            if config_dir is not None
+            else None
         )
         self.event_publisher = event_publisher
         self.audit_logger = audit_logger
@@ -806,11 +815,7 @@ class ContainerManager:
         """
 
         if hasattr(self.client, "list"):
-            return [
-                item
-                for item in self.client.list()
-                if item.labels.get(FAITH_LABEL) == "true"
-            ]
+            return [item for item in self.client.list() if item.labels.get(FAITH_LABEL) == "true"]
         raise RuntimeError("Unsupported container runtime")
 
     async def ensure_running(self, spec: ContainerSpec, *, actor: str = "pa") -> ContainerInfo:
@@ -1145,14 +1150,18 @@ class ContainerManager:
         for agent_id, config in self.discover_agents().items():
             name = f"faith-agent-{agent_id}"
             try:
-                await self.start_agent(agent_id=agent_id, agent_config=config, workspace_path=workspace_path)
+                await self.start_agent(
+                    agent_id=agent_id, agent_config=config, workspace_path=workspace_path
+                )
                 results[name] = True
             except Exception:
                 results[name] = False
         for tool_name, config in faith_owned_tools.items():
             name = f"faith-tool-{tool_name}"
             try:
-                await self.start_tool(tool_name=tool_name, tool_config=config, workspace_path=workspace_path)
+                await self.start_tool(
+                    tool_name=tool_name, tool_config=config, workspace_path=workspace_path
+                )
                 results[name] = True
             except Exception:
                 results[name] = False
@@ -1195,7 +1204,9 @@ class ContainerManager:
             if info.status == "running" and info.labels.get(FAITH_LABEL) == "true"
         )
 
-    async def reconfigure_tool(self, tool_name: str, tool_config: dict[str, Any], workspace_path: Path) -> ContainerInfo:
+    async def reconfigure_tool(
+        self, tool_name: str, tool_config: dict[str, Any], workspace_path: Path
+    ) -> ContainerInfo:
         """Description:
             Reconfigure one tool runtime by ensuring it is running with the latest config.
 
@@ -1208,7 +1219,9 @@ class ContainerManager:
         :returns: Current tool container info.
         """
 
-        return await self.start_tool(tool_name=tool_name, tool_config=tool_config, workspace_path=workspace_path)
+        return await self.start_tool(
+            tool_name=tool_name, tool_config=tool_config, workspace_path=workspace_path
+        )
 
     async def signal_agent_finish(self, agent_id: str) -> None:
         """Description:

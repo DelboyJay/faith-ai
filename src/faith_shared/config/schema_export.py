@@ -23,7 +23,6 @@ from faith_shared.config.models import (
     SystemConfig,
 )
 
-
 SCHEMA_MAP: dict[str, type[BaseModel]] = {
     "agent-config.schema.json": AgentConfig,
     "secrets.schema.json": SecretsConfig,

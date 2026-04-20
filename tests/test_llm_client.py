@@ -68,11 +68,11 @@ class DummyResponse:
 
 def test_parse_model_string_supports_both_backends():
     """Description:
-        Verify provider-prefixed model strings are parsed into provider and provider-model parts.
+    Verify provider-prefixed model strings are parsed into provider and provider-model parts.
 
-        Requirements:
-            - This test is needed to prove the client can dispatch to both supported backends.
-            - Verify both Ollama and OpenRouter model prefixes are handled correctly.
+    Requirements:
+        - This test is needed to prove the client can dispatch to both supported backends.
+        - Verify both Ollama and OpenRouter model prefixes are handled correctly.
     """
 
     assert parse_model_string("ollama/llama3:8b") == ("ollama", "llama3:8b")
@@ -81,11 +81,11 @@ def test_parse_model_string_supports_both_backends():
 
 def test_parse_model_string_rejects_unknown_prefix():
     """Description:
-        Verify unknown model prefixes are rejected.
+    Verify unknown model prefixes are rejected.
 
-        Requirements:
-            - This test is needed to prove unsupported model identifiers fail clearly.
-            - Verify an unknown prefix raises ``ValueError``.
+    Requirements:
+        - This test is needed to prove unsupported model identifiers fail clearly.
+        - Verify an unknown prefix raises ``ValueError``.
     """
 
     with pytest.raises(ValueError):
@@ -94,11 +94,11 @@ def test_parse_model_string_rejects_unknown_prefix():
 
 def test_call_openrouter_requires_key():
     """Description:
-        Verify OpenRouter dispatch fails when no API key is configured.
+    Verify OpenRouter dispatch fails when no API key is configured.
 
-        Requirements:
-            - This test is needed to prove the client does not attempt unauthenticated OpenRouter calls.
-            - Verify the dispatch path raises ``LLMPermanentError`` without an API key.
+    Requirements:
+        - This test is needed to prove the client does not attempt unauthenticated OpenRouter calls.
+        - Verify the dispatch path raises ``LLMPermanentError`` without an API key.
     """
 
     client = LLMClient(model="openrouter/openai/gpt-5")
@@ -110,11 +110,11 @@ def test_call_openrouter_requires_key():
 
 def test_chat_falls_back_after_retryable_failure():
     """Description:
-        Verify retryable failures on the primary model fall back to the configured secondary model.
+    Verify retryable failures on the primary model fall back to the configured secondary model.
 
-        Requirements:
-            - This test is needed to prove the client can recover from transient primary-model failures.
-            - Verify the returned response comes from the fallback model path.
+    Requirements:
+        - This test is needed to prove the client can recover from transient primary-model failures.
+        - Verify the returned response comes from the fallback model path.
     """
 
     client = LLMClient(model="ollama/primary", fallback_model="ollama/fallback")
@@ -152,11 +152,11 @@ def test_chat_falls_back_after_retryable_failure():
 
 def test_raise_for_status_classifies_errors():
     """Description:
-        Verify HTTP status handling classifies retryable and permanent failures correctly.
+    Verify HTTP status handling classifies retryable and permanent failures correctly.
 
-        Requirements:
-            - This test is needed to prove the retry logic receives the correct error type for each status class.
-            - Verify rate-limit responses are retryable and authentication failures are permanent.
+    Requirements:
+        - This test is needed to prove the retry logic receives the correct error type for each status class.
+        - Verify rate-limit responses are retryable and authentication failures are permanent.
     """
 
     client = LLMClient(model="ollama/test")
@@ -168,11 +168,11 @@ def test_raise_for_status_classifies_errors():
 
 def test_call_ollama_normalises_response_payload():
     """Description:
-        Verify Ollama responses are normalised into the shared LLM response format.
+    Verify Ollama responses are normalised into the shared LLM response format.
 
-        Requirements:
-            - This test is needed to prove provider-specific response payloads are translated consistently.
-            - Verify content and token counts are extracted from the Ollama response payload.
+    Requirements:
+        - This test is needed to prove provider-specific response payloads are translated consistently.
+        - Verify content and token counts are extracted from the Ollama response payload.
     """
 
     client = LLMClient(model="ollama/test")

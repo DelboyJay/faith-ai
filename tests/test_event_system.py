@@ -16,10 +16,10 @@ import json
 import pytest
 
 from faith_shared.protocol.events import (
+    SYSTEM_EVENTS_CHANNEL,
     EventPublisher,
     EventType,
     FaithEvent,
-    SYSTEM_EVENTS_CHANNEL,
 )
 
 

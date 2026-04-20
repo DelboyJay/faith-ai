@@ -31,6 +31,12 @@ from faith_pa.config import (
     build_config_summary,
     load_system_config,
 )
+from faith_pa.pa.chat_tool_loop import (
+    ProjectAgentMCPToolExecutor,
+    build_tool_manifest_prompt,
+    format_tool_result_for_model,
+    parse_chat_tool_call,
+)
 from faith_pa.pa.container_manager import ContainerManager
 from faith_pa.utils import (
     SYSTEM_EVENTS_CHANNEL,
@@ -82,6 +88,7 @@ PROJECT_AGENT_SYSTEM_PROMPT = (
     "concisely, and helpfully. When you do not know something, say so plainly."
 )
 MAX_PROJECT_AGENT_HISTORY = 12
+MAX_PROJECT_AGENT_TOOL_ITERATIONS = 3
 STREAM_CHUNK_SIZE = 24
 
 
@@ -99,6 +106,7 @@ class ProjectAgentChatRuntime:
     :param redis_client: Shared Redis client used for pub/sub and output frames.
     :param llm_client: Shared LLM client used to generate assistant replies.
     :param model_name: Human-readable model name surfaced to the UI.
+    :param tool_executor: Optional PA MCP tool executor used for chat-time tool calls.
     :param output_channel: Redis output channel used by the Project Agent panel.
     """
 
@@ -108,6 +116,7 @@ class ProjectAgentChatRuntime:
         redis_client: Any,
         llm_client: Any,
         model_name: str,
+        tool_executor: Any | None = None,
         output_channel: str = PROJECT_AGENT_OUTPUT_CHANNEL,
     ) -> None:
         """Description:
@@ -120,12 +129,14 @@ class ProjectAgentChatRuntime:
         :param redis_client: Shared Redis client used for pub/sub and output frames.
         :param llm_client: Shared LLM client used to generate assistant replies.
         :param model_name: Human-readable model name surfaced to the UI.
+        :param tool_executor: Optional PA MCP tool executor used for chat-time tool calls.
         :param output_channel: Redis output channel used by the Project Agent panel.
         """
 
         self.redis = redis_client
         self.llm_client = llm_client
         self.model_name = model_name
+        self.tool_executor = tool_executor or ProjectAgentMCPToolExecutor()
         self.output_channel = output_channel
         self.history: list[dict[str, str]] = []
         self._pubsub: Any | None = None
@@ -241,8 +252,7 @@ class ProjectAgentChatRuntime:
 
         try:
             messages = self._build_chat_messages(user_text)
-            response = await self.llm_client.chat(messages, model=self.model_name, temperature=0.2)
-            reply_text = str(getattr(response, "content", "")).strip()
+            reply_text = await self._generate_reply_with_tools(messages)
             if not reply_text:
                 reply_text = "I did not generate a reply for that message."
             self._append_history("user", user_text)
@@ -301,11 +311,51 @@ class ProjectAgentChatRuntime:
         """
 
         messages: list[dict[str, str]] = [
-            {"role": "system", "content": PROJECT_AGENT_SYSTEM_PROMPT},
+            {
+                "role": "system",
+                "content": f"{PROJECT_AGENT_SYSTEM_PROMPT}\n\n{build_tool_manifest_prompt()}",
+            },
             *self.history,
             {"role": "user", "content": user_text},
         ]
         return messages
+
+    async def _generate_reply_with_tools(self, messages: list[dict[str, str]]) -> str:
+        """Description:
+            Generate one Project Agent reply with bounded MCP tool-call support.
+
+        Requirements:
+            - Let non-native models request tools by emitting compact JSON.
+            - Execute requested tools through the PA MCP executor.
+            - Feed tool results back to the model and stop on the first normal
+              assistant answer or after the safe iteration limit.
+
+        :param messages: Initial chat payload for the LLM.
+        :returns: Final assistant reply text.
+        """
+
+        working_messages = list(messages)
+        for _ in range(MAX_PROJECT_AGENT_TOOL_ITERATIONS):
+            response = await self.llm_client.chat(
+                working_messages,
+                model=self.model_name,
+                temperature=0.2,
+            )
+            reply_text = str(getattr(response, "content", "")).strip()
+            tool_call = parse_chat_tool_call(reply_text)
+            if tool_call is None:
+                return reply_text
+
+            await self._publish_output(f"PA is using {tool_call.tool}.{tool_call.action}...\n")
+            tool_result = await self.tool_executor.execute(tool_call)
+            working_messages.append({"role": "assistant", "content": reply_text})
+            working_messages.append(
+                {
+                    "role": "user",
+                    "content": format_tool_result_for_model(tool_call, tool_result),
+                }
+            )
+        return "I stopped because the tool-use loop reached its safety limit."
 
     def _append_history(self, role: str, content: str) -> None:
         """Description:

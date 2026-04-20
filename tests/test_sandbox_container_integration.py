@@ -17,11 +17,11 @@ from faith_pa.pa.sandbox_models import SandboxRequest
 @pytest.mark.asyncio
 async def test_sandbox_manager_uses_container_manager() -> None:
     """Description:
-        Verify sandbox allocation creates a managed sandbox container through the container manager.
+    Verify sandbox allocation creates a managed sandbox container through the container manager.
 
-        Requirements:
-            - This test is needed to prove the sandbox manager integrates cleanly with the container runtime abstraction.
-            - Verify the created container uses the expected sandbox naming and type metadata.
+    Requirements:
+        - This test is needed to prove the sandbox manager integrates cleanly with the container runtime abstraction.
+        - Verify the created container uses the expected sandbox naming and type metadata.
     """
 
     runtime = InMemoryContainerRuntime()

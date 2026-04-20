@@ -28,10 +28,10 @@ from faith_shared.protocol.events import EventType, FaithEvent
 
 class UserApprovalDecision(str, Enum):
     """Description:
-        Enumerate the user decisions supported by the approval flow.
+    Enumerate the user decisions supported by the approval flow.
 
-        Requirements:
-            - Cover one-off, session, persistent allow, persistent ask, and denial outcomes.
+    Requirements:
+        - Cover one-off, session, persistent allow, persistent ask, and denial outcomes.
     """
 
     ALLOW_ONCE = "allow_once"
@@ -245,7 +245,9 @@ class ApprovalFlow:
                 scope=effective_scope,
             )
         elif decision_enum in PERMANENT_RULE_SECTION:
-            request.generated_rule = rule_override or self.generate_rule(request, scope=effective_scope)
+            request.generated_rule = rule_override or self.generate_rule(
+                request, scope=effective_scope
+            )
             self._write_learned_rule(
                 request.agent_id, PERMANENT_RULE_SECTION[decision_enum], request.generated_rule
             )
@@ -398,7 +400,11 @@ class ApprovalFlow:
             prefix = re.escape(f"{request.tool}:{request.action}:")
             normalized_target = cls._normalize_target(request.target)
             if scope_kind == "folder":
-                folder = normalized_target.rsplit("/", 1)[0] if "/" in normalized_target else normalized_target
+                folder = (
+                    normalized_target.rsplit("/", 1)[0]
+                    if "/" in normalized_target
+                    else normalized_target
+                )
                 folder = folder.rstrip("/")
                 return rf"^{prefix}{re.escape(folder)}(?:/.*)?$"
             if scope_kind == "glob":

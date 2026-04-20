@@ -52,12 +52,12 @@ class FakeRedis:
 @pytest.fixture
 def event_publisher() -> object:
     """Description:
-        Create a real event publisher backed by the fake Redis test double.
+    Create a real event publisher backed by the fake Redis test double.
 
-        Requirements:
-            - Provide the FRS manager with a publisher compatible with its publish path.
+    Requirements:
+        - Provide the FRS manager with a publisher compatible with its publish path.
 
-        :returns: Event publisher instance.
+    :returns: Event publisher instance.
     """
 
     from faith_shared.protocol.events import EventPublisher
@@ -68,14 +68,14 @@ def event_publisher() -> object:
 @pytest.mark.asyncio
 async def test_handle_new_requirement_updates_frs(tmp_path: Path, event_publisher) -> None:
     """Description:
-        Verify a new requirement is added to the living FRS.
+    Verify a new requirement is added to the living FRS.
 
-        Requirements:
-            - This test is needed to prove the FRS manager can create the initial FRS and append a requirement entry.
-            - Verify the generated requirement identifier and text are written to the FRS.
+    Requirements:
+        - This test is needed to prove the FRS manager can create the initial FRS and append a requirement entry.
+        - Verify the generated requirement identifier and text are written to the FRS.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param event_publisher: Event publisher fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param event_publisher: Event publisher fixture.
     """
 
     llm = AsyncMock(side_effect=["new_requirement", "The API shall support rate limiting", "NONE"])
@@ -94,14 +94,14 @@ async def test_handle_new_requirement_updates_frs(tmp_path: Path, event_publishe
 @pytest.mark.asyncio
 async def test_handle_correction_adds_decision(tmp_path: Path, event_publisher) -> None:
     """Description:
-        Verify a correction replaces an existing requirement and records a linked decision.
+    Verify a correction replaces an existing requirement and records a linked decision.
 
-        Requirements:
-            - This test is needed to prove corrections can update existing FRS content without losing traceability.
-            - Verify the corrected text and generated decision entry are both present in the FRS.
+    Requirements:
+        - This test is needed to prove corrections can update existing FRS content without losing traceability.
+        - Verify the corrected text and generated decision entry are both present in the FRS.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param event_publisher: Event publisher fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param event_publisher: Event publisher fixture.
     """
 
     frs_dir = tmp_path / ".faith"
@@ -131,14 +131,14 @@ async def test_handle_correction_adds_decision(tmp_path: Path, event_publisher) 
 @pytest.mark.asyncio
 async def test_handle_question_records_open_question(tmp_path: Path, event_publisher) -> None:
     """Description:
-        Verify questions are appended to the FRS open-questions section.
+    Verify questions are appended to the FRS open-questions section.
 
-        Requirements:
-            - This test is needed to prove question-style user input is preserved in the living FRS.
-            - Verify the formatted open question appears in the FRS content.
+    Requirements:
+        - This test is needed to prove question-style user input is preserved in the living FRS.
+        - Verify the formatted open question appears in the FRS content.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param event_publisher: Event publisher fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param event_publisher: Event publisher fixture.
     """
 
     llm = AsyncMock(side_effect=["question", "Should we support SSO?"])

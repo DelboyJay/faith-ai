@@ -73,13 +73,13 @@ def write_file(path: Path, contents: str) -> None:
 @pytest.mark.asyncio
 async def test_request_and_resolve_allow_once(tmp_path):
     """Description:
-        Verify the approval flow publishes request and decision events for an allow-once decision.
+    Verify the approval flow publishes request and decision events for an allow-once decision.
 
-        Requirements:
-            - This test is needed to prove pending requests can be created and resolved end to end.
-            - Verify both the request and decision events are published in order.
+    Requirements:
+        - This test is needed to prove pending requests can be created and resolved end to end.
+        - Verify both the request and decision events are published in order.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"
@@ -109,13 +109,13 @@ async def test_request_and_resolve_allow_once(tmp_path):
 @pytest.mark.asyncio
 async def test_approve_session_records_engine_memory(tmp_path):
     """Description:
-        Verify approve-session decisions are recorded in the approval engine session memory.
+    Verify approve-session decisions are recorded in the approval engine session memory.
 
-        Requirements:
-            - This test is needed to prove repeat prompts can be suppressed within a session.
-            - Verify a later engine evaluation returns the remembered session approval.
+    Requirements:
+        - This test is needed to prove repeat prompts can be suppressed within a session.
+        - Verify a later engine evaluation returns the remembered session approval.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"
@@ -143,13 +143,13 @@ async def test_approve_session_records_engine_memory(tmp_path):
 @pytest.mark.asyncio
 async def test_approve_session_folder_scope_matches_sibling_paths(tmp_path):
     """Description:
-        Verify approve-session decisions can be remembered at folder scope for filesystem actions.
+    Verify approve-session decisions can be remembered at folder scope for filesystem actions.
 
-        Requirements:
-            - This test is needed to prove filesystem approvals are remembered by target scope rather than exact string only.
-            - Verify a folder-scoped session approval matches a later sibling path.
+    Requirements:
+        - This test is needed to prove filesystem approvals are remembered by target scope rather than exact string only.
+        - Verify a folder-scoped session approval matches a later sibling path.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"
@@ -180,13 +180,13 @@ async def test_approve_session_folder_scope_matches_sibling_paths(tmp_path):
 @pytest.mark.asyncio
 async def test_deny_permanently_writes_matching_rule(tmp_path):
     """Description:
-        Verify permanent denials persist a generated rule and affect later evaluations.
+    Verify permanent denials persist a generated rule and affect later evaluations.
 
-        Requirements:
-            - This test is needed to prove learned deny rules survive beyond the initial request.
-            - Verify the generated rule is written to ``security.yaml`` and then matched by the engine.
+    Requirements:
+        - This test is needed to prove learned deny rules survive beyond the initial request.
+        - Verify the generated rule is written to ``security.yaml`` and then matched by the engine.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"
@@ -217,13 +217,13 @@ async def test_deny_permanently_writes_matching_rule(tmp_path):
 
 def test_build_websocket_payload_includes_rule_review_metadata(tmp_path):
     """Description:
-        Verify approval payloads expose the generated rule and scope choices for UI review.
+    Verify approval payloads expose the generated rule and scope choices for UI review.
 
-        Requirements:
-            - This test is needed to prove persisted-rule decisions can be reviewed and edited before writing.
-            - Verify filesystem requests advertise exact, folder, and glob scope options.
+    Requirements:
+        - This test is needed to prove persisted-rule decisions can be reviewed and edited before writing.
+        - Verify filesystem requests advertise exact, folder, and glob scope options.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"
@@ -252,13 +252,13 @@ def test_build_websocket_payload_includes_rule_review_metadata(tmp_path):
 @pytest.mark.asyncio
 async def test_flow_logs_audit_decision(tmp_path):
     """Description:
-        Verify resolved approval decisions are written to the audit log.
+    Verify resolved approval decisions are written to the audit log.
 
-        Requirements:
-            - This test is needed to prove approval outcomes are retained for later audit and UI inspection.
-            - Verify denied decisions are written with the expected approval tier.
+    Requirements:
+        - This test is needed to prove approval outcomes are retained for later audit and UI inspection.
+        - Verify denied decisions are written with the expected approval tier.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"
@@ -288,13 +288,13 @@ async def test_flow_logs_audit_decision(tmp_path):
 @pytest.mark.asyncio
 async def test_flow_logs_canonical_always_deny_for_permanent_denials(tmp_path):
     """Description:
-        Verify permanent denials are written to the audit log with the canonical deny tier.
+    Verify permanent denials are written to the audit log with the canonical deny tier.
 
-        Requirements:
-            - This test is needed to prove legacy ``deny_permanently`` wording does not leak into audit records.
-            - Verify the audit entry stores ``always_deny`` as the approval tier.
+    Requirements:
+        - This test is needed to prove legacy ``deny_permanently`` wording does not leak into audit records.
+        - Verify the audit entry stores ``always_deny`` as the approval tier.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     faith_dir = tmp_path / ".faith"

@@ -17,11 +17,11 @@ from faith_pa.security.audit_log import AuditEntry, AuditLogger
 
 def test_audit_entry_round_trip():
     """Description:
-        Verify audit entries round-trip through JSON-lines serialisation.
+    Verify audit entries round-trip through JSON-lines serialisation.
 
-        Requirements:
-            - This test is needed to prove persisted audit entries can be read back without losing key fields.
-            - Verify the restored entry preserves the agent and tool values.
+    Requirements:
+        - This test is needed to prove persisted audit entries can be read back without losing key fields.
+        - Verify the restored entry preserves the agent and tool values.
     """
 
     entry = AuditEntry(agent="dev", tool="filesystem", action="read", target="/repo/a.txt")
@@ -32,13 +32,13 @@ def test_audit_entry_round_trip():
 
 def test_logger_writes_and_reads(tmp_path):
     """Description:
-        Verify the audit logger writes entries and reads them back.
+    Verify the audit logger writes entries and reads them back.
 
-        Requirements:
-            - This test is needed to prove the basic append-and-read path works.
-            - Verify the stored approval tier is preserved.
+    Requirements:
+        - This test is needed to prove the basic append-and-read path works.
+        - Verify the stored approval tier is preserved.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     logger = AuditLogger(tmp_path / "logs")
@@ -52,13 +52,13 @@ def test_logger_writes_and_reads(tmp_path):
 
 def test_logger_skips_malformed_lines(tmp_path):
     """Description:
-        Verify malformed audit-log lines are skipped rather than raising errors.
+    Verify malformed audit-log lines are skipped rather than raising errors.
 
-        Requirements:
-            - This test is needed to prove the audit reader is resilient to partial or corrupted log lines.
-            - Verify valid lines after malformed ones are still returned.
+    Requirements:
+        - This test is needed to prove the audit reader is resilient to partial or corrupted log lines.
+        - Verify valid lines after malformed ones are still returned.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     logger = AuditLogger(tmp_path / "logs")
@@ -77,13 +77,13 @@ def test_logger_skips_malformed_lines(tmp_path):
 
 def test_logger_query_filters(tmp_path):
     """Description:
-        Verify audit queries filter entries by the supplied criteria.
+    Verify audit queries filter entries by the supplied criteria.
 
-        Requirements:
-            - This test is needed to prove the UI and debugging workflows can retrieve filtered audit slices.
-            - Verify filtering by agent returns only matching entries.
+    Requirements:
+        - This test is needed to prove the UI and debugging workflows can retrieve filtered audit slices.
+        - Verify filtering by agent returns only matching entries.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     logger = AuditLogger(tmp_path / "logs")
@@ -96,13 +96,13 @@ def test_logger_query_filters(tmp_path):
 
 def test_rotation_archives_old_log(tmp_path):
     """Description:
-        Verify log rotation archives the active log when the retention threshold is met.
+    Verify log rotation archives the active log when the retention threshold is met.
 
-        Requirements:
-            - This test is needed to prove the audit log can be rotated without losing data.
-            - Verify an archive file is created when rotation runs.
+    Requirements:
+        - This test is needed to prove the audit log can be rotated without losing data.
+        - Verify an archive file is created when rotation runs.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     logger = AuditLogger(tmp_path / "logs", retention_days=0)
@@ -115,13 +115,13 @@ def test_rotation_archives_old_log(tmp_path):
 
 def test_file_restoration_uses_allow_once(tmp_path):
     """Description:
-        Verify file restoration audit entries use the expected filesystem action metadata.
+    Verify file restoration audit entries use the expected filesystem action metadata.
 
-        Requirements:
-            - This test is needed to prove restoration actions are logged consistently.
-            - Verify the recorded approval tier is ``allow_once``.
+    Requirements:
+        - This test is needed to prove restoration actions are logged consistently.
+        - Verify the recorded approval tier is ``allow_once``.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     logger = AuditLogger(tmp_path / "logs")
@@ -131,13 +131,13 @@ def test_file_restoration_uses_allow_once(tmp_path):
 
 def test_approval_logger_normalises_legacy_permanent_deny_value(tmp_path):
     """Description:
-        Verify audit logging normalises legacy permanent-deny wording.
+    Verify audit logging normalises legacy permanent-deny wording.
 
-        Requirements:
-            - This test is needed to prove audit entries use the canonical FRS approval vocabulary.
-            - Verify ``deny_permanently`` is stored as ``always_deny``.
+    Requirements:
+        - This test is needed to prove audit entries use the canonical FRS approval vocabulary.
+        - Verify ``deny_permanently`` is stored as ``always_deny``.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     logger = AuditLogger(tmp_path / "logs")
@@ -156,13 +156,13 @@ def test_approval_logger_normalises_legacy_permanent_deny_value(tmp_path):
 
 def test_approval_logger_uses_unknown_for_noncanonical_deny_once(tmp_path):
     """Description:
-        Verify one-off denials are recorded with the canonical fallback approval tier.
+    Verify one-off denials are recorded with the canonical fallback approval tier.
 
-        Requirements:
-            - This test is needed to prove audit entries do not leak noncanonical one-off deny values.
-            - Verify ``deny_once`` is normalised to ``unknown``.
+    Requirements:
+        - This test is needed to prove audit entries do not leak noncanonical one-off deny values.
+        - Verify ``deny_once`` is normalised to ``unknown``.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     logger = AuditLogger(tmp_path / "logs")
@@ -180,13 +180,13 @@ def test_approval_logger_uses_unknown_for_noncanonical_deny_once(tmp_path):
 
 def test_async_record_writes_sandbox_audit_entry(tmp_path):
     """Description:
-        Verify the async compatibility logger path records sandbox lifecycle events.
+    Verify the async compatibility logger path records sandbox lifecycle events.
 
-        Requirements:
-            - This test is needed to prove PA components can audit events through the async ``record`` interface.
-            - Verify the recorded sandbox entry uses the ``sandbox`` tool channel.
+    Requirements:
+        - This test is needed to prove PA components can audit events through the async ``record`` interface.
+        - Verify the recorded sandbox entry uses the ``sandbox`` tool channel.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     import asyncio

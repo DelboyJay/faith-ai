@@ -197,7 +197,9 @@ class BaseAgent:
         self.llm_client = llm_client or LLMClient(
             model=self.model_name,
             fallback_model=self.system_config.pa.fallback_model,
-            ollama_host=self.system_config.ollama.endpoint if self.system_config.ollama.enabled else None,
+            ollama_host=self.system_config.ollama.endpoint
+            if self.system_config.ollama.enabled
+            else None,
         )
         self.cag_manager = CAGManager(
             project_root=self.project_root,

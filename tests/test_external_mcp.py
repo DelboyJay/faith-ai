@@ -428,14 +428,14 @@ async def test_start_server_uses_registry_resolution_before_launch(
 
     async def resolve_registry(registry_ref: str, package_version: str) -> dict[str, str]:
         """Description:
-            Return a fake resolved registry payload for the test.
+        Return a fake resolved registry payload for the test.
 
-            Requirements:
-                - Preserve the registry ref and package version while swapping the launchable package name.
+        Requirements:
+            - Preserve the registry ref and package version while swapping the launchable package name.
 
-            :param registry_ref: Registry reference declared in the config.
-            :param package_version: Pinned package version declared in the config.
-            :returns: Fake resolved registry metadata.
+        :param registry_ref: Registry reference declared in the config.
+        :param package_version: Pinned package version declared in the config.
+        :returns: Fake resolved registry metadata.
         """
 
         return {

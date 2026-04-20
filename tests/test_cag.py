@@ -151,7 +151,9 @@ class TestCAGManager:
         assert len(result.errors) == 1
         assert "not found" in result.errors[0].lower()
 
-    def test_load_all_warns_when_budget_exceeded(self, tmp_project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_load_all_warns_when_budget_exceeded(
+        self, tmp_project: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Description:
             Verify oversized CAG budgets produce a warning and unsuccessful validation result.
 
@@ -165,7 +167,9 @@ class TestCAGManager:
 
         from faith_pa.agent.cag import CAGManager
 
-        monkeypatch.setattr("faith_pa.agent.cag.count_text_tokens", lambda text, model=None: len(text))
+        monkeypatch.setattr(
+            "faith_pa.agent.cag.count_text_tokens", lambda text, model=None: len(text)
+        )
         manager = CAGManager(
             project_root=tmp_project,
             model_name="gpt-5.4-mini",

@@ -19,10 +19,10 @@ from typing import Any
 import redis.asyncio as aioredis
 
 from faith_shared.protocol.events import (
+    SYSTEM_EVENTS_CHANNEL,
     EventPublisher,
     EventType,
     FaithEvent,
-    SYSTEM_EVENTS_CHANNEL,
 )
 
 logger = logging.getLogger("faith.protocol.subscriber")

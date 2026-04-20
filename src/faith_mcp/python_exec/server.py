@@ -254,7 +254,9 @@ class PythonExecutionServer:
         return result.to_dict()
 
 
-def load_server_from_faith_dir(faith_dir: Path, *, allowed_paths: list[Path] | None = None) -> PythonExecutionServer:
+def load_server_from_faith_dir(
+    faith_dir: Path, *, allowed_paths: list[Path] | None = None
+) -> PythonExecutionServer:
     """
     Description:
         Build a Python execution server from the on-disk FAITH tool config.
@@ -270,7 +272,9 @@ def load_server_from_faith_dir(faith_dir: Path, *, allowed_paths: list[Path] | N
 
     config_path = Path(faith_dir) / "tools" / "python.yaml"
     if config_path.exists():
-        config = PythonToolConfig.model_validate(yaml.safe_load(config_path.read_text(encoding="utf-8")) or {})
+        config = PythonToolConfig.model_validate(
+            yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        )
     else:
         config = PythonToolConfig()
     return PythonExecutionServer(config=config, allowed_paths=allowed_paths)

@@ -86,9 +86,7 @@ class AgentState:
         :returns: Markdown representation of the agent state.
         """
 
-        channels = (
-            "\n".join(f"- {channel}" for channel in self.channel_assignments) or "- (none)"
-        )
+        channels = "\n".join(f"- {channel}" for channel in self.channel_assignments) or "- (none)"
         file_watches = "\n".join(f"- {path}" for path in self.file_watches) or "- (none)"
         current_task = self.current_task or "(none)"
         progress = self.progress or "(none)"
@@ -151,7 +149,9 @@ class AgentState:
             values[key.strip()] = value.strip()
         return cls(
             agent_id=values.get("agent_id", ""),
-            current_task="" if values.get("current_task") == "(none)" else values.get("current_task", ""),
+            current_task=""
+            if values.get("current_task") == "(none)"
+            else values.get("current_task", ""),
             progress="" if values.get("progress") == "(none)" else values.get("progress", ""),
             channel_assignments=channel_assignments,
             file_watches=file_watches,

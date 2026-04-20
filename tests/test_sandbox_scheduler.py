@@ -54,11 +54,11 @@ class FakeContainerManager:
 @pytest.mark.asyncio
 async def test_quota_is_enforced() -> None:
     """Description:
-        Verify the sandbox manager raises a quota error when concurrent allocation exceeds the limit.
+    Verify the sandbox manager raises a quota error when concurrent allocation exceeds the limit.
 
-        Requirements:
-            - This test is needed to prove sandbox scheduling fails closed when resources are exhausted.
-            - Verify ``SandboxQuotaExceeded`` is raised for the second isolated allocation.
+    Requirements:
+        - This test is needed to prove sandbox scheduling fails closed when resources are exhausted.
+        - Verify ``SandboxQuotaExceeded`` is raised for the second isolated allocation.
     """
 
     manager = SandboxManager(FakeContainerManager(), quota=SandboxQuota(max_concurrent=1))

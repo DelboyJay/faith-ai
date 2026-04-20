@@ -17,13 +17,13 @@ from faith_pa.agent.summariser import ContextSummariser
 
 def test_should_summarise_on_message_count(tmp_path):
     """Description:
-        Verify summarisation triggers when the configured maximum message count is reached.
+    Verify summarisation triggers when the configured maximum message count is reached.
 
-        Requirements:
-            - This test is needed to prove high-volume conversations trigger compaction before the context grows unchecked.
-            - Verify the summariser returns ``True`` once the configured message cap is met.
+    Requirements:
+        - This test is needed to prove high-volume conversations trigger compaction before the context grows unchecked.
+        - Verify the summariser returns ``True`` once the configured message cap is met.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     summariser = ContextSummariser(
@@ -39,13 +39,13 @@ def test_should_summarise_on_message_count(tmp_path):
 
 def test_persist_and_load_summary_roundtrip(tmp_path):
     """Description:
-        Verify persisted summaries can be loaded back from the agent context file.
+    Verify persisted summaries can be loaded back from the agent context file.
 
-        Requirements:
-            - This test is needed to prove rolling summaries survive across runtime restarts.
-            - Verify the summary file is created and the original summary text is returned.
+    Requirements:
+        - This test is needed to prove rolling summaries survive across runtime restarts.
+        - Verify the summary file is created and the original summary text is returned.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     summariser = ContextSummariser(
@@ -61,13 +61,13 @@ def test_persist_and_load_summary_roundtrip(tmp_path):
 
 def test_compact_retains_recent_messages_and_compacts_disposable(tmp_path):
     """Description:
-        Verify compaction retains recent non-disposable messages and summarises older history.
+    Verify compaction retains recent non-disposable messages and summarises older history.
 
-        Requirements:
-            - This test is needed to prove history compaction preserves recent conversational context.
-            - Verify disposable and older messages are summarised and a synthetic compaction marker is inserted.
+    Requirements:
+        - This test is needed to prove history compaction preserves recent conversational context.
+        - Verify disposable and older messages are summarised and a synthetic compaction marker is inserted.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     summariser = ContextSummariser(

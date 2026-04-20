@@ -11,7 +11,12 @@ from __future__ import annotations
 
 import pytest
 
-from faith_pa.pa.loop_detector import ChannelStateTracker, LoopDetectionConfig, LoopDetector, _Snapshot
+from faith_pa.pa.loop_detector import (
+    ChannelStateTracker,
+    LoopDetectionConfig,
+    LoopDetector,
+    _Snapshot,
+)
 
 
 class FakePublisher:
