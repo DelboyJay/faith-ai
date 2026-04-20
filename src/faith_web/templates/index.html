@@ -19,7 +19,7 @@
       href="https://cdn.jsdelivr.net/npm/xterm@5.5.0/css/xterm.min.css"
       onerror="window.faithSwapStylesheetFallback(this, '/static/js/vendor/xterm.min.css')"
     >
-    <link rel="stylesheet" href="/static/css/theme.css">
+    <link rel="stylesheet" href="/static/css/theme.css?v={{ asset_version }}">
     <script>
       window.faithSwapStylesheetFallback = function faithSwapStylesheetFallback(node, fallbackHref) {
         node.onerror = null;
@@ -44,7 +44,11 @@
       src="https://cdn.jsdelivr.net/npm/xterm@5.5.0/lib/xterm.min.js"
       onerror="window.faithLoadVendoredFallback('xterm.min')"
     ></script>
-    <script src="/static/js/layout.js"></script>
+    <script src="/static/js/panels/agent-panel.js?v={{ asset_version }}"></script>
+    <script src="/static/js/panels/input-panel.js?v={{ asset_version }}"></script>
+    <script src="/static/js/panels/approval-panel.js?v={{ asset_version }}"></script>
+    <script src="/static/js/panels/docker-runtime-panel.js?v={{ asset_version }}"></script>
+    <script src="/static/js/layout.js?v={{ asset_version }}"></script>
   </head>
   <body>
     <div id="faith-toolbar" class="faith-toolbar">
@@ -54,6 +58,6 @@
       </div>
     </div>
     <div id="faith-layout" class="faith-layout-container" aria-label="FAITH panel workspace"></div>
-    <script src="/static/js/app.js"></script>
+    <script src="/static/js/app.js?v={{ asset_version }}"></script>
   </body>
 </html>

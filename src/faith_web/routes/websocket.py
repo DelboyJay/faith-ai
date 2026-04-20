@@ -50,16 +50,55 @@ async def _receive_until_disconnect(websocket: WebSocket) -> None:
         await websocket.receive_text()
 
 
-async def _forward_pubsub_messages(websocket: WebSocket, pubsub: Any) -> None:
+def _track_approval_message(app: Any, redis_channel: str, raw: str) -> None:
+    """Description:
+        Track approval request IDs observed by the Web UI approval stream.
+
+    Requirements:
+        - Activate request-ID validation only after approval events have been seen.
+        - Add pending request IDs for approval-request messages.
+        - Remove request IDs for approval-resolution messages.
+
+    :param app: FastAPI application object from the WebSocket scope.
+    :param redis_channel: Redis channel that produced the message.
+    :param raw: Raw JSON text delivered to the browser.
+    """
+
+    if redis_channel != APPROVAL_EVENTS_CHANNEL or app is None:
+        return
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return
+    messages = payload if isinstance(payload, list) else [payload]
+    pending_ids = getattr(app.state, "pending_approval_ids", None)
+    if pending_ids is None:
+        return
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        request_id = str(message.get("request_id") or message.get("id") or "")
+        if not request_id:
+            continue
+        app.state.approval_registry_active = True
+        if message.get("type") in {"approval_resolved", "approval:resolved", "approval_decision"}:
+            pending_ids.discard(request_id)
+        else:
+            pending_ids.add(request_id)
+
+
+async def _forward_pubsub_messages(websocket: WebSocket, pubsub: Any, redis_channel: str) -> None:
     """Description:
         Forward Redis pub/sub messages into one connected WebSocket.
 
     Requirements:
         - Ignore subscribe bookkeeping messages.
         - Normalise non-string payloads into JSON text before forwarding.
+        - Track approval request IDs for lightweight HTTP validation.
 
     :param websocket: Connected browser WebSocket.
     :param pubsub: Redis pub/sub object subscribed to one channel.
+    :param redis_channel: Redis channel being bridged.
     """
 
     while True:
@@ -75,6 +114,7 @@ async def _forward_pubsub_messages(websocket: WebSocket, pubsub: Any) -> None:
             raw = raw.decode("utf-8")
         elif not isinstance(raw, str):
             raw = json.dumps(raw)
+        _track_approval_message(websocket.scope.get("app"), redis_channel, raw)
         await websocket.send_text(raw)
 
 
@@ -99,7 +139,7 @@ async def _redis_to_ws_bridge(websocket: WebSocket, redis_channel: str) -> None:
 
     pubsub = redis.pubsub()
     await pubsub.subscribe(redis_channel)
-    forwarder = asyncio.create_task(_forward_pubsub_messages(websocket, pubsub))
+    forwarder = asyncio.create_task(_forward_pubsub_messages(websocket, pubsub, redis_channel))
     receiver = asyncio.create_task(_receive_until_disconnect(websocket))
 
     try:

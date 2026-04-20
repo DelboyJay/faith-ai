@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -12,9 +13,11 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from httpx import AsyncClient
 
 from faith_pa.utils.redis_client import check_connection, get_redis_url
 from faith_shared.api import RouteManifestEntry, ServiceRouteManifest
+from faith_shared.config import DockerRuntimeSnapshot
 from faith_web.version import __version__
 
 logger = logging.getLogger("faith.web")
@@ -25,9 +28,32 @@ STATIC_DIR = PROJECT_ROOT / "web"
 
 APPROVAL_EVENTS_CHANNEL = "approval-events"
 APPROVAL_RESPONSES_CHANNEL = "approval-responses"
+DEFAULT_PA_URL = os.getenv("FAITH_PA_URL", "http://pa:8000")
 
 redis_pool: aioredis.Redis | Any | None = None
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+def get_static_asset_version() -> str:
+    """Description:
+        Build a cache-busting version string for bundled browser assets.
+
+    Requirements:
+        - Change when local static files are rebuilt or modified.
+        - Fall back to the application version when asset inspection fails.
+
+    :returns: Version string suitable for static asset query parameters.
+    """
+
+    try:
+        latest_mtime = max(
+            path.stat().st_mtime_ns for path in STATIC_DIR.rglob("*") if path.is_file()
+        )
+    except ValueError:
+        return __version__
+    except OSError:
+        return __version__
+    return str(latest_mtime)
 
 
 @asynccontextmanager
@@ -131,6 +157,14 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 service="faith-web-ui",
                 protocol="http",
                 method="GET",
+                path="/api/docker-runtime",
+                summary="Return the current Docker runtime snapshot for the Web UI panels.",
+                expected_status_codes=[200, 503],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
                 path="/api/routes",
                 summary="Return the structured Web UI route manifest for CLI discovery.",
                 expected_status_codes=[200],
@@ -157,7 +191,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 method="POST",
                 path="/approve/{request_id}",
                 summary="Submit an approval decision back to the PA.",
-                expected_status_codes=[200, 422, 503],
+                expected_status_codes=[200, 404, 422, 503],
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -191,8 +225,31 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/ws/status",
                 summary="Stream shared system status events.",
             ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="websocket",
+                path="/ws/docker",
+                summary="Stream Docker runtime snapshots for operational panels.",
+            ),
         ],
     )
+
+
+async def fetch_pa_docker_runtime() -> DockerRuntimeSnapshot:
+    """Description:
+        Fetch the current Docker runtime snapshot from the PA service.
+
+    Requirements:
+        - Use the configured PA base URL.
+        - Raise on upstream HTTP errors so callers can report a degraded state.
+
+    :returns: Docker runtime snapshot from the PA service.
+    """
+
+    async with AsyncClient(base_url=DEFAULT_PA_URL, timeout=5.0) as client:
+        response = await client.get("/api/docker-runtime")
+        response.raise_for_status()
+        return DockerRuntimeSnapshot.model_validate(response.json())
 
 
 async def health() -> JSONResponse:
@@ -266,13 +323,20 @@ def create_app(*, testing: bool = False) -> FastAPI:
     )
     app.state.testing = testing
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.state.pa_runtime_fetcher = fetch_pa_docker_runtime
+    app.state.pending_approval_ids = set()
+    app.state.approval_registry_active = False
     app.add_api_route("/health", health, methods=["GET"])
     app.add_api_route("/api/status", api_status, methods=["GET"])
-    app.add_api_route("/api/routes", api_routes, methods=["GET"], response_model=ServiceRouteManifest)
+    app.add_api_route(
+        "/api/routes", api_routes, methods=["GET"], response_model=ServiceRouteManifest
+    )
 
+    from faith_web.routes.docker_runtime import router as docker_runtime_router
     from faith_web.routes.http import router as http_router
     from faith_web.routes.websocket import router as websocket_router
 
+    app.include_router(docker_runtime_router)
     app.include_router(http_router)
     app.include_router(websocket_router)
     return app

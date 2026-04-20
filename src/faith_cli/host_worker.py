@@ -98,6 +98,7 @@ def _is_running(pid: int | None) -> bool:
     Requirements:
         - Return ``False`` when no pid is available.
         - Treat permission errors as evidence that the process still exists.
+        - Treat other Windows probe errors as stale or unprobeable pid values.
 
     :param pid: Candidate process identifier.
     :returns: ``True`` when the process appears to be alive.
@@ -111,6 +112,8 @@ def _is_running(pid: int | None) -> bool:
         return False
     except PermissionError:
         return True
+    except (OSError, SystemError):
+        return False
     return True
 
 
@@ -184,7 +187,7 @@ def stop_host_worker() -> HostWorkerStatus:
 
     try:
         os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
+    except (ProcessLookupError, OSError, SystemError):
         _pid_file().unlink(missing_ok=True)
         return get_host_worker_status()
 

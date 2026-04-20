@@ -351,6 +351,26 @@ def test_index_bootstraps_goldenlayout_shell(client: TestClient) -> None:
     assert "/static/js/layout.js" in response.text
 
 
+def test_index_cache_busts_local_static_assets(client: TestClient) -> None:
+    """Description:
+        Verify the browser shell cache-busts local static assets.
+
+    Requirements:
+        - This test is needed to prove frontend fixes are loaded after container rebuilds.
+        - Verify local CSS and JavaScript asset URLs include the generated asset version query string.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "/static/css/theme.css?v=" in response.text
+    assert "/static/js/panels/agent-panel.js?v=" in response.text
+    assert "/static/js/layout.js?v=" in response.text
+    assert "/static/js/app.js?v=" in response.text
+
+
 def test_layout_asset_is_served(client: TestClient) -> None:
     """Description:
         Verify the dedicated GoldenLayout asset is served as a static file.
@@ -368,6 +388,133 @@ def test_layout_asset_is_served(client: TestClient) -> None:
     assert "faith_layout_v1" in response.text
 
 
+def test_layout_asset_uses_minimal_first_load_defaults(client: TestClient) -> None:
+    """Description:
+        Verify the GoldenLayout asset defines the minimal first-load workspace.
+
+    Requirements:
+        - This test is needed to prove fresh browser loads do not assume a software-team workflow.
+        - Verify the default layout includes Project Agent, Input, Approvals, and System Status.
+        - Verify the default layout does not pre-create Software Developer or QA Engineer panels.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/layout.js")
+    assert response.status_code == 200
+    assert "Project Agent" in response.text
+    assert 'title: "Input"' in response.text
+    assert 'title: "Approvals"' in response.text
+    assert 'title: "System Status"' in response.text
+    assert "Software Developer" not in response.text
+    assert "QA Engineer" not in response.text
+
+
+def test_layout_asset_keeps_saved_layout_and_dynamic_agent_helpers(client: TestClient) -> None:
+    """Description:
+        Verify the layout asset still supports saved layouts and later agent panel creation.
+
+    Requirements:
+        - This test is needed to prove FAITH-060 does not break FAITH-037 persistence semantics.
+        - Verify the canonical localStorage key remains in use.
+        - Verify the layout API still exposes the dynamic agent-panel helper for later specialist agents.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/layout.js")
+    assert response.status_code == 200
+    assert "faith_layout_v1" in response.text
+    assert "layout.loadLayout(loadSavedLayout() || buildDefaultLayoutConfig());" in response.text
+    assert "addAgentPanel" in response.text
+
+
+def test_layout_asset_exposes_panel_lifecycle_helpers(client: TestClient) -> None:
+    """Description:
+        Verify the layout asset exposes the helper surface needed for panel lifecycle handling.
+
+    Requirements:
+        - This test is needed to prove close/reopen and dedupe behaviour is implemented in the shared layout runtime.
+        - Verify the asset exposes helpers for duplicate detection, existing-panel focus, and panel removal by identity.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/layout.js")
+    assert response.status_code == 200
+    assert "hasExistingPanel" in response.text
+    assert "focusExistingPanel" in response.text
+    assert "removePanelByIdentity" in response.text
+
+
+def test_layout_asset_uses_title_bar_as_primary_panel_label(client: TestClient) -> None:
+    """Description:
+        Verify the panel body no longer duplicates the panel title already shown by the title bar.
+
+    Requirements:
+        - This test is needed to prove FAITH-064 removes wasted duplicated panel-name chrome.
+        - Verify the placeholder panel body does not render a second heading label inside the panel content.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/layout.js")
+    assert response.status_code == 200
+    assert "faith-panel__title" not in response.text
+    assert "heading.textContent = title" not in response.text
+
+
+def test_vendor_goldenlayout_asset_is_served(client: TestClient) -> None:
+    """Description:
+        Verify the vendored GoldenLayout fallback asset is served successfully.
+
+    Requirements:
+        - This test is needed to prove the browser can load the local fallback when CDN access is unavailable.
+        - Verify the fallback script exposes the expected GoldenLayout global.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/vendor/goldenlayout.umd.js")
+    assert response.status_code == 200
+    assert "goldenLayout" in response.text
+    assert "GoldenLayout" in response.text
+
+
+def test_vendor_goldenlayout_asset_supports_panel_close_action(client: TestClient) -> None:
+    """Description:
+        Verify the vendored GoldenLayout fallback includes the panel close action hook.
+
+    Requirements:
+        - This test is needed to prove the local fallback can remove panels through the UI instead of leaving close/reopen unimplemented.
+        - Verify the fallback script references the FAITH panel removal helper and close button styling hook.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/vendor/goldenlayout.umd.js")
+    assert response.status_code == 200
+    assert "removePanelByIdentity" in response.text
+    assert "faith-panel__close" in response.text
+
+
+def test_title_bar_close_affordance_is_styled(client: TestClient) -> None:
+    """Description:
+        Verify the shared stylesheet includes the title-bar close affordance styles.
+
+    Requirements:
+        - This test is needed to prove the close action remains a visible, intentional part of the panel title bar.
+        - Verify the stylesheet includes the close-control selectors used by the panel chrome.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/css/theme.css")
+    assert response.status_code == 200
+    assert ".faith-panel__close" in response.text
+    assert ".faith-panel__fallback-header" in response.text
+
+
 def test_layout_support_files_exist() -> None:
     """Description:
         Verify the FAITH-037 support files exist in the repository.
@@ -379,8 +526,14 @@ def test_layout_support_files_exist() -> None:
 
     project_root = Path(__file__).resolve().parents[1]
     vendor_readme = project_root / "web" / "js" / "vendor" / "README.md"
+    vendor_script = project_root / "web" / "js" / "vendor" / "goldenlayout.umd.js"
+    vendor_base_css = project_root / "web" / "js" / "vendor" / "goldenlayout-base.css"
+    vendor_theme_css = project_root / "web" / "js" / "vendor" / "goldenlayout-dark-theme.css"
     layout_harness = project_root / "tests" / "test_layout.html"
     assert vendor_readme.exists()
+    assert vendor_script.exists()
+    assert vendor_base_css.exists()
+    assert vendor_theme_css.exists()
     assert layout_harness.exists()
 
 
@@ -586,6 +739,38 @@ def test_tool_websocket_relays_messages(client: TestClient, fake_redis: FakeRedi
         assert payload["tool"] == "filesystem"
 
 
+def test_agent_websocket_relays_parseable_message_frames(
+    client: TestClient,
+    fake_redis: FakeRedis,
+) -> None:
+    """Description:
+        Verify the agent WebSocket relays parseable JSON frames to the browser.
+
+    Requirements:
+        - This test is needed to prove the agent panel can rely on the backend WebSocket feed for structured messages.
+        - Verify output, protocol, status, and error payloads survive the relay unchanged.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    :param fake_redis: Fake Redis client used by the Web UI app.
+    """
+
+    messages = [
+        {"type": "output", "text": "Hello from agent"},
+        {"type": "protocol", "text": "compact:task:update"},
+        {"type": "status", "status": "running", "model": "ollama/llama3:8b"},
+        {"type": "error", "message": "connection lost"},
+    ]
+
+    with client.websocket_connect("/ws/agent/project-agent") as websocket:
+        for message in messages:
+            fake_redis.pubsub_instance.inject_message(
+                "agent:project-agent:output",
+                json.dumps(message),
+            )
+            payload = json.loads(websocket.receive_text())
+            assert payload == message
+
+
 def test_approval_websocket_relays_messages(client: TestClient, fake_redis: FakeRedis) -> None:
     """Description:
         Verify the approval WebSocket relays approval events to the browser.
@@ -626,6 +811,55 @@ def test_status_websocket_relays_messages(client: TestClient, fake_redis: FakeRe
         assert payload["event"] == "agent:heartbeat"
 
 
+def test_docker_runtime_websocket_streams_snapshot(app) -> None:
+    """Description:
+        Verify the Web UI Docker runtime WebSocket streams runtime snapshots.
+
+    Requirements:
+        - This test is needed to prove the dedicated Docker runtime panel can consume the event-driven feed.
+        - Verify one streamed payload includes the expected bootstrap container role.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    async def _fake_runtime_fetcher():
+        """Description:
+            Return one deterministic runtime snapshot for the Docker WebSocket test.
+
+        Requirements:
+            - Provide one bootstrap container record suitable for browser assertions.
+        """
+
+        return {
+            "docker_available": True,
+            "status": "ok",
+            "images": ["faith-web-ui:latest"],
+            "containers": [
+                {
+                    "name": "faith-web-ui",
+                    "category": "bootstrap",
+                    "role": "Web UI",
+                    "state": "running",
+                    "image": "faith-web-ui:latest",
+                    "health": "healthy",
+                    "restart_count": 0,
+                    "url": "http://localhost:8080",
+                    "ownership": {},
+                }
+            ],
+        }
+
+    app.state.pa_runtime_fetcher = _fake_runtime_fetcher
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws/docker") as websocket:
+            payload = websocket.receive_json()
+
+    assert payload["docker_available"] is True
+    assert payload["images"] == ["faith-web-ui:latest"]
+    assert payload["containers"][0]["role"] == "Web UI"
+
+
 def test_api_status_returns_ok(client: TestClient) -> None:
     """Description:
         Verify the web status endpoint returns a successful status payload.
@@ -640,6 +874,56 @@ def test_api_status_returns_ok(client: TestClient) -> None:
     response = client.get("/api/status")
     assert response.status_code == 200
     assert response.json()["service"] == "faith-web-ui"
+
+
+def test_api_docker_runtime_returns_pa_snapshot(app) -> None:
+    """Description:
+        Verify the Web UI Docker runtime endpoint returns the PA runtime snapshot payload.
+
+    Requirements:
+        - This test is needed to prove the Web UI exposes the dedicated Docker runtime feed over HTTP.
+        - Verify the route returns the configured runtime snapshot rather than raw JSON text.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    async def _fake_runtime_fetcher():
+        """Description:
+            Return one deterministic Docker runtime snapshot for the request-style test.
+
+        Requirements:
+            - Provide a bootstrap container entry suitable for Web UI assertions.
+        """
+
+        return {
+            "docker_available": True,
+            "status": "ok",
+            "images": ["faith-pa:latest"],
+            "containers": [
+                {
+                    "name": "faith-pa",
+                    "category": "bootstrap",
+                    "role": "Project Agent",
+                    "state": "running",
+                    "image": "faith-pa:latest",
+                    "health": "healthy",
+                    "restart_count": 0,
+                    "url": "http://localhost:8000",
+                    "ownership": {},
+                }
+            ],
+        }
+
+    app.state.pa_runtime_fetcher = _fake_runtime_fetcher
+
+    with TestClient(app) as client:
+        response = client.get("/api/docker-runtime")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["docker_available"] is True
+    assert payload["images"] == ["faith-pa:latest"]
+    assert payload["containers"][0]["role"] == "Project Agent"
 
 
 def test_health_returns_503_when_redis_missing(app) -> None:
@@ -785,3 +1069,5 @@ def test_api_routes_returns_manifest(client: TestClient) -> None:
     assert payload["service"] == "faith-web-ui"
     assert any(route["path"] == "/api/routes" for route in payload["routes"])
     assert any(route["path"] == "/ws/status" for route in payload["routes"])
+    assert any(route["path"] == "/api/docker-runtime" for route in payload["routes"])
+    assert any(route["path"] == "/ws/docker" for route in payload["routes"])

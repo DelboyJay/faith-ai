@@ -8,6 +8,7 @@ Requirements:
 
 from faith_shared.compatibility import CURRENT_SCHEMA_VERSION
 from faith_shared.config.models import (
+    TOOL_CONFIG_MAP,
     AccessLevel,
     AgentApprovalRules,
     AgentConfig,
@@ -17,17 +18,18 @@ from faith_shared.config.models import (
     ConfigSummary,
     ConfluenceToolConfig,
     DatabaseToolConfig,
+    DockerRuntimeSnapshot,
     ExternalMCPToolConfig,
     FilesystemToolConfig,
     MountConfig,
     PrivacyProfile,
     PythonToolConfig,
     RedisStatus,
+    RuntimeContainerSummary,
     SecretsConfig,
     SecurityConfig,
     ServiceStatus,
     SystemConfig,
-    TOOL_CONFIG_MAP,
     TrustLevel,
 )
 
@@ -42,12 +44,14 @@ __all__ = [
     "ConfigSummary",
     "ConfluenceToolConfig",
     "DatabaseToolConfig",
+    "DockerRuntimeSnapshot",
     "ExternalMCPToolConfig",
     "FilesystemToolConfig",
     "MountConfig",
     "PrivacyProfile",
     "PythonToolConfig",
     "RedisStatus",
+    "RuntimeContainerSummary",
     "SecretsConfig",
     "SecurityConfig",
     "ServiceStatus",

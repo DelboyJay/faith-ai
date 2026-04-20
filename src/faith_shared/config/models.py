@@ -119,6 +119,44 @@ class RedisStatus(BaseModel):
     connected: bool
 
 
+class RuntimeContainerSummary(BaseModel):
+    """
+    Description:
+        Describe one FAITH-related container for operational runtime views.
+
+    Requirements:
+        - Preserve the container name, logical role, runtime state, and image reference.
+        - Carry optional health, URL, and ownership metadata when available.
+    """
+
+    name: str
+    category: str
+    role: str
+    state: str
+    image: str
+    health: str | None = None
+    restart_count: int = 0
+    url: str | None = None
+    ownership: dict[str, str] = Field(default_factory=dict)
+
+
+class DockerRuntimeSnapshot(BaseModel):
+    """
+    Description:
+        Describe the FAITH Docker runtime snapshot exposed to the UI.
+
+    Requirements:
+        - Preserve whether Docker runtime inspection is available.
+        - Carry a stable ordered container list for operational panels.
+        - Preserve a deduplicated image inventory for the current FAITH environment.
+    """
+
+    docker_available: bool
+    status: str
+    images: list[str] = Field(default_factory=list)
+    containers: list[RuntimeContainerSummary] = Field(default_factory=list)
+
+
 class ServiceStatus(BaseModel):
     """
     Description:
@@ -127,6 +165,7 @@ class ServiceStatus(BaseModel):
     Requirements:
         - Include service identity, version, high-level status, Redis state, and
           configuration summary.
+        - Include the optional Docker runtime snapshot when available.
     """
 
     service: str
@@ -134,6 +173,7 @@ class ServiceStatus(BaseModel):
     status: str
     redis: RedisStatus
     config: ConfigSummary
+    runtime: DockerRuntimeSnapshot | None = None
 
 
 class SecretsConfig(BaseModel):
