@@ -17,7 +17,15 @@ import click
 from faith_cli import __version__
 from faith_cli.browser import WEB_UI_URL, wait_and_open_browser
 from faith_cli.checks import check_docker, check_git, check_python_version
-from faith_cli.docker import compose_down, compose_pull, compose_status, compose_up, is_running
+from faith_cli.docker import (
+    DEFAULT_OLLAMA_MODEL,
+    compose_down,
+    compose_pull,
+    compose_status,
+    compose_up,
+    install_default_ollama_model,
+    is_running,
+)
 from faith_cli.host_worker import get_host_worker_status, start_host_worker, stop_host_worker
 from faith_cli.http_client import (
     PA_BASE_URL,
@@ -340,6 +348,13 @@ def init() -> None:
     result = compose_up()
     if result.returncode != 0:
         raise click.ClickException("docker compose up failed")
+
+    click.echo(f"Installing default Ollama model {DEFAULT_OLLAMA_MODEL} for the Project Agent.")
+    model_result = install_default_ollama_model()
+    if model_result.returncode != 0:
+        raise click.ClickException(
+            f"Failed to install default Ollama model {DEFAULT_OLLAMA_MODEL}."
+        )
 
     host_worker = start_host_worker()
     if host_worker.enabled and host_worker.running:

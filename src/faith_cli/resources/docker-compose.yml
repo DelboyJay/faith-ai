@@ -14,6 +14,7 @@ services:
       - FAITH_LOG_DIR=/logs
       - FAITH_DATA_DIR=/data
       - FAITH_REDIS_URL=redis://redis:6379/0
+      - FAITH_PROJECT_AGENT_MODEL=ollama/llama3:8b
       - MCP_REGISTRY_URL=http://mcp-registry:8080
     env_file:
       - ./config/.env
@@ -69,15 +70,47 @@ services:
     networks:
       - maf-network
     restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
   mcp-registry:
     image: ghcr.io/modelcontextprotocol/registry:latest
     container_name: faith-mcp-registry
     ports:
       - "8081:8080"
+    environment:
+      - MCP_REGISTRY_DATABASE_URL=postgres://mcp_registry:mcp_registry@mcp-registry-db:5432/mcp_registry?sslmode=disable
+      - MCP_REGISTRY_ENABLE_ANONYMOUS_AUTH=true
+      - MCP_REGISTRY_JWT_PRIVATE_KEY=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
     networks:
       - maf-network
     restart: unless-stopped
+    depends_on:
+      mcp-registry-db:
+        condition: service_healthy
+
+  mcp-registry-db:
+    image: postgres:16-alpine
+    container_name: faith-mcp-registry-db
+    environment:
+      - POSTGRES_USER=mcp_registry
+      - POSTGRES_PASSWORD=mcp_registry
+      - POSTGRES_DB=mcp_registry
+    volumes:
+      - mcp-registry-db-data:/var/lib/postgresql/data
+    networks:
+      - maf-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mcp_registry -d mcp_registry"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
 networks:
   maf-network:
@@ -87,3 +120,4 @@ networks:
 volumes:
   redis-data:
   ollama-data:
+  mcp-registry-db-data:

@@ -16,6 +16,10 @@ import click
 DOCKER_INSTALL_URL = "https://docs.docker.com/get-docker/"
 COMPOSE_INSTALL_URL = "https://docs.docker.com/compose/install/"
 PYTHON_INSTALL_URL = "https://www.python.org/downloads/"
+DOCKER_TIMEOUT_GUIDANCE = (
+    "Docker did not respond within 10 seconds. Start Docker Desktop, wait until "
+    "it reports that the engine is running, then run `faith init` again."
+)
 
 
 def check_python_version() -> None:
@@ -47,22 +51,28 @@ def check_docker() -> None:
             f"Docker is not installed or not on PATH. Install it from {DOCKER_INSTALL_URL}"
         )
 
-    info = subprocess.run(
-        ["docker", "info"],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    try:
+        info = subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise click.ClickException(DOCKER_TIMEOUT_GUIDANCE) from exc
     if info.returncode != 0:
         details = info.stderr.strip() or info.stdout.strip() or "Docker daemon is not running."
         raise click.ClickException(details)
 
-    compose = subprocess.run(
-        ["docker", "compose", "version"],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    try:
+        compose = subprocess.run(
+            ["docker", "compose", "version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise click.ClickException(DOCKER_TIMEOUT_GUIDANCE) from exc
     if compose.returncode != 0:
         raise click.ClickException(f"Docker Compose v2 is not available. See {COMPOSE_INSTALL_URL}")
 

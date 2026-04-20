@@ -369,9 +369,9 @@ phases:
         summary: 'Redis-backed. Keys namespaced per session (`sess-{id}:{key}`). MCP commands: `set(key, value, ttl?)`, `get(key)`, `delete(key)`, `list(prefix?)`, `exists(key)`. Keys expire on session close unless marked persistent.'
   - id: 7
     title: 'CAG & External MCP Integration'
-    status: 'DONE'
+    status: 'IN PROGRESS'
     summary: ''
-    task_count: 2
+    task_count: 3
     tasks:
       - id: 'FAITH-034'
         name: 'CAG Implementation'
@@ -391,11 +391,20 @@ phases:
         dependencies: ['FAITH-014', 'FAITH-003']
         frs_reference: 'Section 4.11'
         summary: 'Implement external MCP server registration via dedicated config files in `.faith/tools/`. For v1, support standards-aligned MCP onboarding from registry/package references only, resolved through the self-hosted MCP Registry service. Support `stdio` transport only and npm package-backed registry entries only. Environment variable resolution via `secret_ref` from `config/secrets.yaml`. Privacy tier enforcement: skip servers whose tier exceeds the active privacy profile. Start on demand when a session involves agents with access. Stop when session ends. Registrations and updates must be version-pinned and user-confirmed; no silent upgrades. MCP adapter layer (FAITH-012) works transparently with external servers.'
+      - id: 'FAITH-066'
+        name: 'Project `cag/` Auto-Loading & Budget Guidance'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-066-project-cag-auto-loading.md'
+        dependencies: ['FAITH-034', 'FAITH-022']
+        frs_reference: 'Section 4.10.3.2, 4.10.4, 9.3.5'
+        summary: 'Promote the project-root `cag/` folder to a first-class default CAG source. On project load, discover supported markdown/text files under `cag/`, estimate their combined token usage, and auto-load them into the PA/agent CAG flow when they fit within budget. If the corpus exceeds budget, surface the largest contributors and suggest reduction options such as curated summary files, splitting high-value rules from bulky background material, or moving lower-value documents to RAG. Do not perform lossy compression of user `cag/` files automatically without explicit user request.'
   - id: 8
     title: 'Web UI'
     status: 'TODO'
     summary: ''
-    task_count: 10
+    task_count: 15
     tasks:
       - id: 'FAITH-036'
         name: 'FastAPI Server Setup & WebSocket Endpoints'
@@ -419,7 +428,7 @@ phases:
         name: 'Agent Panel Component (xterm.js + Vue 3)'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-038-agent-panel-component.md'
         dependencies: ['FAITH-037']
         frs_reference: 'Section 6.4.2'
@@ -446,7 +455,7 @@ phases:
         name: 'Docker Runtime & Image Panel'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-058-docker-runtime-image-panel.md'
         dependencies: ['FAITH-014', 'FAITH-036', 'FAITH-037']
         frs_reference: 'Section 6.4.2, 6.5'
@@ -455,7 +464,7 @@ phases:
         name: 'Input Panel & File Upload'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-041-input-panel-upload.md'
         dependencies: ['FAITH-037']
         frs_reference: 'Section 6.4.2'
@@ -487,6 +496,51 @@ phases:
         dependencies: ['FAITH-037', 'FAITH-021']
         frs_reference: 'Section 8.7'
         summary: 'Implement read-only log viewer panels: Audit trail (filter by agent/tool/action/date, search by command), Event timeline (chronological, filter by type/agent), Session history (browse sessions/tasks, open channel logs), Token usage (per-agent chart, cumulative cost, session comparisons), Approval history (all decisions with context). All source from `logs/` directory, read via FastAPI endpoints.'
+      - id: 'FAITH-060'
+        name: 'Minimal First-Load Layout'
+        complexity: 'S'
+        model: 'Haiku / GPT-5.4-mini'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-060-minimal-first-load-layout.md'
+        dependencies: ['FAITH-037', 'FAITH-041']
+        frs_reference: 'Section 6.4.1, 6.10'
+        summary: 'Refine the default GoldenLayout workspace so first load shows only the Project Agent plus the user interaction surface needed to begin work: Project Agent, Input, Approvals, and System Status. Do not pre-create specialist agent panels such as Software Developer or QA Engineer until the PA has created those agents dynamically.'
+      - id: 'FAITH-061'
+        name: 'Runtime Status Cards'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-061-runtime-status-cards.md'
+        dependencies: ['FAITH-040', 'FAITH-058']
+        frs_reference: 'Section 6.4.2'
+        summary: 'Improve the System Status panel UX so FAITH-managed runtime state is shown as readable cards rather than raw JSON. Render one compact card per relevant bootstrap, agent, tool, sandbox, or runtime container with state, health, role, and human-usable URL where applicable, while keeping the dedicated Docker Runtime panel as the detailed operational view.'
+      - id: 'FAITH-062'
+        name: 'Panel Lifecycle & Deduping'
+        complexity: 'S'
+        model: 'Haiku / GPT-5.4-mini'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-062-panel-lifecycle-deduping.md'
+        dependencies: ['FAITH-037', 'FAITH-060', 'FAITH-061']
+        frs_reference: 'Section 6.4.1, 6.10'
+        summary: 'Make panel lifecycle behaviour reliable. Panels must close and reopen cleanly, singleton panels must not duplicate, and agent/tool panels must dedupe by runtime identity. If the user tries to add an already-open panel, focus the existing panel instead of creating another copy.'
+      - id: 'FAITH-063'
+        name: 'Snap-Grid Panel Layout Refinement'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-063-snap-grid-panel-layout.md'
+        dependencies: ['FAITH-037', 'FAITH-062']
+        frs_reference: 'Section 6.4.1, 6.10'
+        summary: 'Refine panel movement and resizing so the workspace feels structured and dashboard-like. Preserve GoldenLayout docking/tab behaviour while adding practical snap-to-grid or grid-alignment rules where feasible, so panels land in tidy arrangements rather than sloppy free-form placements.'
+      - id: 'FAITH-064'
+        name: 'Panel Title-Bar Actions'
+        complexity: 'S'
+        model: 'Haiku / GPT-5.4-mini'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-064-panel-titlebar-actions.md'
+        dependencies: ['FAITH-037', 'FAITH-062']
+        frs_reference: 'Section 6.4.1, 6.10'
+        summary: 'Clean up panel chrome so names live in the title bar and closable panels expose an obvious title-bar close affordance. Remove duplicated side labels, keep alignment tidy, and preserve compatibility with panel lifecycle and dedupe flows.'
   - id: 9
     title: 'Logging & Observability'
     status: 'TODO'
@@ -533,7 +587,7 @@ phases:
     title: 'First-Run Wizard & Setup'
     status: 'TODO'
     summary: ''
-    task_count: 4
+    task_count: 6
     tasks:
       - id: 'FAITH-049'
         name: 'First-Run Wizard: Multi-Step UI'
@@ -571,6 +625,24 @@ phases:
         dependencies: ['FAITH-049', 'FAITH-057']
         frs_reference: 'Section 10.5'
         summary: 'During first-run wizard: Ollama is available through the resolved local endpoint, not a hard-coded host assumption. Endpoint selection must follow the platform-aware routing policy (Linux container-first when accelerator support is confirmed, Windows container only when WSL2/Docker GPU support is confirmed otherwise native host Ollama, macOS native host Ollama by default). If the user selects Ollama models, display licence summary and link for each model. Require acknowledgement before download. Trigger `ollama pull <model>` against the resolved endpoint. Include `nomic-embed-text` for RAG embeddings. Show download progress in wizard UI.'
+      - id: 'FAITH-067'
+        name: 'Ollama Management MCP Server'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-067-ollama-management-mcp.md'
+        dependencies: ['FAITH-004', 'FAITH-013', 'FAITH-019', 'FAITH-051']
+        frs_reference: 'Section 3.6.5'
+        summary: 'Implement a FAITH-owned Ollama MCP server so the PA can manage local models through tool calls rather than PA-core special cases. Expose list installed models, list running models with CPU/GPU processor placement, pull model after explicit approval, delete model after explicit approval, probe model performance with a tiny inference request, and persist PA/default-agent model selection to `.faith/system.yaml` after explicit approval. The same tool surface can later power Web UI model-management controls.'
+      - id: 'FAITH-065'
+        name: 'Docker Daemon Not Running Guidance'
+        complexity: 'S'
+        model: 'Haiku / GPT-5.4-mini'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-065-docker-daemon-not-running-guidance.md'
+        dependencies: ['FAITH-005']
+        frs_reference: 'Section 9.2.1, 9.2.2'
+        summary: 'Improve `faith init` and related CLI startup checks so they distinguish between “Docker not installed” and “Docker installed but daemon/Desktop not running”. Detect the host OS and print the appropriate remediation guidance: Windows and macOS should tell the user to start Docker Desktop, Linux should provide the service-start command expected for systemd-based setups and explain that equivalent distro-specific commands may be needed. The CLI should then tell the user to run `faith init` again rather than attempting automatic elevation or service startup in v1.'
   - id: 11
     title: 'CLI & Skill Execution'
     status: 'TODO'

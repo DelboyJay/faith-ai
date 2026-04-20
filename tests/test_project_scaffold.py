@@ -113,3 +113,35 @@ def test_pyproject_uses_src_layout_for_packages() -> None:
 
     assert "package-dir" in pyproject_text or 'where = ["src"]' in pyproject_text
     assert 'faith = "faith_cli.cli:main"' in pyproject_text
+
+
+def test_web_ui_container_requirements_include_runtime_imports() -> None:
+    """
+    Description:
+        Verify the Web UI container installs third-party packages imported at startup.
+
+    Requirements:
+        - This test is needed to prevent the Web UI image from entering a restart loop
+          when `faith_web.app` imports its PA HTTP client dependency.
+        - Verify `httpx` is present in `containers/web-ui/requirements.txt`.
+    """
+    requirements_text = (ROOT / "containers" / "web-ui" / "requirements.txt").read_text()
+
+    assert "httpx" in requirements_text
+
+
+def test_compose_provides_mcp_registry_database() -> None:
+    """
+    Description:
+        Verify the repository compose stack provides PostgreSQL for the MCP registry.
+
+    Requirements:
+        - This test is needed to prevent the registry container from restarting because it falls back to localhost PostgreSQL.
+        - Verify the compose file defines both the registry database service and the registry database URL.
+    """
+    compose_text = (ROOT / "docker-compose.yml").read_text()
+
+    assert "mcp-registry-db:" in compose_text
+    assert "MCP_REGISTRY_DATABASE_URL" in compose_text
+    assert "MCP_REGISTRY_JWT_PRIVATE_KEY" in compose_text
+    assert "postgres:16-alpine" in compose_text

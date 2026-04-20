@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from faith_pa.utils.redis_client import USER_INPUT_CHANNEL
-from faith_web.app import APPROVAL_RESPONSES_CHANNEL, templates
+from faith_web.app import APPROVAL_RESPONSES_CHANNEL, get_static_asset_version, templates
 
 router = APIRouter()
 
@@ -157,7 +157,11 @@ async def index(request: Request) -> HTMLResponse:
     :returns: Rendered HTML response for the main Web UI page.
     """
 
-    return templates.TemplateResponse(request, "index.html", {})
+    return templates.TemplateResponse(
+        request,
+        "index.html",
+        {"asset_version": get_static_asset_version()},
+    )
 
 
 @router.post("/input", response_model=UserInputResponse)
@@ -240,6 +244,7 @@ async def upload_file(
 
 @router.post("/approve/{request_id}", response_model=ApprovalDecisionResponse)
 async def submit_approval(
+    request: Request,
     request_id: str,
     body: ApprovalDecisionRequest,
 ) -> ApprovalDecisionResponse:
@@ -250,12 +255,19 @@ async def submit_approval(
         - Preserve the request identifier the PA originally issued.
         - Publish the decision payload into the approval-response channel.
 
+    :param request: Incoming FastAPI request object.
     :param request_id: Approval request identifier.
     :param body: Validated approval decision payload.
+    :raises HTTPException: If the Web UI has seen approval IDs and the requested ID is unknown.
     :returns: Acknowledgment response describing the queued approval decision.
     """
 
     redis = _require_redis()
+    pending_ids = getattr(request.app.state, "pending_approval_ids", set())
+    registry_active = bool(getattr(request.app.state, "approval_registry_active", False))
+    if registry_active and request_id not in pending_ids:
+        raise HTTPException(status_code=404, detail="Unknown approval request")
+
     payload = {
         "type": "approval_response",
         "request_id": request_id,
@@ -266,4 +278,6 @@ async def submit_approval(
         "timestamp": _utc_now(),
     }
     await redis.publish(APPROVAL_RESPONSES_CHANNEL, json.dumps(payload))
+    if registry_active:
+        pending_ids.discard(request_id)
     return ApprovalDecisionResponse(status="sent", request_id=request_id, decision=body.decision)

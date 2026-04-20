@@ -13,6 +13,8 @@ from pathlib import Path
 
 from faith_cli.paths import compose_file, faith_home, is_editable_install
 
+DEFAULT_OLLAMA_MODEL = "llama3:8b"
+
 
 def compose_project_directory() -> Path:
     """Description:
@@ -126,6 +128,23 @@ def compose_pull() -> subprocess.CompletedProcess[str]:
     """
 
     return run_compose("pull")
+
+
+def install_default_ollama_model(
+    model: str = DEFAULT_OLLAMA_MODEL,
+) -> subprocess.CompletedProcess[str]:
+    """Description:
+        Pull the default local PA model into the managed Ollama service.
+
+    Requirements:
+        - Install the 6GB-GPU baseline model during first-run bootstrap.
+        - Use the extracted compose project so the model lands in the FAITH Ollama volume.
+
+    :param model: Ollama model tag to pull.
+    :returns: Completed subprocess result from ``ollama pull``.
+    """
+
+    return run_compose("exec", "-T", "ollama", "ollama", "pull", model)
 
 
 def is_running() -> bool:

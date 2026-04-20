@@ -10,16 +10,21 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import click
 import pytest
+import yaml
 from click.testing import CliRunner
 
+import faith_cli.checks as checks_module
 import faith_cli.cli as cli_module
+import faith_cli.docker as docker_module
 from faith_cli import paths
+from faith_cli.checks import check_docker
 from faith_cli.cli import main
-from faith_cli.docker import compose_command
+from faith_cli.docker import compose_command, install_default_ollama_model
 from faith_web import version
 
 
@@ -150,6 +155,46 @@ def test_compose_command_uses_installed_project_directory() -> None:
     assert str(paths.compose_file()) in command
 
 
+def test_default_ollama_install_pulls_llama3_8b(monkeypatch) -> None:
+    """Description:
+        Verify the default Ollama installer pulls the baseline PA model.
+
+    Requirements:
+        - This test is needed to prove default first-run model installation always targets the 6GB GPU baseline.
+        - Verify the Docker Compose command pulls ``llama3:8b`` when no override is supplied.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
+    captured_args = []
+
+    def _capture_run_compose(
+        *args: str,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        """Description:
+            Capture the compose invocation used by the Ollama installer.
+
+        Requirements:
+            - Avoid starting Docker during this unit test.
+            - Preserve the exact command arguments for assertion.
+
+        :param args: Docker Compose arguments supplied by the production helper.
+        :param capture_output: Whether output capture was requested.
+        :returns: Successful completed process.
+        """
+
+        captured_args.append((args, capture_output))
+        return subprocess.CompletedProcess(["docker"], 0)
+
+    monkeypatch.setattr(docker_module, "run_compose", _capture_run_compose)
+
+    result = install_default_ollama_model()
+
+    assert result.returncode == 0
+    assert captured_args == [(("exec", "-T", "ollama", "ollama", "pull", "llama3:8b"), False)]
+
+
 def test_help_shows_available_commands() -> None:
     """Description:
         Verify the CLI help output lists the expected command surface.
@@ -166,6 +211,54 @@ def test_help_shows_available_commands() -> None:
     assert "start" in result.output
     assert "status" in result.output
     assert "show-urls" in result.output
+
+
+def test_check_docker_reports_timeout_without_traceback(monkeypatch) -> None:
+    """Description:
+        Verify Docker daemon probe timeouts become friendly CLI errors.
+
+    Requirements:
+        - This test is needed to prevent `faith init` from crashing with a Python traceback when Docker hangs.
+        - Verify the error explains that Docker did not respond and tells the user to start Docker Desktop.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
+    def _timeout_run(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        """Description:
+            Simulate a Docker CLI command that does not return before the timeout.
+
+        Requirements:
+            - Preserve the subprocess.run call signature used by the Docker check.
+            - Raise the same timeout exception produced by the standard library.
+
+        :param args: Command arguments supplied by the Docker check.
+        :param capture_output: Whether subprocess output capture was requested.
+        :param text: Whether text-mode output was requested.
+        :param timeout: Timeout passed by the Docker check.
+        :returns: This helper always raises before returning.
+        :raises subprocess.TimeoutExpired: Always raised to simulate a hung Docker daemon.
+        """
+
+        del capture_output, text
+        raise subprocess.TimeoutExpired(args, timeout)
+
+    monkeypatch.setattr(checks_module.shutil, "which", lambda command: command)
+    monkeypatch.setattr(checks_module.subprocess, "run", _timeout_run)
+
+    with pytest.raises(click.ClickException) as exc_info:
+        check_docker()
+
+    message = str(exc_info.value)
+    assert "Docker did not respond" in message
+    assert "Docker Desktop" in message
+    assert "faith init" in message
 
 
 def test_init_bootstraps_home(monkeypatch, tmp_path: Path) -> None:
@@ -187,6 +280,10 @@ def test_init_bootstraps_home(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         "faith_cli.cli.compose_up", lambda: subprocess.CompletedProcess(["docker"], 0)
     )
+    monkeypatch.setattr(
+        "faith_cli.cli.install_default_ollama_model",
+        lambda: subprocess.CompletedProcess(["docker"], 0),
+    )
     monkeypatch.setattr("faith_cli.cli.wait_and_open_browser", lambda: True)
 
     runner = CliRunner()
@@ -199,6 +296,71 @@ def test_init_bootstraps_home(monkeypatch, tmp_path: Path) -> None:
     assert (home / "config" / "recent-projects.yaml").exists()
     assert (home / "docker-compose.yml").exists()
     assert (home / ".gitignore").exists()
+
+
+def test_init_installs_default_ollama_model(monkeypatch, tmp_path: Path) -> None:
+    """Description:
+        Verify ``faith init`` pulls the default local PA model into Ollama.
+
+    Requirements:
+        - This test is needed to prove first-run setup prepares the PA model for offline/local chat.
+        - Verify init invokes the Ollama model installer after compose startup succeeds.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    _fake_home(monkeypatch, tmp_path)
+    installed_models = []
+    monkeypatch.setattr("faith_cli.cli.check_python_version", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.check_git", lambda: None)
+    monkeypatch.setattr(
+        "faith_cli.cli.compose_up", lambda: subprocess.CompletedProcess(["docker"], 0)
+    )
+    monkeypatch.setattr(
+        "faith_cli.cli.install_default_ollama_model",
+        lambda: installed_models.append("called") or subprocess.CompletedProcess(["docker"], 0),
+    )
+    monkeypatch.setattr("faith_cli.cli.wait_and_open_browser", lambda: True)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["init"])
+
+    assert result.exit_code == 0
+    assert installed_models == ["called"]
+
+
+def test_init_fails_when_default_ollama_model_install_fails(monkeypatch, tmp_path: Path) -> None:
+    """Description:
+        Verify ``faith init`` reports a failed default Ollama model installation.
+
+    Requirements:
+        - This test is needed to prevent FAITH from claiming first-run readiness without the local PA model.
+        - Verify a non-zero model pull result stops init with a clear message.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    _fake_home(monkeypatch, tmp_path)
+    monkeypatch.setattr("faith_cli.cli.check_python_version", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.check_git", lambda: None)
+    monkeypatch.setattr(
+        "faith_cli.cli.compose_up", lambda: subprocess.CompletedProcess(["docker"], 0)
+    )
+    monkeypatch.setattr(
+        "faith_cli.cli.install_default_ollama_model",
+        lambda: subprocess.CompletedProcess(["docker"], 1, stderr="pull failed"),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["init"])
+
+    assert result.exit_code != 0
+    assert "ollama" in result.output.lower()
+    assert "llama3:8b" in result.output
 
 
 def test_init_prompts_before_reinitialising(monkeypatch) -> None:
@@ -273,6 +435,7 @@ def test_stop_falls_back_to_compose_down(monkeypatch) -> None:
     monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
     monkeypatch.setattr("faith_cli.cli.is_running", lambda: True)
     monkeypatch.setattr("faith_cli.cli.pa_is_reachable", lambda: False)
+    monkeypatch.setattr("faith_cli.cli.stop_host_worker", lambda: SimpleNamespace(enabled=False))
     down = Mock(return_value=subprocess.CompletedProcess(["docker"], 0))
     monkeypatch.setattr("faith_cli.cli.compose_down", down)
     runner = CliRunner()
@@ -339,6 +502,8 @@ def test_restart_starts_after_shutdown(monkeypatch) -> None:
     monkeypatch.setattr(
         "faith_cli.cli.compose_up", lambda: subprocess.CompletedProcess(["docker"], 0)
     )
+    monkeypatch.setattr("faith_cli.cli.stop_host_worker", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.start_host_worker", lambda: None)
     monkeypatch.setattr("faith_cli.cli.wait_and_open_browser", lambda: True)
     runner = CliRunner()
     result = runner.invoke(main, ["restart"])
@@ -432,6 +597,10 @@ def test_init_writes_repo_backed_compose_for_editable_install(monkeypatch, tmp_p
     monkeypatch.setattr(
         "faith_cli.cli.compose_up", lambda: subprocess.CompletedProcess(["docker"], 0)
     )
+    monkeypatch.setattr(
+        "faith_cli.cli.install_default_ollama_model",
+        lambda: subprocess.CompletedProcess(["docker"], 0),
+    )
     monkeypatch.setattr("faith_cli.cli.wait_and_open_browser", lambda: True)
     monkeypatch.setattr("faith_cli.paths.source_root", lambda: repo_root)
     monkeypatch.setattr("faith_cli.paths.is_editable_install", lambda: True)
@@ -446,6 +615,59 @@ def test_init_writes_repo_backed_compose_for_editable_install(monkeypatch, tmp_p
     assert f"context: {expected_root}" in compose_text
     assert "ghcr.io/faith/faith-project-agent:latest" not in compose_text
     assert "ghcr.io/faith/faith-web-ui:latest" not in compose_text
+    assert "mcp-registry-db:" in compose_text
+    assert "MCP_REGISTRY_DATABASE_URL" in compose_text
+    assert "MCP_REGISTRY_JWT_PRIVATE_KEY" in compose_text
+    assert "FAITH_PROJECT_AGENT_MODEL=ollama/llama3:8b" in compose_text
+
+
+def test_editable_compose_enables_ollama_nvidia_gpu(monkeypatch, tmp_path: Path) -> None:
+    """Description:
+        Verify editable-install compose generation grants Ollama NVIDIA GPU access.
+
+    Requirements:
+        - This test is needed to prevent FAITH from creating CPU-only Ollama containers on Windows hosts with Docker GPU support.
+        - Verify the generated Ollama service reserves one NVIDIA GPU with GPU capabilities.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    _fake_home(monkeypatch, tmp_path)
+
+    compose_data = yaml.safe_load(paths.editable_compose_contents())
+    devices = compose_data["services"]["ollama"]["deploy"]["resources"]["reservations"]["devices"]
+
+    assert devices == [{"driver": "nvidia", "count": 1, "capabilities": ["gpu"]}]
+
+
+def test_packaged_compose_sets_default_project_agent_model() -> None:
+    """Description:
+        Verify the packaged compose file declares the default local PA model.
+
+    Requirements:
+        - This test is needed to keep wheel installs aligned with editable installs.
+        - Verify the packaged bootstrap compose environment selects the 6GB-class Ollama model.
+    """
+
+    compose_text = paths.bundled_compose_file().read_text(encoding="utf-8")
+
+    assert "FAITH_PROJECT_AGENT_MODEL=ollama/llama3:8b" in compose_text
+
+
+def test_packaged_compose_enables_ollama_nvidia_gpu() -> None:
+    """Description:
+        Verify the packaged compose file grants Ollama NVIDIA GPU access.
+
+    Requirements:
+        - This test is needed to keep packaged installs aligned with editable installs.
+        - Verify the packaged Ollama service reserves one NVIDIA GPU with GPU capabilities.
+    """
+
+    compose_data = yaml.safe_load(paths.bundled_compose_file().read_text(encoding="utf-8"))
+    devices = compose_data["services"]["ollama"]["deploy"]["resources"]["reservations"]["devices"]
+
+    assert devices == [{"driver": "nvidia", "count": 1, "capabilities": ["gpu"]}]
 
 
 def test_validate_runtime_compatibility_rejects_pending_schema_migration(
@@ -473,6 +695,98 @@ def test_validate_runtime_compatibility_rejects_pending_schema_migration(
 
     with pytest.raises(click.ClickException):
         cli_module._validate_runtime_compatibility()
+
+
+def test_host_worker_status_treats_os_error_pid_probe_as_stale(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+        Verify host-worker status tolerates Windows pid-probe OS errors.
+
+    Requirements:
+        - This test is needed to prevent `faith init` from crashing when an old host-worker pid cannot be probed.
+        - Verify the stale pid file is removed and the worker is reported as stopped.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    from faith_cli import host_worker
+
+    pid_file = tmp_path / "host-worker.pid"
+    pid_file.write_text("12345", encoding="utf-8")
+    monkeypatch.setattr(host_worker, "host_worker_pid_file", lambda: pid_file)
+
+    def _raise_windows_probe_error(pid: int, signal_number: int) -> None:
+        """Description:
+            Simulate Windows rejecting the non-destructive pid probe.
+
+        Requirements:
+            - Match the signature of ``os.kill``.
+            - Raise a generic ``OSError`` like the Windows error seen during init.
+
+        :param pid: Process identifier being probed.
+        :param signal_number: Signal number supplied by the caller.
+        :raises OSError: Always raised to simulate an unprobeable stale pid.
+        """
+
+        del pid, signal_number
+        raise OSError(11, "An attempt was made to load a program with an incorrect format")
+
+    monkeypatch.setattr(host_worker.os, "kill", _raise_windows_probe_error)
+
+    status = host_worker.get_host_worker_status()
+
+    assert status.running is False
+    assert status.pid is None
+    assert not pid_file.exists()
+
+
+def test_host_worker_status_treats_system_error_pid_probe_as_stale(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+        Verify host-worker status tolerates Windows SystemError pid-probe failures.
+
+    Requirements:
+        - This test is needed to prevent `faith init` from crashing when Windows reports a stale pid through ``SystemError``.
+        - Verify the stale pid file is removed and the worker is reported as stopped.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    from faith_cli import host_worker
+
+    pid_file = tmp_path / "host-worker.pid"
+    pid_file.write_text("12345", encoding="utf-8")
+    monkeypatch.setattr(host_worker, "host_worker_pid_file", lambda: pid_file)
+
+    def _raise_windows_system_error(pid: int, signal_number: int) -> None:
+        """Description:
+            Simulate Python surfacing a Windows pid-probe failure as ``SystemError``.
+
+        Requirements:
+            - Match the signature of ``os.kill``.
+            - Raise the same broad exception class seen during `faith init`.
+
+        :param pid: Process identifier being probed.
+        :param signal_number: Signal number supplied by the caller.
+        :raises SystemError: Always raised to simulate the Windows probe failure.
+        """
+
+        del pid, signal_number
+        raise SystemError("<class 'OSError'> returned a result with an exception set")
+
+    monkeypatch.setattr(host_worker.os, "kill", _raise_windows_system_error)
+
+    status = host_worker.get_host_worker_status()
+
+    assert status.running is False
+    assert status.pid is None
+    assert not pid_file.exists()
 
 
 def test_host_worker_start_and_stop_lifecycle(monkeypatch, tmp_path: Path) -> None:
