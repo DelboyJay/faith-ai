@@ -421,11 +421,11 @@ class FakeDockerClient:
 @pytest.mark.asyncio
 async def test_ensure_running_starts_container() -> None:
     """Description:
-        Verify ensuring a container is running starts it and emits a started event.
+    Verify ensuring a container is running starts it and emits a started event.
 
-        Requirements:
-            - This test is needed to prove the PA can create and track managed containers.
-            - Verify the container is marked running, the default network exists, and the start event is published.
+    Requirements:
+        - This test is needed to prove the PA can create and track managed containers.
+        - Verify the container is marked running, the default network exists, and the start event is published.
     """
 
     runtime = InMemoryContainerRuntime()
@@ -447,21 +447,21 @@ async def test_ensure_running_starts_container() -> None:
 
 def test_container_manager_builds_default_docker_runtime(monkeypatch) -> None:
     """Description:
-        Verify the container manager constructs the Docker-backed runtime when no client is supplied.
+    Verify the container manager constructs the Docker-backed runtime when no client is supplied.
 
-        Requirements:
-            - This test is needed to prove the Phase 4 container layer has a real Docker SDK integration path by default.
-            - Verify the default runtime factory receives the requested network name.
+    Requirements:
+        - This test is needed to prove the Phase 4 container layer has a real Docker SDK integration path by default.
+        - Verify the default runtime factory receives the requested network name.
     """
 
     built: list[str] = []
 
     class FakeDockerRuntime:
         """Description:
-            Provide a minimal default-runtime double for manager construction tests.
+        Provide a minimal default-runtime double for manager construction tests.
 
-            Requirements:
-                - Record the requested network name and accept ensure-network calls.
+        Requirements:
+            - Record the requested network name and accept ensure-network calls.
         """
 
         def __init__(self, *, network_name: str):
@@ -470,12 +470,12 @@ def test_container_manager_builds_default_docker_runtime(monkeypatch) -> None:
 
         def ensure_network(self, name: str) -> None:
             """Description:
-                Accept the requested network creation call.
+            Accept the requested network creation call.
 
-                Requirements:
-                    - Assert the manager passed the configured network name through unchanged.
+            Requirements:
+                - Assert the manager passed the configured network name through unchanged.
 
-                :param name: Requested network name.
+            :param name: Requested network name.
             """
 
             assert name == self.network_name
@@ -491,11 +491,11 @@ def test_container_manager_builds_default_docker_runtime(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_secret_refs_are_resolved() -> None:
     """Description:
-        Verify environment secret references are resolved before container startup.
+    Verify environment secret references are resolved before container startup.
 
-        Requirements:
-            - This test is needed to prove managed containers do not receive unresolved secret references.
-            - Verify the container starts successfully when secret references are present.
+    Requirements:
+        - This test is needed to prove managed containers do not receive unresolved secret references.
+        - Verify the container starts successfully when secret references are present.
     """
 
     runtime = InMemoryContainerRuntime()
@@ -519,18 +519,16 @@ async def test_secret_refs_are_resolved() -> None:
 @pytest.mark.asyncio
 async def test_restart_and_destroy_container() -> None:
     """Description:
-        Verify containers can be restarted and then removed.
+    Verify containers can be restarted and then removed.
 
-        Requirements:
-            - This test is needed to prove the manager supports basic lifecycle recovery and teardown.
-            - Verify the restarted container returns to running state and disappears after destroy.
+    Requirements:
+        - This test is needed to prove the manager supports basic lifecycle recovery and teardown.
+        - Verify the restarted container returns to running state and disappears after destroy.
     """
 
     runtime = InMemoryContainerRuntime()
     manager = ContainerManager(runtime)
-    await manager.ensure_running(
-        ContainerSpec(name="faith-tool-db", image="faith-tool-db:latest")
-    )
+    await manager.ensure_running(ContainerSpec(name="faith-tool-db", image="faith-tool-db:latest"))
 
     restarted = await manager.restart_container("faith-tool-db")
     assert restarted.status == "running"
@@ -541,20 +539,16 @@ async def test_restart_and_destroy_container() -> None:
 
 def test_list_containers_returns_sorted_items() -> None:
     """Description:
-        Verify container listing is returned in sorted name order.
+    Verify container listing is returned in sorted name order.
 
-        Requirements:
-            - This test is needed to prove container output is deterministic for status views and tests.
-            - Verify the container names are returned alphabetically.
+    Requirements:
+        - This test is needed to prove container output is deterministic for status views and tests.
+        - Verify the container names are returned alphabetically.
     """
 
     runtime = InMemoryContainerRuntime()
-    runtime.create_or_update(
-        ContainerSpec(name="b", image="two", labels={FAITH_LABEL: "true"})
-    )
-    runtime.create_or_update(
-        ContainerSpec(name="a", image="one", labels={FAITH_LABEL: "true"})
-    )
+    runtime.create_or_update(ContainerSpec(name="b", image="two", labels={FAITH_LABEL: "true"}))
+    runtime.create_or_update(ContainerSpec(name="a", image="one", labels={FAITH_LABEL: "true"}))
     manager = ContainerManager(runtime)
     names = [item.name for item in manager.list_containers()]
     assert names == ["a", "b"]
@@ -562,13 +556,13 @@ def test_list_containers_returns_sorted_items() -> None:
 
 def test_secret_resolver_prefers_explicit_environment_over_dotenv(tmp_path: Path) -> None:
     """Description:
-        Verify secret resolution keeps explicit environment overrides ahead of `.env` values.
+    Verify secret resolution keeps explicit environment overrides ahead of `.env` values.
 
-        Requirements:
-            - This test is needed to prove caller-supplied environment values are not silently replaced by `.env` values.
-            - Verify `${TOKEN}` resolves to the explicit override instead of the `.env` file value.
+    Requirements:
+        - This test is needed to prove caller-supplied environment values are not silently replaced by `.env` values.
+        - Verify `${TOKEN}` resolves to the explicit override instead of the `.env` file value.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     config_dir = tmp_path / "config"
@@ -585,13 +579,13 @@ def test_resolve_tool_config_merges_nested_secret_refs_without_overwriting_expli
     tmp_path: Path,
 ) -> None:
     """Description:
-        Verify tool configs recursively merge `secret_ref` payloads while preserving explicit values.
+    Verify tool configs recursively merge `secret_ref` payloads while preserving explicit values.
 
-        Requirements:
-            - This test is needed to prove nested tool credentials can be materialised from `secrets.yaml`.
-            - Verify explicit tool-config values win over matching secret keys and `secret_ref` is removed.
+    Requirements:
+        - This test is needed to prove nested tool credentials can be materialised from `secrets.yaml`.
+        - Verify explicit tool-config values win over matching secret keys and `secret_ref` is removed.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     config_dir = tmp_path / "config"
@@ -637,11 +631,11 @@ def test_resolve_tool_config_merges_nested_secret_refs_without_overwriting_expli
 @pytest.mark.asyncio
 async def test_start_container_supports_docker_sdk_style_client() -> None:
     """Description:
-        Verify the container manager can drive a Docker-SDK-style client directly.
+    Verify the container manager can drive a Docker-SDK-style client directly.
 
-        Requirements:
-            - This test is needed to prove the Phase 4 manager is not limited to the in-memory runtime.
-            - Verify the manager creates the shared network, labels the container, and applies the restart policy.
+    Requirements:
+        - This test is needed to prove the Phase 4 manager is not limited to the in-memory runtime.
+        - Verify the manager creates the shared network, labels the container, and applies the restart policy.
     """
 
     docker_client = FakeDockerClient()
@@ -666,13 +660,13 @@ async def test_start_container_supports_docker_sdk_style_client() -> None:
 @pytest.mark.asyncio
 async def test_start_tool_supports_structured_mounts_and_secret_env(tmp_path: Path) -> None:
     """Description:
-        Verify tool startup handles structured mount config and resolved secret-backed environment values.
+    Verify tool startup handles structured mount config and resolved secret-backed environment values.
 
-        Requirements:
-            - This test is needed to prove FAITH-owned tool configs can be translated into runtime mounts and env vars.
-            - Verify structured mount entries become host-to-container mounts and secret-backed env values are injected.
+    Requirements:
+        - This test is needed to prove FAITH-owned tool configs can be translated into runtime mounts and env vars.
+        - Verify structured mount entries become host-to-container mounts and secret-backed env values are injected.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     project = tmp_path / "project"
@@ -715,13 +709,13 @@ async def test_start_tool_supports_structured_mounts_and_secret_env(tmp_path: Pa
 @pytest.mark.asyncio
 async def test_discover_agents_and_tools_resolve_configs(tmp_path: Path) -> None:
     """Description:
-        Verify the container manager discovers project agents and tools from the `.faith` tree.
+    Verify the container manager discovers project agents and tools from the `.faith` tree.
 
-        Requirements:
-            - This test is needed to prove Phase 4 startup can discover project-scoped runtimes from disk.
-            - Verify agent configs are loaded and tool secret references are resolved before use.
+    Requirements:
+        - This test is needed to prove Phase 4 startup can discover project-scoped runtimes from disk.
+        - Verify agent configs are loaded and tool secret references are resolved before use.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     project = tmp_path / "project"
@@ -734,9 +728,7 @@ async def test_discover_agents_and_tools_resolve_configs(tmp_path: Path) -> None
     config_dir.mkdir()
 
     (agent_dir / "config.yaml").write_text(
-        yaml.safe_dump(
-            {"name": "Developer", "role": "implementation", "model": "gpt-5.4-mini"}
-        ),
+        yaml.safe_dump({"name": "Developer", "role": "implementation", "model": "gpt-5.4-mini"}),
         encoding="utf-8",
     )
     (tool_dir / "database.yaml").write_text(
@@ -770,13 +762,13 @@ async def test_discover_agents_and_tools_resolve_configs(tmp_path: Path) -> None
 @pytest.mark.asyncio
 async def test_start_all_starts_external_mcp_runtime(tmp_path: Path) -> None:
     """Description:
-        Verify project startup also brings up the shared `mcp-runtime` container when external MCP tools exist.
+    Verify project startup also brings up the shared `mcp-runtime` container when external MCP tools exist.
 
-        Requirements:
-            - This test is needed to prove external registry-backed MCP registrations share one project-scoped runtime.
-            - Verify `start_all()` reports success for the agent, FAITH-owned tool, and shared `mcp-runtime`.
+    Requirements:
+        - This test is needed to prove external registry-backed MCP registrations share one project-scoped runtime.
+        - Verify `start_all()` reports success for the agent, FAITH-owned tool, and shared `mcp-runtime`.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     project = tmp_path / "project"
@@ -786,9 +778,7 @@ async def test_start_all_starts_external_mcp_runtime(tmp_path: Path) -> None:
     (faith_dir / "tools").mkdir(parents=True)
     config_dir.mkdir()
     (faith_dir / "agents" / "developer" / "config.yaml").write_text(
-        yaml.safe_dump(
-            {"name": "Developer", "role": "implementation", "model": "gpt-5.4-mini"}
-        ),
+        yaml.safe_dump({"name": "Developer", "role": "implementation", "model": "gpt-5.4-mini"}),
         encoding="utf-8",
     )
     (faith_dir / "tools" / "filesystem.yaml").write_text(
@@ -825,11 +815,11 @@ async def test_start_all_starts_external_mcp_runtime(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_reattach_running_counts_only_managed_running_containers() -> None:
     """Description:
-        Verify reattach only counts running FAITH-managed containers.
+    Verify reattach only counts running FAITH-managed containers.
 
-        Requirements:
-            - This test is needed to prove PA restart recovery ignores stopped and unmanaged runtimes.
-            - Verify the reattach count includes only running containers with the FAITH managed label.
+    Requirements:
+        - This test is needed to prove PA restart recovery ignores stopped and unmanaged runtimes.
+        - Verify the reattach count includes only running containers with the FAITH managed label.
     """
 
     runtime = InMemoryContainerRuntime()

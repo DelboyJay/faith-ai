@@ -98,14 +98,18 @@ class ProjectSwitcher:
         """
 
         runtime_state: dict | None = None
-        if self.container_manager is not None and hasattr(self.container_manager, "get_agent_state"):
+        if self.container_manager is not None and hasattr(
+            self.container_manager, "get_agent_state"
+        ):
             runtime_state = await self.container_manager.get_agent_state(agent_id)
         if runtime_state:
             state = AgentState(
                 agent_id=agent_id,
                 current_task=str(runtime_state.get("current_task", active_task.goal)),
                 progress=str(runtime_state.get("progress", "")),
-                channel_assignments=list(runtime_state.get("channel_assignments", sorted(active_task.channels))),
+                channel_assignments=list(
+                    runtime_state.get("channel_assignments", sorted(active_task.channels))
+                ),
                 file_watches=list(runtime_state.get("file_watches", [])),
                 summary=str(runtime_state.get("summary", "Saved before switch")),
                 status=str(runtime_state.get("status", "idle")),
@@ -137,7 +141,9 @@ class ProjectSwitcher:
             if hasattr(self.container_manager, "signal_agent_finish"):
                 await self.container_manager.signal_agent_finish(agent_id)
             if hasattr(self.container_manager, "stop"):
-                await self.container_manager.stop(f"faith-agent-{agent_id}", reason="project-switch")
+                await self.container_manager.stop(
+                    f"faith-agent-{agent_id}", reason="project-switch"
+                )
             elif hasattr(self.container_manager, "stop_container"):
                 await self.container_manager.stop_container(
                     f"faith-agent-{agent_id}",
@@ -206,7 +212,9 @@ class ProjectSwitcher:
         self.session_manager.sessions_dir.mkdir(parents=True, exist_ok=True)
         if self.container_manager is not None and hasattr(self.container_manager, "faith_dir"):
             self.container_manager.faith_dir = self.session_manager.faith_dir
-        if self.container_manager is not None and hasattr(self.container_manager, "discover_agents"):
+        if self.container_manager is not None and hasattr(
+            self.container_manager, "discover_agents"
+        ):
             for agent_id, config in self.container_manager.discover_agents().items():
                 if hasattr(self.container_manager, "start_agent"):
                     await self.container_manager.start_agent(
@@ -229,7 +237,11 @@ class ProjectSwitcher:
                 tool_items = load_all_tool_configs(project_root).items()
             for tool_name, config in tool_items:
                 if hasattr(self.container_manager, "reconfigure_tool"):
-                    payload = config.model_dump(mode="python") if hasattr(config, "model_dump") else config
+                    payload = (
+                        config.model_dump(mode="python")
+                        if hasattr(config, "model_dump")
+                        else config
+                    )
                     await self.container_manager.reconfigure_tool(
                         tool_name,
                         payload,

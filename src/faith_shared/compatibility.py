@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 CURRENT_SCHEMA_VERSION = "1.0"
 CURRENT_API_VERSION = "v1"
 CURRENT_PROTOCOL_VERSION = "1.0"
@@ -83,9 +82,7 @@ def validate_component_versions(component_versions: dict[str, str]) -> None:
         for name, version in component_versions.items()
     }
     expected = next(iter(normalised.values()))
-    mismatched = {
-        name: version for name, version in normalised.items() if version != expected
-    }
+    mismatched = {name: version for name, version in normalised.items() if version != expected}
     if mismatched:
         details = ", ".join(f"{name}={version}" for name, version in sorted(mismatched.items()))
         raise FaithCompatibilityError(

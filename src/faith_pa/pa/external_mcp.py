@@ -36,14 +36,14 @@ class ProcessLauncher(Protocol):
 
     async def __call__(self, *cmd: str, env: dict[str, str]) -> Any:
         """Description:
-            Launch one external MCP subprocess.
+        Launch one external MCP subprocess.
 
-            Requirements:
-                - Preserve the supplied command and environment unchanged.
+        Requirements:
+            - Preserve the supplied command and environment unchanged.
 
-            :param cmd: Command-line segments to execute.
-            :param env: Fully resolved process environment.
-            :returns: Async subprocess-compatible process object.
+        :param cmd: Command-line segments to execute.
+        :param env: Fully resolved process environment.
+        :returns: Async subprocess-compatible process object.
         """
 
 
@@ -58,15 +58,15 @@ class RegistryResolver(Protocol):
 
     async def __call__(self, registry_ref: str, package_version: str) -> dict[str, str]:
         """Description:
-            Resolve one registry-backed MCP server registration.
+        Resolve one registry-backed MCP server registration.
 
-            Requirements:
-                - Preserve the registry reference and pinned version in the returned metadata.
-                - Return a package identifier suitable for `npx` launch.
+        Requirements:
+            - Preserve the registry reference and pinned version in the returned metadata.
+            - Return a package identifier suitable for `npx` launch.
 
-            :param registry_ref: Registry reference declared in the tool config.
-            :param package_version: Pinned package version declared in the tool config.
-            :returns: Registry metadata including a launchable `package` identifier.
+        :param registry_ref: Registry reference declared in the tool config.
+        :param package_version: Pinned package version declared in the tool config.
+        :returns: Registry metadata including a launchable `package` identifier.
         """
 
 
@@ -452,7 +452,9 @@ class ExternalMCPManager:
         :returns: Start result mapping keyed by external MCP server name.
         """
 
-        needed = sorted({name for agent_id in agent_ids for name in self.get_servers_for_agent(agent_id)})
+        needed = sorted(
+            {name for agent_id in agent_ids for name in self.get_servers_for_agent(agent_id)}
+        )
         if needed:
             await self._ensure_runtime(workspace_path)
         results: dict[str, bool] = {}
@@ -546,7 +548,9 @@ class ExternalMCPManager:
                     "privacy_tier": server.config.privacy_tier.value,
                     "privacy_allowed": self.is_privacy_allowed(name),
                     "agents": list(server.config.agents),
-                    "env_keys": sorted(server.config.env.keys() | server.config.env_secret_refs.keys()),
+                    "env_keys": sorted(
+                        server.config.env.keys() | server.config.env_secret_refs.keys()
+                    ),
                     "running": server.is_running,
                     "session_id": server.session_id,
                     "install_status": "running" if server.is_running else "registered",

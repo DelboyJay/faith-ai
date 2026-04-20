@@ -421,7 +421,11 @@ def test_base_agent_passes_ollama_endpoint_override():
         config=build_agent_config(model="ollama/llama3:8b"),
         system_config=build_system_config(
             default_agent_model="ollama/llama3:8b",
-            ollama={"enabled": True, "mode": "external", "endpoint": "http://external-ollama:11434"},
+            ollama={
+                "enabled": True,
+                "mode": "external",
+                "endpoint": "http://external-ollama:11434",
+            },
         ),
         prompt_text="Prompt",
     )

@@ -15,10 +15,10 @@ from faith_shared.protocol.compact import (
     MessageType,
 )
 from faith_shared.protocol.events import (
+    SYSTEM_EVENTS_CHANNEL,
     EventPublisher,
     EventType,
     FaithEvent,
-    SYSTEM_EVENTS_CHANNEL,
 )
 from faith_shared.protocol.subscriber import (
     CompletionBatcher,

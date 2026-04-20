@@ -335,7 +335,5 @@ class CAGManager:
         :returns: Formatted CAG prompt block.
         """
 
-        sections = [
-            document.format_for_context() for document in self.documents if document.loaded
-        ]
+        sections = [document.format_for_context() for document in self.documents if document.loaded]
         return "\n\n".join(section for section in sections if section)

@@ -106,12 +106,12 @@ class FakeContainerManager:
 @pytest.fixture
 def system_config() -> SystemConfig:
     """Description:
-        Create a baseline system configuration for intervention tests.
+    Create a baseline system configuration for intervention tests.
 
-        Requirements:
-            - Provide a PA model and fallback-model configuration for session-manager lookups.
+    Requirements:
+        - Provide a PA model and fallback-model configuration for session-manager lookups.
 
-        :returns: Baseline system configuration.
+    :returns: Baseline system configuration.
     """
 
     return SystemConfig(
@@ -126,14 +126,14 @@ async def test_handle_channel_stalled_requests_status(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
     """Description:
-        Verify stalled channels trigger a status request and a user notification.
+    Verify stalled channels trigger a status request and a user notification.
 
-        Requirements:
-            - This test is needed to prove the PA attempts recovery before escalating a stall.
-            - Verify the last non-PA speaker receives the status request and the user channel is notified.
+    Requirements:
+        - This test is needed to prove the PA attempts recovery before escalating a stall.
+        - Verify the last non-PA speaker receives the status request and the user channel is notified.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     del tmp_path, system_config
@@ -156,11 +156,11 @@ async def test_handle_channel_stalled_requests_status(
 @pytest.mark.asyncio
 async def test_handle_task_blocked_restarts_tool_container() -> None:
     """Description:
-        Verify blocked tasks restart the referenced tool container when possible.
+    Verify blocked tasks restart the referenced tool container when possible.
 
-        Requirements:
-            - This test is needed to prove recoverable tool blockers are handled automatically.
-            - Verify the correct tool container restart is requested.
+    Requirements:
+        - This test is needed to prove recoverable tool blockers are handled automatically.
+        - Verify the correct tool container restart is requested.
     """
 
     redis = FakeRedis()
@@ -184,14 +184,14 @@ async def test_handle_agent_error_uses_fallback_model(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
     """Description:
-        Verify agent errors surface a configured fallback model when one is available.
+    Verify agent errors surface a configured fallback model when one is available.
 
-        Requirements:
-            - This test is needed to prove the PA can suggest a recovery path for agent model failures.
-            - Verify the fallback model is included in the intervention result and the user is notified.
+    Requirements:
+        - This test is needed to prove the PA can suggest a recovery path for agent model failures.
+        - Verify the fallback model is included in the intervention result and the user is notified.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     project = tmp_path / "project"

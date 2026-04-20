@@ -492,7 +492,11 @@ class ApprovalEngine:
         normalized_target = target.replace("\\", "/")
         prefix = re.escape(f"{tool}:{verb}:")
         if scope_kind == "folder":
-            folder = normalized_target.rsplit("/", 1)[0] if "/" in normalized_target else normalized_target
+            folder = (
+                normalized_target.rsplit("/", 1)[0]
+                if "/" in normalized_target
+                else normalized_target
+            )
             folder = folder.rstrip("/")
             return rf"^{prefix}{re.escape(folder)}(?:/.*)?$"
         if scope_kind == "glob":

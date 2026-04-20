@@ -264,6 +264,103 @@ class FakeLLMClient:
         return FakeLLMResponse(self.content)
 
 
+class SequencedFakeLLMClient:
+    """Description:
+    Provide deterministic multi-turn LLM responses for PA tool-loop tests.
+
+    Requirements:
+    - Return one configured response per chat call.
+    - Preserve all chat payloads so tests can prove tool manifests and tool
+      results are sent back to the model.
+    """
+
+    def __init__(self, responses: list[str]) -> None:
+        """Description:
+        Initialise the sequenced fake client.
+
+        Requirements:
+        - Copy the response list so tests do not mutate internal state by
+          accident.
+
+        :param responses: Ordered response contents returned by ``chat()``.
+        """
+
+        self.responses = list(responses)
+        self.calls: list[dict[str, object]] = []
+
+    async def chat(
+        self,
+        messages: list[dict[str, object]],
+        *,
+        model: str | None = None,
+        fallback_model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> FakeLLMResponse:
+        """Description:
+        Return the next configured fake LLM response.
+
+        Requirements:
+        - Capture the full call metadata for assertions.
+        - Return an empty response when the configured response list is
+          exhausted so failures remain visible to the caller.
+
+        :param messages: Chat messages supplied by the PA runtime.
+        :param model: Optional model override.
+        :param fallback_model: Optional fallback model override.
+        :param temperature: Optional temperature override.
+        :param max_tokens: Optional output-token cap.
+        :returns: Deterministic fake LLM response.
+        """
+
+        self.calls.append(
+            {
+                "messages": messages,
+                "model": model,
+                "fallback_model": fallback_model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+        )
+        content = self.responses.pop(0) if self.responses else ""
+        return FakeLLMResponse(content)
+
+
+class FakeToolExecutor:
+    """Description:
+    Provide a deterministic PA MCP tool executor for chat-loop tests.
+
+    Requirements:
+    - Capture tool requests without launching real MCP containers.
+    - Return a stable payload that can be fed back to the model.
+    """
+
+    def __init__(self) -> None:
+        """Description:
+        Initialise the fake tool executor.
+
+        Requirements:
+        - Start with no captured calls.
+        """
+
+        self.calls: list[object] = []
+
+    async def execute(self, request: object) -> dict[str, object]:
+        """Description:
+        Record one tool request and return a deterministic result.
+
+        Requirements:
+        - Preserve the original request object for assertions.
+        - Return a structured success payload matching the PA executor contract.
+
+        :param request: Parsed tool-call request from the PA chat loop.
+        :returns: Deterministic tool execution result.
+        """
+
+        self.calls.append(request)
+        return {"success": True, "result": {"content": "README says FAITH is local-first."}}
+
+
 @pytest.fixture
 def fake_redis() -> FakeRedis:
     """Description:
@@ -657,3 +754,87 @@ def test_pa_chat_bridge_calls_llm_with_user_message(
 
     assert llm_client.calls
     assert llm_client.calls[0]["messages"][-1]["content"] == "Summarise the current task status."
+
+
+def test_pa_chat_bridge_advertises_mcp_tools_to_llama() -> None:
+    """Description:
+    Verify the browser-chat LLM prompt includes the PA MCP tool manifest.
+
+    Requirements:
+    - This test is needed because standalone MCP servers are useless to
+      non-native models unless the PA advertises the callable tool protocol.
+    - Verify the system prompt tells the model about filesystem tool calls.
+    """
+
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=SequencedFakeLLMClient(["No tool needed."]),
+        model_name="ollama/llama3:8b",
+        tool_executor=FakeToolExecutor(),
+    )
+
+    messages = runtime._build_chat_messages("Can you read README.md?")
+    system_text = messages[0]["content"]
+
+    assert "Available MCP tools" in system_text
+    assert '"type": "tool_call"' in system_text
+    assert "filesystem" in system_text
+    assert "read" in system_text
+
+
+def test_pa_chat_bridge_executes_mcp_tool_call_and_returns_final_answer() -> None:
+    """Description:
+    Verify the browser-chat bridge runs a model-requested MCP tool call.
+
+    Requirements:
+    - This test is needed to prove llama-style text output can drive the
+      filesystem MCP server through the PA instead of only returning raw JSON.
+    - Verify the PA executes the parsed tool request, sends the result back to
+      the model, and streams the final answer to the Project Agent panel.
+    """
+
+    first_response = (
+        '{"type": "tool_call", "tool": "filesystem", "action": "read", '
+        '"args": {"mount": "project", "path": "README.md"}}'
+    )
+    llm_client = SequencedFakeLLMClient(
+        [
+            first_response,
+            "The README says FAITH is local-first.",
+        ]
+    )
+    tool_executor = FakeToolExecutor()
+    fake_redis = FakeRedis()
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=fake_redis,
+        llm_client=llm_client,
+        model_name="ollama/llama3:8b",
+        tool_executor=tool_executor,
+    )
+
+    asyncio.run(
+        runtime._handle_payload(
+            {
+                "type": "user_input",
+                "message_id": "msg-tool-001",
+                "message": "Please read README.md and summarise it.",
+            }
+        )
+    )
+
+    published = [
+        json.loads(payload)
+        for channel, payload in fake_redis.published
+        if channel == "agent:project-agent:output"
+    ]
+    assert len(llm_client.calls) == 2
+    assert len(tool_executor.calls) == 1
+    assert tool_executor.calls[0].tool == "filesystem"
+    assert tool_executor.calls[0].action == "read"
+    assert tool_executor.calls[0].args == {"mount": "project", "path": "README.md"}
+    second_call_messages = llm_client.calls[1]["messages"]
+    assert any("Tool result" in message["content"] for message in second_call_messages)
+    output_text = "".join(
+        item.get("text", "") for item in published if item.get("type") == "output"
+    )
+    assert "The README says FAITH is local-first." in output_text

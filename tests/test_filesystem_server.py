@@ -141,7 +141,9 @@ def test_filesystem_server_restore_version_round_trip(tmp_path) -> None:
 
     history = server.list_history("workspace", "notes.txt")
     assert len(history) >= 1
-    restored = server.restore_version("workspace", "notes.txt", history[0]["version"], agent_id="dev")
+    restored = server.restore_version(
+        "workspace", "notes.txt", history[0]["version"], agent_id="dev"
+    )
     assert restored is True
     payload = server.read(
         "workspace",
@@ -289,12 +291,17 @@ def test_filesystem_server_handles_config_change_reload(tmp_path: Path) -> None:
         FaithEvent(
             event=EventType.SYSTEM_CONFIG_CHANGED,
             source="config-watcher",
-            data={"file": "filesystem.yaml", "path": str(tmp_path / ".faith" / "tools" / "filesystem.yaml")},
+            data={
+                "file": "filesystem.yaml",
+                "path": str(tmp_path / ".faith" / "tools" / "filesystem.yaml"),
+            },
         ),
-        {"mounts": {
-            "workspace": {"host_path": str(workspace), "access": "readwrite"},
-            "docs": {"host_path": str(docs), "access": "readonly"},
-        }},
+        {
+            "mounts": {
+                "workspace": {"host_path": str(workspace), "access": "readwrite"},
+                "docs": {"host_path": str(docs), "access": "readonly"},
+            }
+        },
     )
     assert changed is True
     assert server.mount_registry.get("docs") is not None

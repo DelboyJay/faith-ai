@@ -41,11 +41,11 @@ def build_tool_call() -> CompactMessage:
 
 def test_translate_to_and_from_mcp():
     """Description:
-        Verify compact tool calls translate cleanly to MCP and back into compact results.
+    Verify compact tool calls translate cleanly to MCP and back into compact results.
 
-        Requirements:
-            - This test is needed to prove MCP-native tool execution preserves the expected tool identity and result payload.
-            - Verify the MCP request method and translated result content are correct.
+    Requirements:
+        - This test is needed to prove MCP-native tool execution preserves the expected tool identity and result payload.
+        - Verify the MCP request method and translated result content are correct.
     """
 
     adapter = MCPAdapter({"dev": {"mcp_native": True}})
@@ -61,11 +61,11 @@ def test_translate_to_and_from_mcp():
 
 def test_translate_prompt_and_parse_result():
     """Description:
-        Verify prompt fallback rendering and parsing produce a successful compact result.
+    Verify prompt fallback rendering and parsing produce a successful compact result.
 
-        Requirements:
-            - This test is needed to prove non-MCP-native agents can still execute tool calls through prompt translation.
-            - Verify the prompt contains the tool name and the parsed result is marked successful.
+    Requirements:
+        - This test is needed to prove non-MCP-native agents can still execute tool calls through prompt translation.
+        - Verify the prompt contains the tool name and the parsed result is marked successful.
     """
 
     adapter = MCPAdapter({"dev": {"mcp_native": False}})
@@ -80,11 +80,11 @@ def test_translate_prompt_and_parse_result():
 
 def test_tool_router_routes_by_agent_capability():
     """Description:
-        Verify the tool router chooses MCP or prompt execution based on agent capability.
+    Verify the tool router chooses MCP or prompt execution based on agent capability.
 
-        Requirements:
-            - This test is needed to prove native and fallback execution paths both remain reachable.
-            - Verify the MCP-native path returns the translated MCP result and the prompt path returns the prompt result.
+    Requirements:
+        - This test is needed to prove native and fallback execution paths both remain reachable.
+        - Verify the MCP-native path returns the translated MCP result and the prompt path returns the prompt result.
     """
 
     native_router = ToolRouter(MCPAdapter({"dev": {"mcp_native": True}}))

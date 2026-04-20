@@ -371,7 +371,7 @@ phases:
     title: 'CAG & External MCP Integration'
     status: 'IN PROGRESS'
     summary: ''
-    task_count: 3
+    task_count: 4
     tasks:
       - id: 'FAITH-034'
         name: 'CAG Implementation'
@@ -400,6 +400,15 @@ phases:
         dependencies: ['FAITH-034', 'FAITH-022']
         frs_reference: 'Section 4.10.3.2, 4.10.4, 9.3.5'
         summary: 'Promote the project-root `cag/` folder to a first-class default CAG source. On project load, discover supported markdown/text files under `cag/`, estimate their combined token usage, and auto-load them into the PA/agent CAG flow when they fit within budget. If the corpus exceeds budget, surface the largest contributors and suggest reduction options such as curated summary files, splitting high-value rules from bulky background material, or moving lower-value documents to RAG. Do not perform lossy compression of user `cag/` files automatically without explicit user request.'
+      - id: 'FAITH-068'
+        name: 'PA Chat MCP Tool-Calling Loop'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-068-pa-chat-mcp-tool-loop.md'
+        dependencies: ['FAITH-012', 'FAITH-016', 'FAITH-022', 'FAITH-036', 'FAITH-038']
+        frs_reference: 'Section 4.1.1'
+        summary: 'Expose enabled MCP tools to the interactive Project Agent chat path. The PA must include a compact tool manifest for non-native local models, parse JSON `tool_call` requests, execute supported tools through the PA MCP execution path, feed structured tool results back to the model, stream visible tool-use progress to the UI, and stop on a final answer or bounded safety limit. Initial v1 scope exposes filesystem read/list/stat for Project Agent inspection.'
   - id: 8
     title: 'Web UI'
     status: 'TODO'

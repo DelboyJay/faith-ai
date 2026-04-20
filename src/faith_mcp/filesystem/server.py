@@ -133,7 +133,9 @@ class FilesystemServer:
 
         self.watcher.load_static_subscriptions(agents_config, self.mount_roots())
 
-    def handle_config_changed(self, event: FaithEvent, config: dict[str, Any] | None = None) -> bool:
+    def handle_config_changed(
+        self, event: FaithEvent, config: dict[str, Any] | None = None
+    ) -> bool:
         """
         Description:
             Apply a filesystem configuration reload when a matching config-changed event arrives.
@@ -152,7 +154,9 @@ class FilesystemServer:
         payload = event.data or {}
         file_name = str(payload.get("file", ""))
         path_text = str(payload.get("path", ""))
-        if file_name != "filesystem.yaml" and not path_text.replace("\\", "/").endswith("/filesystem.yaml"):
+        if file_name != "filesystem.yaml" and not path_text.replace("\\", "/").endswith(
+            "/filesystem.yaml"
+        ):
             return False
         self.reload_config(config or self._read_config_file())
         return True
@@ -288,7 +292,9 @@ class FilesystemServer:
         mount_name = str(args.get("mount", ""))
         relative_path = str(args.get("path", ""))
         if action == "read":
-            return self.read(mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts)
+            return self.read(
+                mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts
+            )
         if action == "write":
             return self.write(
                 mount_name,
@@ -298,13 +304,21 @@ class FilesystemServer:
                 agent_mounts=agent_mounts,
             )
         if action == "list":
-            return self.list_dir(mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts)
+            return self.list_dir(
+                mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts
+            )
         if action == "stat":
-            return self.stat(mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts)
+            return self.stat(
+                mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts
+            )
         if action == "delete":
-            return self.delete(mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts)
+            return self.delete(
+                mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts
+            )
         if action == "mkdir":
-            return self.mkdir(mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts)
+            return self.mkdir(
+                mount_name, relative_path, agent_id=agent_id, agent_mounts=agent_mounts
+            )
         if action == "list_history":
             return {"versions": self.list_history(mount_name, relative_path)}
         if action == "restore_version":
@@ -356,7 +370,9 @@ class FilesystemServer:
             data={"agent": agent_id, "action": "read", "path": relative_path},
         )
         try:
-            payload = read_file(self.mount_registry, mount_name, relative_path, agent_id, agent_mounts)
+            payload = read_file(
+                self.mount_registry, mount_name, relative_path, agent_id, agent_mounts
+            )
         except FilesystemError as exc:
             self._emit_filesystem_error(agent_id, "read", relative_path, exc)
             raise
@@ -483,7 +499,9 @@ class FilesystemServer:
             data={"agent": agent_id, "action": "stat", "path": relative_path},
         )
         try:
-            payload = stat_file(self.mount_registry, mount_name, relative_path, agent_id, agent_mounts)
+            payload = stat_file(
+                self.mount_registry, mount_name, relative_path, agent_id, agent_mounts
+            )
         except FilesystemError as exc:
             self._emit_filesystem_error(agent_id, "stat", relative_path, exc)
             raise

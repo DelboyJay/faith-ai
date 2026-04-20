@@ -76,13 +76,13 @@ def test_load_python_config_defaults_when_file_missing(tmp_path: Path) -> None:
 
 def test_execute_code_captures_stdout_and_return_value(tmp_path: Path) -> None:
     """Description:
-        Verify sandbox execution captures stdout and the ``result`` variable separately.
+    Verify sandbox execution captures stdout and the ``result`` variable separately.
 
-        Requirements:
-            - This test is needed to prove user code output is structured for the PA.
-            - Verify stdout stays separate from the returned JSON-serialisable value.
+    Requirements:
+        - This test is needed to prove user code output is structured for the PA.
+        - Verify stdout stays separate from the returned JSON-serialisable value.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     code = textwrap.dedent(
@@ -100,13 +100,13 @@ def test_execute_code_captures_stdout_and_return_value(tmp_path: Path) -> None:
 
 def test_execute_code_times_out_long_running_code(tmp_path: Path) -> None:
     """Description:
-        Verify sandbox execution reports timeouts for overlong code.
+    Verify sandbox execution reports timeouts for overlong code.
 
-        Requirements:
-            - This test is needed to prove runaway code is stopped deterministically.
-            - Verify the timed-out result is flagged and does not report a normal success.
+    Requirements:
+        - This test is needed to prove runaway code is stopped deterministically.
+        - Verify the timed-out result is flagged and does not report a normal success.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     code = "import time\ntime.sleep(2)\n"
@@ -119,13 +119,13 @@ def test_execute_code_times_out_long_running_code(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_python_executor_publishes_started_and_complete_events(tmp_path: Path) -> None:
     """Description:
-        Verify the executor publishes lifecycle events around a successful code run.
+    Verify the executor publishes lifecycle events around a successful code run.
 
-        Requirements:
-            - This test is needed to prove the PA can observe Python tool execution.
-            - Verify both start and completion events are emitted for a successful run.
+    Requirements:
+        - This test is needed to prove the PA can observe Python tool execution.
+        - Verify both start and completion events are emitted for a successful run.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     publisher = DummyPublisher()
@@ -150,13 +150,13 @@ async def test_python_executor_publishes_started_and_complete_events(tmp_path: P
 @pytest.mark.asyncio
 async def test_python_executor_rejects_disallowed_working_directory(tmp_path: Path) -> None:
     """Description:
-        Verify the executor refuses to run code outside the allowed workspace paths.
+    Verify the executor refuses to run code outside the allowed workspace paths.
 
-        Requirements:
-            - This test is needed to prove the Python tool respects filesystem boundaries.
-            - Verify a disallowed working directory raises a permission error before execution.
+    Requirements:
+        - This test is needed to prove the Python tool respects filesystem boundaries.
+        - Verify a disallowed working directory raises a permission error before execution.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     allowed = tmp_path / "allowed"
@@ -174,13 +174,13 @@ async def test_python_executor_rejects_disallowed_working_directory(tmp_path: Pa
 
 def test_python_server_formats_execute_response(tmp_path: Path) -> None:
     """Description:
-        Verify the Python server exposes a structured execution response.
+    Verify the Python server exposes a structured execution response.
 
-        Requirements:
-            - This test is needed to prove the MCP-facing server returns stable result fields.
-            - Verify the response includes stdout, success state, and return value.
+    Requirements:
+        - This test is needed to prove the MCP-facing server returns stable result fields.
+        - Verify the response includes stdout, success state, and return value.
 
-        :param tmp_path: Temporary pytest directory fixture.
+    :param tmp_path: Temporary pytest directory fixture.
     """
 
     server = PythonExecutionServer(
@@ -189,7 +189,9 @@ def test_python_server_formats_execute_response(tmp_path: Path) -> None:
     )
 
     response = asyncio.run(
-        server.execute_python("print('hello')\nresult = ['a']\n", agent_id="dev", working_directory=tmp_path)
+        server.execute_python(
+            "print('hello')\nresult = ['a']\n", agent_id="dev", working_directory=tmp_path
+        )
     )
 
     assert response["success"] is True

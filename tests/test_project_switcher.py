@@ -29,10 +29,10 @@ class FakeContainerManager:
 
     def __init__(self) -> None:
         """Description:
-            Initialise the fake container-manager state.
+        Initialise the fake container-manager state.
 
-            Requirements:
-                - Start with empty lifecycle call logs.
+        Requirements:
+            - Start with empty lifecycle call logs.
         """
 
         self.faith_dir = None
@@ -43,25 +43,25 @@ class FakeContainerManager:
 
     async def signal_agent_finish(self, agent_id: str) -> None:
         """Description:
-            Record a finish signal for one agent.
+        Record a finish signal for one agent.
 
-            Requirements:
-                - Preserve the agent identifier unchanged.
+        Requirements:
+            - Preserve the agent identifier unchanged.
 
-            :param agent_id: Agent identifier being signalled.
+        :param agent_id: Agent identifier being signalled.
         """
 
         self.finish_calls.append(agent_id)
 
     async def get_agent_state(self, agent_id: str) -> dict[str, object]:
         """Description:
-            Return a lightweight agent-state snapshot for teardown tests.
+        Return a lightweight agent-state snapshot for teardown tests.
 
-            Requirements:
-                - Preserve the agent identifier and a recognisable summary payload.
+        Requirements:
+            - Preserve the agent identifier and a recognisable summary payload.
 
-            :param agent_id: Agent identifier to inspect.
-            :returns: Lightweight state snapshot.
+        :param agent_id: Agent identifier to inspect.
+        :returns: Lightweight state snapshot.
         """
 
         return {
@@ -76,37 +76,37 @@ class FakeContainerManager:
 
     async def stop(self, name: str, *, reason: str = "normal") -> None:
         """Description:
-            Record a container stop request.
+        Record a container stop request.
 
-            Requirements:
-                - Preserve the container name and stop reason.
+        Requirements:
+            - Preserve the container name and stop reason.
 
-            :param name: Container name to stop.
-            :param reason: Stop reason string.
+        :param name: Container name to stop.
+        :param reason: Stop reason string.
         """
 
         self.stop_calls.append((name, reason))
 
     def discover_agents(self) -> dict[str, dict[str, str]]:
         """Description:
-            Return a small discovered-agent mapping for load tests.
+        Return a small discovered-agent mapping for load tests.
 
-            Requirements:
-                - Expose at least one agent definition.
+        Requirements:
+            - Expose at least one agent definition.
 
-            :returns: Agent configuration mapping.
+        :returns: Agent configuration mapping.
         """
 
         return {"developer": {"model": "gpt-5.4-mini", "role": "implementation"}}
 
     def discover_tools(self) -> dict[str, dict[str, object]]:
         """Description:
-            Return a small discovered-tool mapping for load tests.
+        Return a small discovered-tool mapping for load tests.
 
-            Requirements:
-                - Expose at least one tool definition.
+        Requirements:
+            - Expose at least one tool definition.
 
-            :returns: Tool configuration mapping.
+        :returns: Tool configuration mapping.
         """
 
         return {"filesystem": {"image": "faith-tool-filesystem:latest", "env": {"MODE": "rw"}}}
@@ -115,14 +115,14 @@ class FakeContainerManager:
         self, *, agent_id: str, agent_config: dict[str, object], workspace_path: Path
     ) -> None:
         """Description:
-            Record an agent-start request.
+        Record an agent-start request.
 
-            Requirements:
-                - Preserve the agent identifier, declared role, and workspace path.
+        Requirements:
+            - Preserve the agent identifier, declared role, and workspace path.
 
-            :param agent_id: Agent identifier to start.
-            :param agent_config: Agent configuration payload.
-            :param workspace_path: Project workspace path.
+        :param agent_id: Agent identifier to start.
+        :param agent_config: Agent configuration payload.
+        :param workspace_path: Project workspace path.
         """
 
         self.start_calls.append((agent_id, str(agent_config.get("role", "")), str(workspace_path)))
@@ -131,14 +131,14 @@ class FakeContainerManager:
         self, tool_name: str, tool_config: dict[str, object], workspace_path: Path
     ) -> None:
         """Description:
-            Record a tool reconfiguration request.
+        Record a tool reconfiguration request.
 
-            Requirements:
-                - Preserve the tool name and workspace path.
+        Requirements:
+            - Preserve the tool name and workspace path.
 
-            :param tool_name: Tool name to reconfigure.
-            :param tool_config: Tool configuration payload.
-            :param workspace_path: Project workspace path.
+        :param tool_name: Tool name to reconfigure.
+        :param tool_config: Tool configuration payload.
+        :param workspace_path: Project workspace path.
         """
 
         del tool_config
@@ -148,12 +148,12 @@ class FakeContainerManager:
 @pytest.fixture
 def system_config() -> SystemConfig:
     """Description:
-        Create a baseline system configuration for project-switcher tests.
+    Create a baseline system configuration for project-switcher tests.
 
-        Requirements:
-            - Provide a valid PA model configuration for session-manager initialisation.
+    Requirements:
+        - Provide a valid PA model configuration for session-manager initialisation.
 
-        :returns: Baseline system configuration.
+    :returns: Baseline system configuration.
     """
 
     return SystemConfig(
@@ -168,14 +168,14 @@ async def test_switch_project_marks_already_active(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
     """Description:
-        Verify switching to the current project reports it as already active.
+    Verify switching to the current project reports it as already active.
 
-        Requirements:
-            - This test is needed to prove redundant project switches do not trigger teardown and reload work.
-            - Verify the result payload marks the project as already active.
+    Requirements:
+        - This test is needed to prove redundant project switches do not trigger teardown and reload work.
+        - Verify the result payload marks the project as already active.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     manager = SessionManager(project_root=tmp_path, system_config=system_config)
@@ -189,14 +189,14 @@ async def test_load_project_updates_recent_projects(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
     """Description:
-        Verify loading a new project starts runtime support and updates recent-project state.
+    Verify loading a new project starts runtime support and updates recent-project state.
 
-        Requirements:
-            - This test is needed to prove project activation runs the expected runtime hooks.
-            - Verify both the runtime-start and reindex callbacks are awaited.
+    Requirements:
+        - This test is needed to prove project activation runs the expected runtime hooks.
+        - Verify both the runtime-start and reindex callbacks are awaited.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     manager = SessionManager(project_root=tmp_path / "current", system_config=system_config)
@@ -219,14 +219,14 @@ async def test_load_project_reports_first_visit(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
     """Description:
-        Verify loading a project without a ``.faith`` directory reports the first-visit flow.
+    Verify loading a project without a ``.faith`` directory reports the first-visit flow.
 
-        Requirements:
-            - This test is needed to prove the PA can distinguish uninitialised projects from existing FAITH workspaces.
-            - Verify the load result marks the target as a first visit.
+    Requirements:
+        - This test is needed to prove the PA can distinguish uninitialised projects from existing FAITH workspaces.
+        - Verify the load result marks the target as a first visit.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     manager = SessionManager(project_root=tmp_path / "current", system_config=system_config)
@@ -244,14 +244,14 @@ async def test_teardown_current_project_writes_state_for_active_agents(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
     """Description:
-        Verify project teardown writes ``state.md`` files for active task agents before ending the session.
+    Verify project teardown writes ``state.md`` files for active task agents before ending the session.
 
-        Requirements:
-            - This test is needed to prove project switching preserves resumable agent state.
-            - Verify teardown writes one ``state.md`` file per active agent.
+    Requirements:
+        - This test is needed to prove project switching preserves resumable agent state.
+        - Verify teardown writes one ``state.md`` file per active agent.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     project_root = tmp_path / "project"
@@ -275,14 +275,14 @@ async def test_teardown_current_project_signals_and_stops_agent_containers(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
     """Description:
-        Verify project teardown signals active agents and stops their containers before leaving the project.
+    Verify project teardown signals active agents and stops their containers before leaving the project.
 
-        Requirements:
-            - This test is needed to prove the project-switch teardown follows the richer Phase 4 lifecycle contract.
-            - Verify the switcher asks the container layer for state, signals finish, and stops the expected agent containers.
+    Requirements:
+        - This test is needed to prove the project-switch teardown follows the richer Phase 4 lifecycle contract.
+        - Verify the switcher asks the container layer for state, signals finish, and stops the expected agent containers.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     project_root = tmp_path / "project"
@@ -301,7 +301,9 @@ async def test_teardown_current_project_signals_and_stops_agent_containers(
         ("faith-agent-developer", "project-switch"),
         ("faith-agent-qa", "project-switch"),
     ]
-    saved = (project_root / ".faith" / "agents" / "developer" / "state.md").read_text(encoding="utf-8")
+    saved = (project_root / ".faith" / "agents" / "developer" / "state.md").read_text(
+        encoding="utf-8"
+    )
     assert "developer summary" in saved
 
 
@@ -310,14 +312,14 @@ async def test_load_project_starts_agents_and_reconfigures_tools(
     tmp_path: Path, system_config: SystemConfig
 ) -> None:
     """Description:
-        Verify loading a project starts discovered agents and reconfigures discovered tools.
+    Verify loading a project starts discovered agents and reconfigures discovered tools.
 
-        Requirements:
-            - This test is needed to prove project activation reconstructs the team and project-scoped tool runtime.
-            - Verify the container manager receives both the agent-start and tool-reconfigure requests.
+    Requirements:
+        - This test is needed to prove project activation reconstructs the team and project-scoped tool runtime.
+        - Verify the container manager receives both the agent-start and tool-reconfigure requests.
 
-        :param tmp_path: Temporary pytest directory fixture.
-        :param system_config: Baseline system configuration fixture.
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
     """
 
     current_root = tmp_path / "current"

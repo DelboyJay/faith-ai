@@ -14,14 +14,15 @@ from pathlib import Path
 import pytest
 
 from faith_pa.config.loader import (
-    load_config,
-    resolve_secret_ref,
     ConfigLoadError,
     ConfigValidationError,
     StartupValidationError,
     build_config_summary,
+    load_config,
     load_secrets,
+    load_system_config,
     load_tool_config,
+    resolve_secret_ref,
     validate_startup_config,
 )
 from faith_shared.config.schema_export import export_schemas
@@ -131,7 +132,9 @@ def test_load_tool_config_resolves_secret_refs(config_env: tuple[Path, Path]) ->
     assert connection.password == "super-secret"
 
 
-def test_validate_startup_config_reports_missing_project_files(config_env: tuple[Path, Path]) -> None:
+def test_validate_startup_config_reports_missing_project_files(
+    config_env: tuple[Path, Path],
+) -> None:
     """Description:
         Verify startup validation fails when project config files are missing.
 
@@ -212,7 +215,7 @@ def test_load_tool_config_raises_on_unknown_secret_ref(config_env: tuple[Path, P
 
 
 def test_validate_startup_config_surfaces_human_readable_field_errors(
-    config_env: tuple[Path, Path]
+    config_env: tuple[Path, Path],
 ) -> None:
     """Description:
         Verify startup validation surfaces readable field-level validation failures.
@@ -265,7 +268,7 @@ def test_load_system_config_raises_config_validation_error(config_env: tuple[Pat
     )
 
     with pytest.raises(ConfigValidationError):
-        validate_startup_config(root=faith_dir.parent)
+        load_system_config(root=faith_dir.parent)
 
 
 def test_export_schemas_writes_shared_schema_files(tmp_path: Path) -> None:

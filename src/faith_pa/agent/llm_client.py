@@ -364,9 +364,7 @@ class LLMClient:
 
         resolved_platform = _normalise_platform_name(platform_name or self.platform_name)
         docker_gpu = (
-            self.docker_gpu_supported
-            if docker_gpu_supported is None
-            else docker_gpu_supported
+            self.docker_gpu_supported if docker_gpu_supported is None else docker_gpu_supported
         )
         if endpoint_override:
             return OllamaEndpointResolution(
@@ -431,14 +429,14 @@ class LLMClient:
 
         resolved_platform = _normalise_platform_name(platform_name or self.platform_name)
         docker_gpu = (
-            self.docker_gpu_supported
-            if docker_gpu_supported is None
-            else docker_gpu_supported
+            self.docker_gpu_supported if docker_gpu_supported is None else docker_gpu_supported
         )
         effective_system_ram_mb = system_ram_mb or self.system_ram_mb
         provider, provider_model = parse_model_string(self.model)
         effective_probe_model = probe_model or (
-            provider_model if provider == "ollama" else os.getenv("FAITH_OLLAMA_PROBE_MODEL", "llama3:8b")
+            provider_model
+            if provider == "ollama"
+            else os.getenv("FAITH_OLLAMA_PROBE_MODEL", "llama3:8b")
         )
         last_error: LLMRetryableError | None = None
         for resolution in self._ollama_probe_candidates(
@@ -457,7 +455,9 @@ class LLMClient:
             last_error = LLMRetryableError(
                 f"Ollama probe failed for {resolution.endpoint}",
             )
-        raise last_error or LLMRetryableError("No Ollama endpoint passed the local capability probe")
+        raise last_error or LLMRetryableError(
+            "No Ollama endpoint passed the local capability probe"
+        )
 
     def _ollama_probe_candidates(
         self,

@@ -766,7 +766,6 @@ class EventPublisher:
             )
         )
 
-
     async def batch_complete(
         self,
         batch_id: str,
@@ -856,6 +855,7 @@ class EventPublisher:
                 },
             )
         )
+
 
 def _now_iso() -> str:
     """

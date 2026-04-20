@@ -44,7 +44,10 @@ def detect_provider(model: str, api_base: str = "") -> LLMProvider:
     api_lower = api_base.lower()
     if "claude" in model_lower or "anthropic" in model_lower or "anthropic" in api_lower:
         return LLMProvider.ANTHROPIC
-    if any(token in model_lower for token in ("gpt-", "o1", "o3", "openai/")) or "openai" in api_lower:
+    if (
+        any(token in model_lower for token in ("gpt-", "o1", "o3", "openai/"))
+        or "openai" in api_lower
+    ):
         return LLMProvider.OPENAI
     if "ollama/" in model_lower or "ollama" in api_lower or "11434" in api_lower:
         return LLMProvider.OLLAMA
