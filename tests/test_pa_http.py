@@ -782,6 +782,85 @@ def test_pa_chat_bridge_advertises_mcp_tools_to_llama() -> None:
     assert "read" in system_text
 
 
+def test_pa_chat_bridge_manifest_defines_faith_mcp_inventory() -> None:
+    """Description:
+    Verify the Project Agent tool manifest grounds the meaning of FAITH MCP.
+
+    Requirements:
+    - This test is needed to prevent local models from treating MCP as
+      Microsoft Configuration Manager.
+    - Verify the prompt exposes a canonical tool-inventory action and the
+      Model Context Protocol definition.
+    """
+
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=SequencedFakeLLMClient(["No tool needed."]),
+        model_name="ollama/llama3:8b",
+        tool_executor=FakeToolExecutor(),
+    )
+
+    system_text = runtime._build_chat_messages("What MCP servers are available?")[0]["content"]
+
+    assert "Model Context Protocol" in system_text
+    assert "Microsoft Configuration Manager" in system_text
+    assert "mcp.list_tools" in system_text
+    assert "filesystem.read" in system_text
+
+
+def test_pa_chat_bridge_answers_mcp_inventory_without_llm_hallucination() -> None:
+    """Description:
+    Verify MCP inventory questions are answered from PA-owned truth.
+
+    Requirements:
+    - This test is needed because local models can hallucinate fake MCP servers
+      when asked what MCP servers are available to FAITH.
+    - Verify the PA returns the canonical filesystem MCP inventory without
+      calling the LLM and without mentioning Microsoft Configuration Manager.
+    """
+
+    llm_client = SequencedFakeLLMClient(
+        [
+            "MCP means Microsoft Configuration Manager. MCP Server 1 is available.",
+        ]
+    )
+    fake_redis = FakeRedis()
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=fake_redis,
+        llm_client=llm_client,
+        model_name="ollama/llama3:8b",
+        tool_executor=FakeToolExecutor(),
+    )
+
+    asyncio.run(
+        runtime._handle_payload(
+            {
+                "type": "user_input",
+                "message_id": "msg-inventory-001",
+                "message": "what MCP servers are available to FAITH?",
+            }
+        )
+    )
+
+    published = [
+        json.loads(payload)
+        for channel, payload in fake_redis.published
+        if channel == "agent:project-agent:output"
+    ]
+    output_text = "".join(
+        item.get("text", "") for item in published if item.get("type") == "output"
+    )
+
+    assert llm_client.calls == []
+    assert "Model Context Protocol" in output_text
+    assert "filesystem MCP server" in output_text
+    assert "filesystem.read" in output_text
+    assert "filesystem.list" in output_text
+    assert "filesystem.stat" in output_text
+    assert "Microsoft Configuration Manager" not in output_text
+    assert "MCP Server 1" not in output_text
+
+
 def test_pa_chat_bridge_executes_mcp_tool_call_and_returns_final_answer() -> None:
     """Description:
     Verify the browser-chat bridge runs a model-requested MCP tool call.

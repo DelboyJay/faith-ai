@@ -371,7 +371,7 @@ phases:
     title: 'CAG & External MCP Integration'
     status: 'IN PROGRESS'
     summary: ''
-    task_count: 4
+    task_count: 5
     tasks:
       - id: 'FAITH-034'
         name: 'CAG Implementation'
@@ -409,6 +409,15 @@ phases:
         dependencies: ['FAITH-012', 'FAITH-016', 'FAITH-022', 'FAITH-036', 'FAITH-038']
         frs_reference: 'Section 4.1.1'
         summary: 'Expose enabled MCP tools to the interactive Project Agent chat path. The PA must include a compact tool manifest for non-native local models, parse JSON `tool_call` requests, execute supported tools through the PA MCP execution path, feed structured tool results back to the model, stream visible tool-use progress to the UI, and stop on a final answer or bounded safety limit. Initial v1 scope exposes filesystem read/list/stat for Project Agent inspection.'
+      - id: 'FAITH-069'
+        name: 'PA MCP Inventory Grounding'
+        complexity: 'S'
+        model: 'Haiku / GPT-5.4-mini'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-069-pa-mcp-inventory-grounding.md'
+        dependencies: ['FAITH-068']
+        frs_reference: 'Section 4.1.2'
+        summary: 'Ground Project Agent answers about available FAITH MCP servers/tools in a canonical PA-owned inventory. The PA must define MCP as Model Context Protocol, prevent Microsoft Configuration Manager hallucinations, expose `mcp.list_tools`, answer inventory questions without calling the LLM, and include the available filesystem chat actions (`filesystem.read`, `filesystem.list`, `filesystem.stat`).'
   - id: 8
     title: 'Web UI'
     status: 'TODO'
