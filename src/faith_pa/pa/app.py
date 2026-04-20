@@ -33,8 +33,10 @@ from faith_pa.config import (
 )
 from faith_pa.pa.chat_tool_loop import (
     ProjectAgentMCPToolExecutor,
+    build_mcp_inventory_answer,
     build_tool_manifest_prompt,
     format_tool_result_for_model,
+    is_mcp_inventory_question,
     parse_chat_tool_call,
 )
 from faith_pa.pa.container_manager import ContainerManager
@@ -251,8 +253,11 @@ class ProjectAgentChatRuntime:
         await self._publish_output(f"User: {user_text}\n")
 
         try:
-            messages = self._build_chat_messages(user_text)
-            reply_text = await self._generate_reply_with_tools(messages)
+            if is_mcp_inventory_question(user_text):
+                reply_text = build_mcp_inventory_answer()
+            else:
+                messages = self._build_chat_messages(user_text)
+                reply_text = await self._generate_reply_with_tools(messages)
             if not reply_text:
                 reply_text = "I did not generate a reply for that message."
             self._append_history("user", user_text)
