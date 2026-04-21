@@ -256,7 +256,7 @@ phases:
   - id: 6
     title: 'MCP Tool Servers'
     status: 'TODO'
-    summary: 'FAITH-owned MCP tools run as dedicated project-scoped containers. External v1 MCP servers are registry-backed npm `stdio` servers launched inside the project-scoped `mcp-runtime` container managed by the PA. Each FAITH-owned MCP server lives as a subpackage under `src/faith_mcp/`. Ownership note: - Mandatory FAITH-owned MCP tools in v1: `FAITH-022`, `FAITH-023`, `FAITH-024`, `FAITH-027`, `FAITH-032`, `FAITH-033` - `FAITH-034` is FAITH-owned, but it is a PA/runtime feature rather than an MCP server - `FAITH-025`, `FAITH-026`, `FAITH-028`, `FAITH-029`, `FAITH-030`, and `FAITH-031` should be treated as external-registry candidates or optional future work unless a public MCP server fails to meet FAITH requirements'
+    summary: 'FAITH-owned MCP tools run as dedicated project-scoped containers. External v1 MCP servers are registry-backed npm `stdio` servers launched inside the project-scoped `mcp-runtime` container managed by the PA. Each FAITH-owned MCP server lives as a subpackage under `src/faith_mcp/`. Ownership note: - Mandatory FAITH-owned MCP tools in v1: `FAITH-022`, `FAITH-023`, `FAITH-024`, `FAITH-027`, `FAITH-031`, `FAITH-032`, `FAITH-033` - `FAITH-034` is FAITH-owned, but it is a PA/runtime feature rather than an MCP server - `FAITH-025`, `FAITH-026`, `FAITH-028`, `FAITH-029`, and `FAITH-030` should be treated as external-registry candidates or optional future work unless a public MCP server fails to meet FAITH requirements'
     task_count: 12
     tasks:
       - id: 'FAITH-022'
@@ -297,13 +297,13 @@ phases:
         summary: 'Prefer an external/public database MCP server in v1. Only implement an in-house database MCP server if external options cannot satisfy FAITH''s permission validation, audit logging, declared-access enforcement, and per-action approval requirements for writes.'
       - id: 'FAITH-026'
         name: 'Browser Automation MCP Server (Playwright)'
-        complexity: 'L'
+        complexity: 'M'
         model: 'Sonnet / GPT-5.4'
         status: 'TODO'
         task_doc: 'tasks/FAITH-026-browser-automation-mcp.md'
-        dependencies: ['FAITH-003', 'FAITH-008']
+        dependencies: ['FAITH-003', 'FAITH-008', 'FAITH-035']
         frs_reference: 'Section 4.5'
-        summary: 'Prefer an external/public Playwright MCP server in v1. Only implement an in-house browser automation server if the public server cannot satisfy FAITH''s credential, privacy, or reporting requirements.'
+        summary: 'Integrate browser automation through the official external Playwright MCP server rather than building a FAITH-owned browser server by default. Run Playwright inside FAITH''s controlled MCP/tool container boundary, keep it headless and isolated, give the PA default access to every enabled MCP server, assign Playwright to QA/security specialists, and support initial website QA workflows such as navigate, inspect, click, fill, screenshot, and structured findings.'
       - id: 'FAITH-027'
         name: 'Code Index MCP Server (tree-sitter)'
         complexity: 'L'
@@ -342,13 +342,13 @@ phases:
         summary: 'Optional future work. Pricing awareness is useful, but a dedicated FAITH-owned Pricing MCP server is not required for the minimal open-source v1 architecture.'
       - id: 'FAITH-031'
         name: 'Web Search MCP Server'
-        complexity: 'S'
-        model: 'Haiku / GPT-5.4-mini'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
         status: 'TODO'
         task_doc: 'tasks/FAITH-031-web-search-mcp.md'
-        dependencies: ['FAITH-003']
+        dependencies: ['FAITH-003', 'FAITH-035']
         frs_reference: 'Section 4.15'
-        summary: 'Prefer an external/public web-search MCP server in v1. Only implement an in-house search MCP server if the external options do not meet privacy or UX requirements.'
+        summary: 'Implement web search through a FAITH-managed SearXNG container as the default free and open-source backend. The Web Search MCP server must call the local SearXNG JSON API, normalise results to title/URL/snippet/source metadata, support docs-biased search and status checks, disable itself for confidential projects before network calls, and avoid direct Google scraping or browser automation.'
       - id: 'FAITH-032'
         name: 'Full-Text Search MCP Server'
         complexity: 'S'
@@ -422,7 +422,7 @@ phases:
     title: 'Web UI'
     status: 'TODO'
     summary: ''
-    task_count: 15
+    task_count: 18
     tasks:
       - id: 'FAITH-036'
         name: 'FastAPI Server Setup & WebSocket Endpoints'
@@ -559,6 +559,33 @@ phases:
         dependencies: ['FAITH-037', 'FAITH-062']
         frs_reference: 'Section 6.4.1, 6.10'
         summary: 'Clean up panel chrome so names live in the title bar and closable panels expose an obvious title-bar close affordance. Remove duplicated side labels, keep alignment tidy, and preserve compatibility with panel lifecycle and dedupe flows.'
+      - id: 'FAITH-070'
+        name: 'Theme-Aware Chat Transcript Bubbles'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-070-theme-aware-chat-transcript-bubbles.md'
+        dependencies: ['FAITH-038', 'FAITH-041', 'FAITH-064', 'FAITH-069']
+        frs_reference: 'Section 6.4.2, 6.6'
+        summary: 'Replace terminal-style `User:`/`PA:` transcript labels in the Project Agent chat view with readable message bubbles. User messages must render as right-aligned themed bubbles with blue-accent text, PA messages as readable assistant bubbles with white/light themed text, streamed PA output must append into the active assistant bubble, and retained conversation context must remain visible or clearly summarised so the UI does not appear to remember hidden text.'
+      - id: 'FAITH-071'
+        name: 'PA System Prompt Editor Panel'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-071-pa-system-prompt-editor-panel.md'
+        dependencies: ['FAITH-036', 'FAITH-037', 'FAITH-038']
+        frs_reference: 'Section 6.3, 6.4.2, 7.3'
+        summary: 'Add a dedicated Web UI panel for viewing and editing the Project Agent system prompt at runtime. The panel must load the active prompt from the server, allow edits, validate and submit updates back to the PA, persist the prompt through the approved configuration path, and make changes affect future PA turns without mutating historical messages.'
+      - id: 'FAITH-072'
+        name: 'PA Transcript Scroll Containment'
+        complexity: 'S'
+        model: 'Haiku / GPT-5.4-mini'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-072-pa-transcript-scroll-containment.md'
+        dependencies: ['FAITH-038', 'FAITH-070']
+        frs_reference: 'Section 6.4.2'
+        summary: 'Keep the Project Agent transcript panel at a fixed layout height as messages accumulate. The transcript body must scroll internally, auto-scroll to the newest PA text while the user is already near the bottom, avoid stealing scroll position when the user is reading earlier content, and provide a visible Jump to latest control that moves to the newest transcript entry.'
   - id: 9
     title: 'Logging & Observability'
     status: 'TODO'

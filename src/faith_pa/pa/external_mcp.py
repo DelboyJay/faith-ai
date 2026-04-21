@@ -23,6 +23,80 @@ from faith_shared.config.models import ExternalMCPToolConfig, PrivacyProfile
 
 DEFAULT_MCP_RUNTIME_NAME = "faith-mcp-runtime"
 DEFAULT_REGISTRY_URL = "http://mcp-registry:8080"
+DEFAULT_PLAYWRIGHT_MCP_PACKAGE = "@playwright/mcp"
+DEFAULT_PLAYWRIGHT_MCP_VERSION = "0.0.36"
+PROJECT_AGENT_IDS = {"pa", "project-agent", "project_agent"}
+
+
+def build_playwright_mcp_registration(
+    *,
+    package_version: str = DEFAULT_PLAYWRIGHT_MCP_VERSION,
+    enabled: bool = True,
+) -> dict[str, Any]:
+    """Description:
+        Build the default external Playwright MCP registration payload.
+
+    Requirements:
+        - Use the official Playwright MCP npm package as the external server.
+        - Keep browser automation headless and isolated by default.
+        - Assign specialist QA/security agents while still allowing the PA to
+          access it through the manager's default PA-access rule.
+
+    :param package_version: Version-pinned `@playwright/mcp` package version.
+    :param enabled: Whether the generated registration is enabled.
+    :returns: External MCP registration payload suitable for `.faith/tools`.
+    """
+
+    return {
+        "schema_version": "1.0",
+        "source_type": "registry",
+        "registry_ref": DEFAULT_PLAYWRIGHT_MCP_PACKAGE,
+        "package_version": package_version,
+        "transport": "stdio",
+        "args": ["--headless", "--isolated"],
+        "env": {},
+        "env_secret_refs": {},
+        "privacy_tier": PrivacyProfile.INTERNAL.value,
+        "agents": ["qa-engineer", "security-expert"],
+        "enabled": enabled,
+    }
+
+
+def ensure_playwright_mcp_registration(
+    faith_dir: Path,
+    *,
+    package_version: str = DEFAULT_PLAYWRIGHT_MCP_VERSION,
+    enabled: bool = True,
+) -> Path:
+    """Description:
+        Ensure the default Playwright MCP registration exists on disk.
+
+    Requirements:
+        - Create `.faith/tools/external-playwright.yaml` only when it is absent.
+        - Preserve user-edited registrations rather than overwriting them.
+        - Use the same tested registration payload as the runtime manager.
+
+    :param faith_dir: Project `.faith` directory.
+    :param package_version: Version-pinned `@playwright/mcp` package version.
+    :param enabled: Whether a newly created registration is enabled.
+    :returns: Path to the Playwright external MCP registration file.
+    """
+
+    tools_dir = Path(faith_dir) / "tools"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    path = tools_dir / "external-playwright.yaml"
+    if not path.exists():
+        path.write_text(
+            yaml.safe_dump(
+                build_playwright_mcp_registration(
+                    package_version=package_version,
+                    enabled=enabled,
+                ),
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+    return path
 
 
 class ProcessLauncher(Protocol):
@@ -283,6 +357,8 @@ class ExternalMCPManager:
         Requirements:
             - Exclude disabled registrations.
             - Exclude servers blocked by the active privacy profile.
+            - Give the Project Agent access to every enabled and privacy-allowed
+              external MCP server by default because the PA is the orchestrator.
             - Return names in stable sorted order.
 
         :param agent_id: Agent identifier.
@@ -290,10 +366,11 @@ class ExternalMCPManager:
         """
 
         allowed: list[str] = []
+        is_project_agent = agent_id in PROJECT_AGENT_IDS
         for name, server in sorted(self._servers.items()):
             if not server.config.enabled:
                 continue
-            if agent_id not in server.config.agents:
+            if not is_project_agent and agent_id not in server.config.agents:
                 continue
             if not self.is_privacy_allowed(name):
                 continue
@@ -314,18 +391,20 @@ class ExternalMCPManager:
 
         return f"{package_name}@{package_version}"
 
-    def _build_command(self, package_spec: str) -> list[str]:
+    def _build_command(self, package_spec: str, args: list[str] | None = None) -> list[str]:
         """Description:
             Build the stdio launch command for one external MCP registration.
 
         Requirements:
             - Use `npx -y` with the version-pinned package reference for v1.
+            - Append explicit server arguments after the package spec.
 
         :param package_spec: Version-pinned package specification.
+        :param args: Optional package command-line arguments.
         :returns: Command list used to launch the stdio subprocess.
         """
 
-        return ["npx", "-y", package_spec]
+        return ["npx", "-y", package_spec, *(args or [])]
 
     async def _default_registry_resolver(
         self,
@@ -426,7 +505,10 @@ class ExternalMCPManager:
         process_env.setdefault("MCP_REGISTRY_URL", self.registry_url)
         package_name = resolved_package.get("package", server.config.registry_ref)
         package_spec = self._build_package_spec(package_name, server.config.package_version)
-        process = await self.launcher(*self._build_command(package_spec), env=process_env)
+        process = await self.launcher(
+            *self._build_command(package_spec, server.config.args),
+            env=process_env,
+        )
         server.process = process
         server.resolved_env = process_env
         server.session_id = session_id
@@ -561,8 +643,12 @@ class ExternalMCPManager:
 
 
 __all__ = [
+    "DEFAULT_PLAYWRIGHT_MCP_PACKAGE",
+    "DEFAULT_PLAYWRIGHT_MCP_VERSION",
     "DEFAULT_MCP_RUNTIME_NAME",
     "DEFAULT_REGISTRY_URL",
     "ExternalMCPManager",
     "ExternalMCPServer",
+    "build_playwright_mcp_registration",
+    "ensure_playwright_mcp_registration",
 ]
