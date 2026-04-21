@@ -467,7 +467,7 @@ class ExternalMCPToolConfig(BaseModel):
 
     Requirements:
         - Preserve registry reference, version, transport, environment, privacy,
-          and agent targeting settings.
+          command arguments, and agent targeting settings.
     """
 
     schema_version: str = "1.0"
@@ -475,6 +475,7 @@ class ExternalMCPToolConfig(BaseModel):
     registry_ref: str
     package_version: str
     transport: str = Field(default="stdio", pattern="^stdio$")
+    args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     env_secret_refs: dict[str, str] = Field(default_factory=dict)
     privacy_tier: PrivacyProfile = PrivacyProfile.INTERNAL

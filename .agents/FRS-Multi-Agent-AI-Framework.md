@@ -1416,20 +1416,52 @@ v1 supports PostgreSQL only. MySQL and SQLite are out of scope for v1 but the na
 
 ### 4.5 Browser Automation Tool
 
-**Library: Playwright (Python)**
+FAITH v1 uses an **external Playwright MCP server** for browser automation by
+default. Browser automation is primarily for AI-driven website QA checks:
+opening pages, inspecting visible content, clicking controls, filling forms,
+capturing screenshots, and reporting failures back to the PA.
 
-- Async-native, fits FastAPI's async architecture without workarounds.
-- Single Python package install; browsers managed via `playwright install` inside the Docker image — no external WebDriver binaries.
-- Native screenshot and video capture for QA reporting.
-- Chrome DevTools Protocol (CDP) access for network interception — useful for security agent analysis.
-- Primary use case: AI-driven QA testing — agents execute test scenarios via the browser, capture screenshots at key steps, and generate a Confluence document with annotated screenshots and pass/fail results.
-- No requirement for human-runnable local test scripts — all execution is agent-driven within the container.
+**Default provider:** the official Playwright MCP package (`@playwright/mcp`),
+registered through the external MCP lifecycle in Section 4.11.
 
-**Browser target:** Chromium only in v1. Multi-browser support (Firefox, WebKit) is out of scope — Chromium covers all practical QA and scraping requirements and simplifies the container image significantly.
+**Runtime model:**
+- Playwright runs inside FAITH's controlled MCP/tool container boundary, not
+  directly on the host.
+- The browser runtime must not receive the Docker socket, privileged mode, host
+  networking, or broad host mounts.
+- Browser state, cookies, downloads, screenshots, traces, and temporary profiles
+  remain inside bounded runtime artefact locations.
+- The default registration launches `@playwright/mcp` with explicit command
+  arguments `--headless` and `--isolated`.
+- Browser automation should not run inside the same disposable Python execution
+  sandbox by default because Chromium has different OS dependencies, state, and
+  security boundaries.
 
-**Headed vs headless:** headless by default — required for container deployment. Headed mode is not supported in v1; agents interact with pages programmatically via Playwright's API, not visually.
+**PA access model:**
+- The PA can access every enabled MCP server by default, including Playwright,
+  unless blocked by privacy, approval, or explicit user configuration.
+- Specialist agents receive narrower assignments. Playwright is assigned by
+  default to QA and security agents.
+- The PA may use Playwright directly for small checks, then delegate larger QA
+  sweeps to a QA agent when the task warrants it.
 
-**Confluence report generation:** the QA agent navigates to the target Confluence space using Playwright browser automation — no separate Confluence REST API integration is required. The agent logs in (credentials stored in `.faith/tools/*.yaml` under a `confluence` connection entry), navigates to the project space, creates a new page, and inserts test results and screenshots using Confluence's editor via browser interaction. This approach requires no Confluence API keys and works with any Confluence version (Cloud or Data Center) accessible via a browser.
+**Initial QA capabilities:**
+- Navigate to a URL.
+- Inspect page text and DOM state.
+- Click buttons and links.
+- Fill forms.
+- Capture screenshots.
+- Return structured findings to the PA.
+- Surface browser/page/console errors when supported by the external MCP server.
+
+**Deferred capabilities:** video recording, browser traces, network capture, and
+Confluence report generation are useful later enhancements, but they are not
+required for the first website QA POC unless the selected external MCP server
+already exposes them safely.
+
+If the external Playwright MCP server later proves insufficient for FAITH's
+privacy, audit, artefact, or QA reporting requirements, FAITH may add a
+dedicated `tool-browser` container as a fallback implementation.
 
 ---
 
@@ -1771,21 +1803,23 @@ For v1, FAITH keeps external MCP onboarding intentionally narrow: it uses a **se
 - FAITH-owned MCP tools remain dedicated containers where FAITH controls the security boundary directly.
 - The PA does not require users to run npm or Node.js on the host.
 
-FAITH stores registrations in project config and resolves them into concrete launch/runtime records. Example:
+FAITH stores registrations as version-pinned project tool files under
+`.faith/tools/external-*.yaml` and resolves them into concrete launch/runtime
+records. Example:
 
 ```yaml
-external_mcp:
-  github:
-    source_type: registry
-    registry_name: io.github.modelcontextprotocol/server-github
-    package_type: npm
-    package_identifier: "@modelcontextprotocol/server-github"
-    transport: stdio
-    env:
-      GITHUB_TOKEN: ${GITHUB_TOKEN}
-    privacy_tier: internal
-    agents: [software-developer, qa-engineer, security-expert]
-
+schema_version: "1.0"
+source_type: registry
+registry_ref: "@modelcontextprotocol/server-github"
+package_version: "1.2.3"
+transport: stdio
+args: []
+env:
+  GITHUB_TOKEN: ${GITHUB_TOKEN}
+env_secret_refs: {}
+privacy_tier: internal
+agents: [software-developer, qa-engineer, security-expert]
+enabled: true
 ```
 
 **Registration flow:**
@@ -1922,11 +1956,11 @@ Uses `ripgrep` (via subprocess) as the search engine — it is already available
 
 ---
 
-### 4.15 Web Search Tool (Built-in)
+### 4.15 Web Search Tool (SearXNG-backed)
 
 #### 4.15.1 Purpose
 
-Allows agents to search the web for documentation, library APIs, error message solutions, security advisories, and dependency information — without launching a full browser session.
+Allows agents to search the web for documentation, library APIs, error message solutions, security advisories, and dependency information without launching a full browser session and without requiring a paid search API for the default path.
 
 **Use cases:**
 - Looking up a library's API when documentation isn't in `workspace/docs/`
@@ -1936,16 +1970,39 @@ Allows agents to search the web for documentation, library APIs, error message s
 
 #### 4.15.2 Implementation
 
-Uses the DuckDuckGo Instant Answer API (no API key required, privacy-respecting) as the default. An optional SerpAPI key can be configured in `.env` for richer results. Returns structured results (title, URL, snippet) — not full page HTML. For full page content, agents use the Browser tool.
+FAITH v1 uses a FAITH-managed **SearXNG** container as the default free and open-source web search backend. SearXNG is a self-hosted metasearch engine: it queries configured upstream search engines and aggregates their results. FAITH must not scrape Google Search directly with `curl`, `requests`, browser-like headers, or browser automation for this tool.
 
-**Privacy:** disabled automatically when the privacy profile is `confidential`. When `internal`, results are fetched but not cached externally.
+The Web Search MCP server calls the local SearXNG HTTP API, using `format=json`, and normalises results into compact structured payloads. The tool returns `title`, `url`, `snippet`, and source/engine metadata where available. It must not return full page HTML. Fetching full page content from a selected result is a separate capability and should use a dedicated page-fetch or browser tool.
+
+**Runtime requirements:**
+- The FAITH runtime defines a managed SearXNG service/container for web search.
+- SearXNG JSON output is enabled for FAITH-internal calls.
+- The SearXNG endpoint is configurable, but defaults to the FAITH-managed internal service.
+- The SearXNG service is internal to the FAITH network by default and is not exposed as a user-facing browser UI unless a future setting explicitly enables it.
+- Optional paid providers such as Brave Search, Tavily, Exa, Serper, or SerpAPI may be added later behind configuration, but they are not the v1 default.
+
+**Privacy:** disabled automatically when the privacy profile is `confidential`. When `internal`, results are fetched through SearXNG but FAITH does not add external caching of result data. The privacy check happens at the start of every command so hot-reloaded profile changes take effect before any outbound request is made.
+
+**Reliability note:** SearXNG depends on upstream public search engines. Those upstream engines may rate-limit, block, or change response formats. FAITH must surface those failures clearly as structured tool errors or warnings rather than pretending web search is guaranteed.
 
 #### 4.15.3 Commands
 
 | Command | Description |
 |---|---|
-| `search(query, max_results?)` | Web search; returns titles, URLs, snippets |
-| `search_docs(query, site?)` | Search restricted to a specific documentation domain |
+| `search(query, max_results?, language?, time_range?)` | Web search through local SearXNG; returns titles, URLs, snippets, and source metadata |
+| `search_docs(query, site?, max_results?)` | Search biased toward documentation; uses `site:<domain>` query shaping when `site` is provided |
+| `status()` | Report SearXNG reachability and whether JSON search output appears enabled |
+
+#### 4.15.4 Error Handling
+
+| Scenario | Behaviour |
+|---|---|
+| SearXNG unavailable | Return a structured error response; do not raise raw exceptions to agents |
+| SearXNG returns non-JSON or HTTP 403 | Return a configuration error mentioning JSON output may not be enabled |
+| Upstream engines rate-limit SearXNG | Return partial results/errors from SearXNG plus a clear warning |
+| Privacy profile is `confidential` | Return an error immediately; do not call SearXNG |
+| Empty query | Return a validation error |
+| Excessive `max_results` | Clamp to the configured maximum |
 
 ---
 
@@ -2204,6 +2261,8 @@ The Web UI adopts a **terminal-inspired, multi-panel workspace** aesthetic — s
 | `WS /ws/status` | WebSocket | Push system status updates to UI |
 | `WS /ws/docker` | WebSocket | Push Docker runtime and image updates to the Docker Runtime panel |
 | `POST /approve/{request_id}` | HTTP | Submit approval decision |
+| `GET /api/pa/system-prompt` | HTTP | Return the active Project Agent system prompt and metadata for the prompt editor panel |
+| `PUT /api/pa/system-prompt` | HTTP | Validate and persist an updated Project Agent system prompt for future PA turns |
 
 #### 6.3.3 Message Relay Flow
 
@@ -2255,6 +2314,8 @@ This is intentionally minimal. Only the Project Agent is shown by default. Speci
 - Panel lifecycle requirements derive the implementation task for close/reopen behaviour, singleton deduping, and runtime-identity deduping.
 - Snap-grid layout requirements derive the implementation task for tidy dashboard-like movement and resizing behaviour.
 - Panel title-bar requirements derive the implementation task for moving names into panel title bars and adding visible close controls.
+- Theme-aware chat transcript requirements derive the implementation task for readable Project Agent chat bubbles, visible retained context, and streamed assistant replies.
+- PA system prompt editor requirements derive the implementation task for a dedicated prompt panel plus runtime prompt update endpoints.
 
 **Supported user interactions:**
 - Drag a panel by its header to a new position — other panels reflow.
@@ -2282,6 +2343,34 @@ One panel per agent. Renders the agent's output as a terminal using xterm.js.
 - Scrollback buffer retained in-browser (configurable depth).
 - Compact protocol messages rendered in a dimmed colour; natural language in full brightness.
 - Small toolbar per panel: `Clear`, `Copy`, `Pause stream`, `Pin to top`.
+
+For the Project Agent's interactive chat view, the transcript must be rendered as a readable conversation rather than raw terminal labels:
+
+- The UI must not display literal `User:` or `PA:` prefixes as the primary visual distinction between speakers.
+- User messages must appear as right-aligned message bubbles. The text colour should use a blue-accent theme token rather than a hard-coded colour.
+- PA messages must appear as readable assistant bubbles or assistant message blocks with white/light themed text.
+- Colours must be defined through CSS theme variables and respect the browser/OS colour-scheme where feasible, so future light/dark theme changes do not require rewriting component logic.
+- Streaming PA responses must append into the active assistant bubble instead of producing disconnected raw fragments.
+- If the PA sends prior conversation context back to the model, the visible transcript must either show that retained context or clearly indicate the retained summary being used. The UI must not appear to remember hidden previous text with no user-visible explanation.
+- Tool progress and thinking state may be shown as compact inline status rows, but they must not obscure or replace the final user/assistant message transcript.
+- The Project Agent panel must not grow taller as messages are added. The transcript body must have a fixed height within the panel layout and scroll internally when content exceeds the available space.
+- When PA text is appended and the user is already at or near the bottom of the transcript, the view must automatically stay pinned to the newest text.
+- If the user has intentionally scrolled upward to read earlier transcript content, new PA text must not forcibly steal their scroll position. In that case, the UI should indicate that newer text is available.
+- A visible `Jump to latest` control must allow the user to scroll immediately to the newest transcript entry or streamed text chunk.
+- The `Jump to latest` control should only be prominent when the transcript is not already at the bottom, so it helps without adding noise.
+
+**PA System Prompt Panel**
+
+A dedicated panel must allow the user to inspect and update the Project Agent system prompt at runtime.
+
+- The panel loads the active PA system prompt from the server, including metadata such as source path, last modified time, and whether the prompt differs from the default.
+- The user can edit the prompt in-browser and submit it back to the server.
+- Prompt updates are validated before being applied. Invalid updates leave the previous prompt active and return a plain-English error.
+- Accepted updates are persisted through the approved configuration path for the PA prompt and take effect on future PA model calls.
+- Updating the prompt must not rewrite or reinterpret historical conversation messages.
+- The panel must expose clear actions for Save, Reload from disk/server, and Reset to default where a safe default prompt exists.
+- Unsaved changes must be visible to the user before navigating away, resetting layout, or closing the panel.
+- Prompt changes should publish a Web UI notification or status event so the user can see that the PA will use the new prompt on the next turn.
 
 **Tool Panel**
 
@@ -2388,7 +2477,7 @@ The UI is styled to feel like a professional terminal environment:
 
 ### 6.7 Configuration Guidance UI
 
-The UI does not provide in-browser config editing (agents are not permitted to write config; users edit config files directly). Instead, the UI surfaces configuration guidance:
+The UI does not provide broad in-browser config editing (agents are not permitted to write config; users edit config files directly). The exception is the PA System Prompt Panel, which provides a narrow, user-initiated editing path for the Project Agent prompt only. For all other config changes, the UI surfaces configuration guidance:
 
 - When an agent recommends a config change, the PA surfaces a **Config Guidance card** in the Approval panel area.
 - The card describes the recommended change in plain language.

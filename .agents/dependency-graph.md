@@ -1,7 +1,7 @@
 # FAITH Epic — Dependency Graph & Implementation Schedule
 
 **Generated from:** `epic.yaml`
-**Date:** 2026-04-20
+**Date:** 2026-04-21
 
 ---
 
@@ -34,12 +34,12 @@
 | FAITH-023 | Filesystem File History | 6 (Tool Servers) | DONE | FAITH-022 | M | Sonnet / GPT-5.4 |
 | FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | DONE | FAITH-003, FAITH-008, FAITH-057 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-025 | PostgreSQL Database MCP Server | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008 | M | Sonnet / GPT-5.4 |
-| FAITH-026 | Browser Automation MCP Server (Playwright) | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008 | L | Sonnet / GPT-5.4 |
+| FAITH-026 | Browser Automation MCP Server (Playwright) | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008, FAITH-035 | M | Sonnet / GPT-5.4 |
 | FAITH-027 | Code Index MCP Server (tree-sitter) | 6 (Tool Servers) | TODO | FAITH-022 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-028 | RAG / ChromaDB MCP Server | 6 (Tool Servers) | TODO | FAITH-002, FAITH-022 | L | Sonnet / GPT-5.4 |
 | FAITH-029 | Git MCP Server | 6 (Tool Servers) | TODO | FAITH-019 | M | Sonnet / GPT-5.4 |
 | FAITH-030 | Pricing MCP Server | 6 (Tool Servers) | TODO | FAITH-026, FAITH-008 | M | Sonnet / GPT-5.4 |
-| FAITH-031 | Web Search MCP Server | 6 (Tool Servers) | TODO | FAITH-003 | S | Haiku / GPT-5.4-mini |
+| FAITH-031 | Web Search MCP Server | 6 (Tool Servers) | TODO | FAITH-003, FAITH-035 | M | Sonnet / GPT-5.4 |
 | FAITH-032 | Full-Text Search MCP Server | 6 (Tool Servers) | TODO | FAITH-022 | S | Haiku / GPT-5.4-mini |
 | FAITH-033 | Key-Value Store MCP Server | 6 (Tool Servers) | TODO | FAITH-002 | S | Haiku / GPT-5.4-mini |
 | FAITH-034 | CAG Implementation | 7 (CAG & External MCP) | DONE | FAITH-010, FAITH-022 | M | Sonnet / GPT-5.4 |
@@ -60,7 +60,7 @@
 | FAITH-049 | First-Run Wizard: Multi-Step UI | 10 (First Run) | IN PROGRESS | FAITH-036, FAITH-003, FAITH-014, FAITH-057 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-050 | Privacy Profile Enforcement & Provider Knowledge Base | 10 (First Run) | TODO | FAITH-049, FAITH-057, FAITH-003 | M | Sonnet / GPT-5.4 |
 | FAITH-051 | Ollama Model Download Integration | 10 (First Run) | DONE | FAITH-049, FAITH-057 | S | Sonnet / GPT-5.4 |
-| FAITH-052 | Cloud Deployment Architecture | 12 (Cloud) | TODO | FAITH-001, FAITH-002, FAITH-003, FAITH-004, FAITH-005, FAITH-006, FAITH-007, FAITH-008, FAITH-009, FAITH-010, FAITH-011, FAITH-012, FAITH-013, FAITH-014, FAITH-015, FAITH-016, FAITH-017, FAITH-018, FAITH-019, FAITH-020, FAITH-021, FAITH-022, FAITH-023, FAITH-024, FAITH-025, FAITH-026, FAITH-027, FAITH-028, FAITH-029, FAITH-030, FAITH-031, FAITH-032, FAITH-033, FAITH-034, FAITH-035, FAITH-036, FAITH-037, FAITH-038, FAITH-039, FAITH-040, FAITH-041, FAITH-042, FAITH-043, FAITH-044, FAITH-045, FAITH-046, FAITH-047, FAITH-048, FAITH-049, FAITH-050, FAITH-051, FAITH-053, FAITH-054, FAITH-055, FAITH-056, FAITH-057, FAITH-058, FAITH-059, FAITH-060, FAITH-061, FAITH-062, FAITH-063, FAITH-064, FAITH-065, FAITH-066, FAITH-067, FAITH-068, FAITH-069 | XL | Opus / GPT-5.4 high reasoning |
+| FAITH-052 | Cloud Deployment Architecture | 12 (Cloud) | TODO | FAITH-001, FAITH-002, FAITH-003, FAITH-004, FAITH-005, FAITH-006, FAITH-007, FAITH-008, FAITH-009, FAITH-010, FAITH-011, FAITH-012, FAITH-013, FAITH-014, FAITH-015, FAITH-016, FAITH-017, FAITH-018, FAITH-019, FAITH-020, FAITH-021, FAITH-022, FAITH-023, FAITH-024, FAITH-025, FAITH-026, FAITH-027, FAITH-028, FAITH-029, FAITH-030, FAITH-031, FAITH-032, FAITH-033, FAITH-034, FAITH-035, FAITH-036, FAITH-037, FAITH-038, FAITH-039, FAITH-040, FAITH-041, FAITH-042, FAITH-043, FAITH-044, FAITH-045, FAITH-046, FAITH-047, FAITH-048, FAITH-049, FAITH-050, FAITH-051, FAITH-053, FAITH-054, FAITH-055, FAITH-056, FAITH-057, FAITH-058, FAITH-059, FAITH-060, FAITH-061, FAITH-062, FAITH-063, FAITH-064, FAITH-065, FAITH-066, FAITH-067, FAITH-068, FAITH-069, FAITH-070, FAITH-071, FAITH-072 | XL | Opus / GPT-5.4 high reasoning |
 | FAITH-053 | First-Run Wizard: Detailed Specification | 10 (First Run) | TODO | FAITH-049, FAITH-057 | M | Sonnet / GPT-5.4 |
 | FAITH-054 | `faith run` Command & Task API | 11 (CLI & Skills) | TODO | FAITH-005, FAITH-036, FAITH-015 | M | Sonnet / GPT-5.4 |
 | FAITH-055 | Skill Definitions & Unattended Execution | 11 (CLI & Skills) | TODO | FAITH-054, FAITH-019 | M | Opus / GPT-5.4 high reasoning |
@@ -78,6 +78,9 @@
 | FAITH-067 | Ollama Management MCP Server | 10 (First Run) | DONE | FAITH-004, FAITH-013, FAITH-019, FAITH-051 | M | Sonnet / GPT-5.4 |
 | FAITH-068 | PA Chat MCP Tool-Calling Loop | 7 (CAG & External MCP) | DONE | FAITH-012, FAITH-016, FAITH-022, FAITH-036, FAITH-038 | M | Sonnet / GPT-5.4 |
 | FAITH-069 | PA MCP Inventory Grounding | 7 (CAG & External MCP) | DONE | FAITH-068 | S | Haiku / GPT-5.4-mini |
+| FAITH-070 | Theme-Aware Chat Transcript Bubbles | 8 (Web UI) | TODO | FAITH-038, FAITH-041, FAITH-064, FAITH-069 | M | Sonnet / GPT-5.4 |
+| FAITH-071 | PA System Prompt Editor Panel | 8 (Web UI) | TODO | FAITH-036, FAITH-037, FAITH-038 | M | Sonnet / GPT-5.4 |
+| FAITH-072 | PA Transcript Scroll Containment | 8 (Web UI) | TODO | FAITH-038, FAITH-070 | S | Haiku / GPT-5.4-mini |
 
 ---
 
@@ -122,12 +125,12 @@ flowchart TD
     FAITH-023["FAITH-023<br/>Filesystem File History<br/>Phase 6 | DONE | M"]
     FAITH-024["FAITH-024<br/>Python Execution MCP Server<br/>Phase 6 | DONE | M"]
     FAITH-025["FAITH-025<br/>PostgreSQL Database MCP Server<br/>Phase 6 | TODO | M"]
-    FAITH-026["FAITH-026<br/>Browser Automation MCP Server (Playwright)<br/>Phase 6 | TODO | L"]
+    FAITH-026["FAITH-026<br/>Browser Automation MCP Server (Playwright)<br/>Phase 6 | TODO | M"]
     FAITH-027["FAITH-027<br/>Code Index MCP Server (tree-sitter)<br/>Phase 6 | TODO | L"]
     FAITH-028["FAITH-028<br/>RAG / ChromaDB MCP Server<br/>Phase 6 | TODO | L"]
     FAITH-029["FAITH-029<br/>Git MCP Server<br/>Phase 6 | TODO | M"]
     FAITH-030["FAITH-030<br/>Pricing MCP Server<br/>Phase 6 | TODO | M"]
-    FAITH-031["FAITH-031<br/>Web Search MCP Server<br/>Phase 6 | TODO | S"]
+    FAITH-031["FAITH-031<br/>Web Search MCP Server<br/>Phase 6 | TODO | M"]
     FAITH-032["FAITH-032<br/>Full-Text Search MCP Server<br/>Phase 6 | TODO | S"]
     FAITH-033["FAITH-033<br/>Key-Value Store MCP Server<br/>Phase 6 | TODO | S"]
 
@@ -154,6 +157,9 @@ flowchart TD
     FAITH-062["FAITH-062<br/>Panel Lifecycle & Deduping<br/>Phase 8 | DONE | S"]
     FAITH-063["FAITH-063<br/>Snap-Grid Panel Layout Refinement<br/>Phase 8 | TODO | M"]
     FAITH-064["FAITH-064<br/>Panel Title-Bar Actions<br/>Phase 8 | DONE | S"]
+    FAITH-070["FAITH-070<br/>Theme-Aware Chat Transcript Bubbles<br/>Phase 8 | TODO | M"]
+    FAITH-071["FAITH-071<br/>PA System Prompt Editor Panel<br/>Phase 8 | TODO | M"]
+    FAITH-072["FAITH-072<br/>PA Transcript Scroll Containment<br/>Phase 8 | TODO | S"]
 
     %% ── Phase 9: Logging ──
     FAITH-045["FAITH-045<br/>Event Log Writer<br/>Phase 9 | TODO | S"]
@@ -222,6 +228,7 @@ flowchart TD
     FAITH-008 --> FAITH-025
     FAITH-003 --> FAITH-026
     FAITH-008 --> FAITH-026
+    FAITH-035 --> FAITH-026
     FAITH-022 --> FAITH-027
     FAITH-002 --> FAITH-028
     FAITH-022 --> FAITH-028
@@ -229,6 +236,7 @@ flowchart TD
     FAITH-026 --> FAITH-030
     FAITH-008 --> FAITH-030
     FAITH-003 --> FAITH-031
+    FAITH-035 --> FAITH-031
     FAITH-022 --> FAITH-032
     FAITH-002 --> FAITH-033
     FAITH-010 --> FAITH-034
@@ -332,6 +340,9 @@ flowchart TD
     FAITH-067 --> FAITH-052
     FAITH-068 --> FAITH-052
     FAITH-069 --> FAITH-052
+    FAITH-070 --> FAITH-052
+    FAITH-071 --> FAITH-052
+    FAITH-072 --> FAITH-052
     FAITH-049 --> FAITH-053
     FAITH-057 --> FAITH-053
     FAITH-005 --> FAITH-054
@@ -371,6 +382,15 @@ flowchart TD
     FAITH-036 --> FAITH-068
     FAITH-038 --> FAITH-068
     FAITH-068 --> FAITH-069
+    FAITH-038 --> FAITH-070
+    FAITH-041 --> FAITH-070
+    FAITH-064 --> FAITH-070
+    FAITH-069 --> FAITH-070
+    FAITH-036 --> FAITH-071
+    FAITH-037 --> FAITH-071
+    FAITH-038 --> FAITH-071
+    FAITH-038 --> FAITH-072
+    FAITH-070 --> FAITH-072
 
     %% ════════════════════════════════════
     %% PHASE COLOUR CODING
@@ -396,7 +416,7 @@ flowchart TD
     class FAITH-019,FAITH-020,FAITH-021 phase5
     class FAITH-022,FAITH-023,FAITH-024,FAITH-025,FAITH-026,FAITH-027,FAITH-028,FAITH-029,FAITH-030,FAITH-031,FAITH-032,FAITH-033 phase6
     class FAITH-034,FAITH-035,FAITH-066,FAITH-068,FAITH-069 phase7
-    class FAITH-036,FAITH-037,FAITH-038,FAITH-039,FAITH-040,FAITH-041,FAITH-042,FAITH-043,FAITH-044,FAITH-058,FAITH-060,FAITH-061,FAITH-062,FAITH-063,FAITH-064 phase8
+    class FAITH-036,FAITH-037,FAITH-038,FAITH-039,FAITH-040,FAITH-041,FAITH-042,FAITH-043,FAITH-044,FAITH-058,FAITH-060,FAITH-061,FAITH-062,FAITH-063,FAITH-064,FAITH-070,FAITH-071,FAITH-072 phase8
     class FAITH-045,FAITH-046,FAITH-047,FAITH-048 phase9
     class FAITH-049,FAITH-050,FAITH-051,FAITH-053,FAITH-065,FAITH-067 phase10
     class FAITH-054,FAITH-055,FAITH-056,FAITH-059 phase11
@@ -412,10 +432,10 @@ The critical path is the longest weighted dependency chain before cloud deployme
 ### Primary Critical Path
 
 ```
-FAITH-001 -> FAITH-002 -> FAITH-007 -> FAITH-010 -> FAITH-014 -> FAITH-057 -> FAITH-015 -> FAITH-016 -> FAITH-068 -> FAITH-069
+FAITH-001 -> FAITH-002 -> FAITH-007 -> FAITH-010 -> FAITH-014 -> FAITH-057 -> FAITH-015 -> FAITH-016 -> FAITH-068 -> FAITH-069 -> FAITH-070 -> FAITH-072
 ```
 
-**Weighted duration estimate:** ~23.5 days using the epic complexity weights.
+**Weighted duration estimate:** ~26 days using the epic complexity weights.
 
 ---
 
@@ -443,7 +463,6 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-007 | Compact Protocol Data Models & Serialisation | 2 (Protocol & Events) | DONE | M |
 | FAITH-008 | Event System Data Models & Publisher | 2 (Protocol & Events) | DONE | M |
 | FAITH-019 | Security YAML Schema & Regex Approval Engine | 5 (Security) | DONE | M |
-| FAITH-031 | Web Search MCP Server | 6 (Tool Servers) | TODO | S |
 | FAITH-033 | Key-Value Store MCP Server | 6 (Tool Servers) | TODO | S |
 
 ### Wave 4
@@ -454,7 +473,6 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-020 | Approval Request/Response Flow | 5 (Security) | DONE | M |
 | FAITH-021 | Audit Log System | 5 (Security) | DONE | M |
 | FAITH-025 | PostgreSQL Database MCP Server | 6 (Tool Servers) | TODO | M |
-| FAITH-026 | Browser Automation MCP Server (Playwright) | 6 (Tool Servers) | TODO | L |
 | FAITH-029 | Git MCP Server | 6 (Tool Servers) | TODO | M |
 | FAITH-036 | FastAPI Server Setup & WebSocket Endpoints | 8 (Web UI) | DONE | M |
 | FAITH-065 | Docker Daemon Not Running Guidance | 10 (First Run) | TODO | S |
@@ -466,7 +484,6 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-012 | MCP Adapter Layer | 3 (Agent Runtime) | DONE | L |
 | FAITH-013 | LLM API Client (Ollama + OpenRouter) | 3 (Agent Runtime) | DONE | M |
 | FAITH-014 | PA Container Setup & Docker SDK Integration | 4 (PA Core) | DONE | M |
-| FAITH-030 | Pricing MCP Server | 6 (Tool Servers) | TODO | M |
 | FAITH-037 | GoldenLayout Panel Framework | 8 (Web UI) | DONE | M |
 | FAITH-045 | Event Log Writer | 9 (Logging) | TODO | S |
 | FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | IN PROGRESS | S |
@@ -481,7 +498,6 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-041 | Input Panel & File Upload | 8 (Web UI) | DONE | S |
 | FAITH-042 | Terminal Dark Theme CSS | 8 (Web UI) | TODO | S |
 | FAITH-044 | Web UI Log Views | 8 (Web UI) | TODO | M |
-| FAITH-047 | Token & Cost Log | 9 (Logging) | TODO | S |
 | FAITH-057 | Disposable Sandbox Lifecycle & Scheduling | 4 (PA Core) | DONE | L |
 | FAITH-058 | Docker Runtime & Image Panel | 8 (Web UI) | DONE | M |
 
@@ -491,10 +507,12 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-015 | PA Session & Task Management | 4 (PA Core) | DONE | L |
 | FAITH-022 | Filesystem MCP Server | 6 (Tool Servers) | DONE | L |
 | FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | DONE | M |
-| FAITH-048 | Log Retention & Rotation | 9 (Logging) | TODO | S |
+| FAITH-026 | Browser Automation MCP Server (Playwright) | 6 (Tool Servers) | TODO | M |
+| FAITH-031 | Web Search MCP Server | 6 (Tool Servers) | TODO | M |
 | FAITH-049 | First-Run Wizard: Multi-Step UI | 10 (First Run) | IN PROGRESS | L |
 | FAITH-060 | Minimal First-Load Layout | 8 (Web UI) | DONE | S |
 | FAITH-061 | Runtime Status Cards | 8 (Web UI) | TODO | M |
+| FAITH-071 | PA System Prompt Editor Panel | 8 (Web UI) | TODO | M |
 
 ### Wave 8
 | Task | Name | Phase | Status | Complexity |
@@ -504,6 +522,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-023 | Filesystem File History | 6 (Tool Servers) | DONE | M |
 | FAITH-027 | Code Index MCP Server (tree-sitter) | 6 (Tool Servers) | TODO | L |
 | FAITH-028 | RAG / ChromaDB MCP Server | 6 (Tool Servers) | TODO | L |
+| FAITH-030 | Pricing MCP Server | 6 (Tool Servers) | TODO | M |
 | FAITH-032 | Full-Text Search MCP Server | 6 (Tool Servers) | TODO | S |
 | FAITH-034 | CAG Implementation | 7 (CAG & External MCP) | DONE | M |
 | FAITH-043 | Project Switcher UI | 8 (Web UI) | TODO | S |
@@ -518,6 +537,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
 | FAITH-017 | Loop Detection | 4 (PA Core) | DONE | M |
+| FAITH-047 | Token & Cost Log | 9 (Logging) | TODO | S |
 | FAITH-055 | Skill Definitions & Unattended Execution | 11 (CLI & Skills) | TODO | M |
 | FAITH-063 | Snap-Grid Panel Layout Refinement | 8 (Web UI) | TODO | M |
 | FAITH-064 | Panel Title-Bar Actions | 8 (Web UI) | DONE | S |
@@ -528,10 +548,21 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 ### Wave 10
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
+| FAITH-048 | Log Retention & Rotation | 9 (Logging) | TODO | S |
 | FAITH-056 | Built-in Skill Scheduler | 11 (CLI & Skills) | TODO | M |
 | FAITH-069 | PA MCP Inventory Grounding | 7 (CAG & External MCP) | DONE | S |
 
 ### Wave 11
+| Task | Name | Phase | Status | Complexity |
+|------|------|-------|--------|------------|
+| FAITH-070 | Theme-Aware Chat Transcript Bubbles | 8 (Web UI) | TODO | M |
+
+### Wave 12
+| Task | Name | Phase | Status | Complexity |
+|------|------|-------|--------|------------|
+| FAITH-072 | PA Transcript Scroll Containment | 8 (Web UI) | TODO | S |
+
+### Wave 13
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
 | FAITH-052 | Cloud Deployment Architecture | 12 (Cloud) | TODO | XL |
@@ -544,22 +575,24 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | ------ | ------- | --------------------------- | ----------------- |
 | **Wave 1** | FAITH-001 | (none) | 1 |
 | **Wave 2** | FAITH-002, FAITH-003 | Wave 1 | 2 |
-| **Wave 3** | FAITH-004, FAITH-005, FAITH-006, FAITH-007, FAITH-008, FAITH-019, FAITH-031, FAITH-033 | Waves 1-2 | 8 |
-| **Wave 4** | FAITH-009, FAITH-010, FAITH-020, FAITH-021, FAITH-025, FAITH-026, FAITH-029, FAITH-036, FAITH-065 | Waves 1-3 | 9 |
-| **Wave 5** | FAITH-011, FAITH-012, FAITH-013, FAITH-014, FAITH-030, FAITH-037, FAITH-045, FAITH-059 | Waves 1-4 | 8 |
-| **Wave 6** | FAITH-035, FAITH-038, FAITH-039, FAITH-040, FAITH-041, FAITH-042, FAITH-044, FAITH-047, FAITH-057, FAITH-058 | Waves 1-5 | 10 |
-| **Wave 7** | FAITH-015, FAITH-022, FAITH-024, FAITH-048, FAITH-049, FAITH-060, FAITH-061 | Waves 1-6 | 7 |
-| **Wave 8** | FAITH-016, FAITH-018, FAITH-023, FAITH-027, FAITH-028, FAITH-032, FAITH-034, FAITH-043, FAITH-046, FAITH-050, FAITH-051, FAITH-053, FAITH-054, FAITH-062 | Waves 1-7 | 14 |
-| **Wave 9** | FAITH-017, FAITH-055, FAITH-063, FAITH-064, FAITH-066, FAITH-067, FAITH-068 | Waves 1-8 | 7 |
-| **Wave 10** | FAITH-056, FAITH-069 | Waves 1-9 | 2 |
-| **Wave 11** | FAITH-052 | Waves 1-10 | 1 |
+| **Wave 3** | FAITH-004, FAITH-005, FAITH-006, FAITH-007, FAITH-008, FAITH-019, FAITH-033 | Waves 1-2 | 7 |
+| **Wave 4** | FAITH-009, FAITH-010, FAITH-020, FAITH-021, FAITH-025, FAITH-029, FAITH-036, FAITH-065 | Waves 1-3 | 8 |
+| **Wave 5** | FAITH-011, FAITH-012, FAITH-013, FAITH-014, FAITH-037, FAITH-045, FAITH-059 | Waves 1-4 | 7 |
+| **Wave 6** | FAITH-035, FAITH-038, FAITH-039, FAITH-040, FAITH-041, FAITH-042, FAITH-044, FAITH-057, FAITH-058 | Waves 1-5 | 9 |
+| **Wave 7** | FAITH-015, FAITH-022, FAITH-024, FAITH-026, FAITH-031, FAITH-049, FAITH-060, FAITH-061, FAITH-071 | Waves 1-6 | 9 |
+| **Wave 8** | FAITH-016, FAITH-018, FAITH-023, FAITH-027, FAITH-028, FAITH-030, FAITH-032, FAITH-034, FAITH-043, FAITH-046, FAITH-050, FAITH-051, FAITH-053, FAITH-054, FAITH-062 | Waves 1-7 | 15 |
+| **Wave 9** | FAITH-017, FAITH-047, FAITH-055, FAITH-063, FAITH-064, FAITH-066, FAITH-067, FAITH-068 | Waves 1-8 | 8 |
+| **Wave 10** | FAITH-048, FAITH-056, FAITH-069 | Waves 1-9 | 3 |
+| **Wave 11** | FAITH-070 | Waves 1-10 | 1 |
+| **Wave 12** | FAITH-072 | Waves 1-11 | 1 |
+| **Wave 13** | FAITH-052 | Waves 1-12 | 1 |
 
 ---
 
 ## Notes
 
-- **Total tasks:** 69 (FAITH-001 through FAITH-069)
-- **Minimum waves to completion (excl. cloud):** 10
-- **Maximum parallelism:** Wave 8 with 14 concurrent tasks
+- **Total tasks:** 72 (FAITH-001 through FAITH-072)
+- **Minimum waves to completion (excl. cloud):** 12
+- **Maximum parallelism:** Wave 8 with 15 concurrent tasks
 - **Source of truth:** `epic.yaml`
 - This file is generated. Edit the epic YAML, then regenerate.

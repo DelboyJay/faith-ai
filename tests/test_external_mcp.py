@@ -16,7 +16,11 @@ from typing import Any
 import pytest
 import yaml
 
-from faith_pa.pa.external_mcp import ExternalMCPManager
+from faith_pa.pa.external_mcp import (
+    ExternalMCPManager,
+    build_playwright_mcp_registration,
+    ensure_playwright_mcp_registration,
+)
 from faith_pa.pa.secret_resolver import SecretResolver
 from faith_shared.config.models import ExternalMCPToolConfig, PrivacyProfile
 
@@ -367,6 +371,167 @@ def test_get_servers_for_agent_respects_privacy_and_enablement(
     servers = manager.get_servers_for_agent("software-developer")
 
     assert servers == ["github"]
+
+
+def test_project_agent_receives_all_enabled_external_mcp_servers_by_default(
+    tmp_faith_dir: Path,
+    secret_resolver: SecretResolver,
+) -> None:
+    """Description:
+        Verify the Project Agent can see all enabled external MCP servers by default.
+
+    Requirements:
+        - This test is needed because the PA orchestrates tools directly before
+          choosing whether to delegate work to specialist agents.
+        - Verify the PA is not limited by specialist-agent assignment lists.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    :param secret_resolver: Temporary secret resolver fixture.
+    """
+
+    write_external_tool(
+        tmp_faith_dir,
+        "playwright",
+        build_external_payload(
+            registry_ref="@playwright/mcp",
+            package_version="0.0.36",
+            agents=["qa-engineer"],
+        ),
+    )
+    write_external_tool(
+        tmp_faith_dir,
+        "github",
+        build_external_payload(
+            registry_ref="@modelcontextprotocol/server-github",
+            package_version="1.2.3",
+            agents=["software-developer"],
+        ),
+    )
+    manager = ExternalMCPManager(
+        faith_dir=tmp_faith_dir,
+        secret_resolver=secret_resolver,
+        active_privacy_profile=PrivacyProfile.INTERNAL,
+    )
+    manager.load_configs()
+
+    servers = manager.get_servers_for_agent("project-agent")
+
+    assert servers == ["github", "playwright"]
+
+
+def test_playwright_mcp_registration_uses_official_package_and_qa_defaults() -> None:
+    """Description:
+        Verify the built-in Playwright MCP registration template matches the
+        agreed external-container approach.
+
+    Requirements:
+        - This test is needed so FAITH can create a reliable default Playwright
+          MCP registration without hand-authored YAML.
+        - Verify the official package, pinned version, PA-friendly agent list,
+          and isolated/headless arguments are present.
+    """
+
+    registration = build_playwright_mcp_registration(package_version="0.0.36")
+
+    assert registration["registry_ref"] == "@playwright/mcp"
+    assert registration["package_version"] == "0.0.36"
+    assert registration["agents"] == ["qa-engineer", "security-expert"]
+    assert registration["args"] == ["--headless", "--isolated"]
+
+
+def test_ensure_playwright_mcp_registration_creates_default_tool_file(
+    tmp_faith_dir: Path,
+) -> None:
+    """Description:
+        Verify FAITH can materialise the default Playwright external MCP registration.
+
+    Requirements:
+        - This test is needed so setup/wizard code can install the default
+          browser automation registration without duplicating YAML knowledge.
+        - Verify the generated file uses the official package and executable
+          headless/isolated command arguments.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    """
+
+    path = ensure_playwright_mcp_registration(tmp_faith_dir, package_version="0.0.36")
+
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert path == tmp_faith_dir / "tools" / "external-playwright.yaml"
+    assert payload["registry_ref"] == "@playwright/mcp"
+    assert payload["package_version"] == "0.0.36"
+    assert payload["args"] == ["--headless", "--isolated"]
+
+
+def test_ensure_playwright_mcp_registration_preserves_existing_tool_file(
+    tmp_faith_dir: Path,
+) -> None:
+    """Description:
+        Verify default Playwright registration creation does not overwrite user config.
+
+    Requirements:
+        - This test is needed because users may pin a different Playwright MCP
+          version or disable the server.
+        - Verify an existing registration file is left unchanged.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    """
+
+    path = write_external_tool(
+        tmp_faith_dir,
+        "playwright",
+        build_playwright_mcp_registration(package_version="0.0.12", enabled=False),
+    )
+
+    ensured = ensure_playwright_mcp_registration(tmp_faith_dir, package_version="0.0.36")
+
+    payload = yaml.safe_load(ensured.read_text(encoding="utf-8"))
+    assert ensured == path
+    assert payload["package_version"] == "0.0.12"
+    assert payload["enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_playwright_mcp_registration_launches_with_browser_safety_args(
+    tmp_faith_dir: Path,
+    secret_resolver: SecretResolver,
+) -> None:
+    """Description:
+        Verify the default Playwright MCP registration launches with explicit browser safety args.
+
+    Requirements:
+        - This test is needed because environment-only flags would not reliably
+          reach the external `@playwright/mcp` command.
+        - Verify `--headless` and `--isolated` are appended to the `npx`
+          command used to start the MCP subprocess.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    :param secret_resolver: Temporary secret resolver fixture.
+    """
+
+    write_external_tool(
+        tmp_faith_dir,
+        "playwright",
+        build_playwright_mcp_registration(package_version="0.0.36"),
+    )
+    launcher = FakeLauncher()
+    manager = ExternalMCPManager(
+        faith_dir=tmp_faith_dir,
+        secret_resolver=secret_resolver,
+        launcher=launcher,
+    )
+    manager.load_configs()
+
+    started = await manager.start_server("playwright", session_id="sess-playwright")
+
+    assert started is True
+    assert launcher.calls[0]["cmd"] == [
+        "npx",
+        "-y",
+        "@playwright/mcp@0.0.36",
+        "--headless",
+        "--isolated",
+    ]
 
 
 @pytest.mark.asyncio
