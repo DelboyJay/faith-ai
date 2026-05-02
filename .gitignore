@@ -13,6 +13,8 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
+.pytest_cache/
+.ruff_cache/
 node_modules/
 *.egg-info/
 dist/
@@ -35,5 +37,5 @@ Thumbs.db
 # Config backups from migration
 config/*.bak-*
 
-# misc
-.agents
+# Agent/tooling caches
+.agents/__pycache__/

@@ -6,4 +6,4 @@ Requirements:
     - Expose the installed PA version for compatibility checks.
 """
 
-__version__ = "0.6.4"
+__version__ = "0.6.5"
