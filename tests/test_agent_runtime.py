@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from datetime import datetime, timezone
 
 import pytest
 
 from faith_pa.agent import AgentMessage, BaseAgent
 from faith_pa.config.models import AgentConfig, SystemConfig
+from faith_pa.runtime_time_context import RuntimeTimeContextProvider
 from faith_pa.utils.tokens import (
     FALLBACK_CHARS_PER_TOKEN,
     context_threshold,
@@ -66,6 +68,46 @@ def build_system_config(**overrides):
     }
     payload.update(overrides)
     return SystemConfig.model_validate(payload)
+
+
+class SequencedClock:
+    """Description:
+        Provide deterministic UTC datetimes for runtime time-context tests.
+
+    Requirements:
+        - Return configured datetimes in order.
+        - Keep returning the final configured datetime once the sequence is exhausted.
+
+    :param values: Ordered UTC datetimes returned by the callable clock.
+    """
+
+    def __init__(self, *values: datetime) -> None:
+        """Description:
+            Initialise the deterministic clock sequence.
+
+        Requirements:
+            - Preserve the supplied datetime order for later calls.
+
+        :param values: Ordered UTC datetimes returned by the callable clock.
+        """
+
+        self.values = list(values)
+        self.last = values[-1]
+
+    def __call__(self) -> datetime:
+        """Description:
+            Return the next configured UTC datetime.
+
+        Requirements:
+            - Consume values in order.
+            - Reuse the last value once the sequence has been exhausted.
+
+        :returns: Deterministic UTC datetime.
+        """
+
+        if self.values:
+            self.last = self.values.pop(0)
+        return self.last
 
 
 class FakePubSub:
@@ -346,7 +388,7 @@ def test_base_agent_assembles_context_in_expected_order(tmp_path):
     doc.write_text("FRS content", encoding="utf-8")
 
     config = build_agent_config(cag_documents=["docs/frs.md"])
-    system_config = build_system_config()
+    system_config = build_system_config(timezone="Asia/Tokyo")
     agent = BaseAgent(
         agent_id="agent-1",
         config=config,
@@ -354,11 +396,18 @@ def test_base_agent_assembles_context_in_expected_order(tmp_path):
         prompt_text="System prompt",
         project_root=tmp_path,
         context_summary="Summary text",
+        time_context_provider=RuntimeTimeContextProvider(
+            configured_timezone="Asia/Tokyo",
+            now_provider=SequencedClock(datetime(2026, 1, 15, 10, 30, tzinfo=timezone.utc)),
+        ),
     )
     agent.add_message("assistant", "Previous reply")
 
     assembly = agent.assemble_context("Implement the feature")
     assert assembly.system_prompt.index("System prompt") < assembly.system_prompt.index(
+        "[Runtime Time Context]"
+    )
+    assert assembly.system_prompt.index("[Runtime Time Context]") < assembly.system_prompt.index(
         "Agent: Software Developer"
     )
     assert assembly.system_prompt.index("Agent: Software Developer") < assembly.system_prompt.index(
@@ -367,6 +416,9 @@ def test_base_agent_assembles_context_in_expected_order(tmp_path):
     assert assembly.system_prompt.index("Context Summary:") < assembly.system_prompt.index(
         "--- CAG Reference: docs/frs.md ---"
     )
+    assert "Current local date: 2026-01-15" in assembly.system_prompt
+    assert "Current local time: 19:30:00" in assembly.system_prompt
+    assert "User timezone: Asia/Tokyo" in assembly.system_prompt
     assert assembly.recent_messages[0].content == "Previous reply"
     assert assembly.current_task == "Implement the feature"
 

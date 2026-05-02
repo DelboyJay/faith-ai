@@ -169,7 +169,7 @@ Message Bus (Redis)
 
 #### 2.2.5 Web UI
 
-- Built with Python FastAPI (backend) + GoldenLayout + Vue 3 (no-build) + xterm.js (frontend).
+- Built with Python FastAPI (backend) + React + Dockview + Radix UI + xterm.js (frontend).
 - Supports text input, image paste/upload, document upload.
 - Displays agent conversations, approval requests, and system status.
 - Displays Docker runtime state for FAITH-managed containers and images in a dedicated monitoring panel.
@@ -240,7 +240,7 @@ faith/                                 # Repository root
 │       ├── code_index/
 │       ├── fulltext_search/
 │       └── kv_store/
-├── web/                               # Frontend assets (Vue 3)
+├── web/                               # Frontend source and bundled assets (React)
 ├── containers/                        # Dockerfiles only (pa/, web-ui/, mcp-runtime/)
 ├── config/                            # Framework-level templates
 ├── data/
@@ -258,7 +258,7 @@ faith/                                 # Repository root
 - **`faith_pa`** (`src/faith_pa/`) — the core backend framework. Contains the Project Agent, shared agent runtime, config loading/enforcement, event system, approval logic, session/task orchestration, MCP adapter layer, and the stable backend HTTP/WebSocket API implementation consumed by the Web UI and any alternative clients.
 - **`faith_shared`** (`src/faith_shared/`) — shared contracts used across FAITH-owned components: protocol/event models, config schemas, PA API request/response/event contracts, host-worker protocol definitions, common types, compatibility helpers, and shared version/compatibility constants.
 - **`faith_mcp`** (`src/faith_mcp/`) — FAITH-owned MCP servers, each as a subpackage (e.g. `faith_mcp.filesystem`, `faith_mcp.python_exec`, `faith_mcp.code_index`). Each subpackage can be independently versioned and updated.
-- **`faith_web`** (`src/faith_web/`) — FastAPI + WebSocket backend for the Web UI. Frontend assets (Vue 3) live in `web/`. The Web UI consumes the PA's public API and is only one possible client; other frontends may be implemented independently in any language/framework.
+- **`faith_web`** (`src/faith_web/`) — FastAPI + WebSocket backend for the Web UI. Frontend source and bundled assets (React) live in `web/`. The Web UI consumes the PA's public API and is only one possible client; other frontends may be implemented independently in any language/framework.
 
 **Design rule:** FAITH-owned MCP servers are separate subpackages under `src/faith_mcp/`, not embedded into the PA codebase. The PA consumes them as MCP servers. Docker images are built separately from the monorepo's `containers/` Dockerfiles (PA, web-ui, mcp-runtime).
 
@@ -666,6 +666,7 @@ For every LLM API call, the agent assembles the following:
 
 ```
 [System Prompt]       — Full role definition from prompt.md (sent every time)
+[Runtime Time Context] — Current date/time resolved in the user's timezone for this turn
 [Role Reminder]       — 2-3 line reinforcement of role and protocol usage
 [Context Summary]     — Loaded from context.md (rolling summary of past work)
 [CAG Documents]       — Pre-loaded static reference documents (if configured)
@@ -676,6 +677,8 @@ For every LLM API call, the agent assembles the following:
 This structure ensures:
 
 - The agent never forgets its role (system prompt + role reminder on every call).
+- The agent has explicit awareness of the user's current local date, current local time, and timezone when reasoning about deadlines, recency, scheduling, and relative-date requests.
+- The timezone used for this runtime context must come from a resolved user-timezone setting rather than silently assuming the PA container timezone.
 - Historical context is preserved without filling the context window (context.md).
 - Recent conversation flow is available for immediate reasoning.
 
@@ -1080,6 +1083,10 @@ enough by itself; the PA must bridge the browser-chat model turn into the tool
 runtime.
 
 **Behaviour:**
+- MCP tool availability must be driven by a **framework-owned canonical runtime inventory**, not by hard-coded per-tool prompt text.
+- FAITH-owned MCP servers and external MCP servers must register their callable tool actions with that inventory when they are started, enabled, or reconfigured.
+- The MCP framework layer is responsible for propagating the effective enabled-tool manifest to the PA and to all specialist agents that are permitted to use those tools.
+- Adding or enabling a new MCP tool must not require bespoke prompt wiring in each agent or per-tool edits in the browser-chat loop. Tool registration should happen once and the framework should do the rest.
 - The PA includes a compact MCP tool manifest in the Project Agent system context.
 - For non-native models, the manifest describes the exact JSON shape the model must
   emit to request a tool call: `{"type": "tool_call", "tool": "...", "action": "...", "args": {...}}`.
@@ -1090,9 +1097,10 @@ runtime.
   see that the agent is still working.
 - The loop stops when the model returns a normal user-facing answer or when a bounded
   safety iteration limit is reached.
-- In v1, the browser-chat loop must expose the filesystem MCP read/list/stat surface
-  for Project Agent inspection. Additional tools can be added to the same manifest
-  as their execution paths become safe for direct PA chat use.
+- In v1, the browser-chat loop must expose at least the filesystem MCP read/list/stat
+  surface for Project Agent inspection. Additional tools are added by registering
+  them with the framework-owned inventory as their execution paths become safe for
+  direct chat use.
 
 #### 4.1.2 MCP Inventory Grounding
 
@@ -1105,6 +1113,11 @@ canonical runtime inventory, not from general LLM knowledge.
   Configuration Manager or any other unrelated acronym.
 - The PA must expose a deterministic inventory surface for available chat-time MCP
   tools, including `mcp.list_tools`.
+- The canonical inventory must be generated from the framework runtime state for
+  FAITH-owned and external MCP servers, not maintained as a manually duplicated list
+  per tool family.
+- Agents should receive tool awareness from that same canonical inventory subject to
+  their permissions and the active tool/runtime state.
 - When the user asks what MCP servers or tools are available to FAITH, the PA must
   answer directly from the canonical inventory without asking the LLM to improvise.
 - The inventory answer must name the available tool actions, including the
@@ -1130,10 +1143,14 @@ FAITH is container-first for Python execution, but the PA should route directly 
 
 - The default execution target is a **disposable sandbox container** that the PA can create, destroy, and recreate at will.
 - The executing agent has **root access inside that sandbox container** and may install Python packages, install OS packages, and modify the container freely.
+- Routine Python work should execute inside the disposable sandbox by default rather than on the host machine.
+- Sandbox execution does **not** require a per-call user prompt by default because the intended security boundary is the disposable sandbox container plus its approved mounts, network policy, and resource quotas.
+- Even when no per-call prompt is required, sandbox execution remains policy-controlled: filesystem mounts stay restricted, audit logging remains mandatory, and outbound network or package-download behaviour may still be gated by project policy.
 - The PA should not waste time attempting container execution first when the target path, dependency, toolchain, or expected result is clearly host-bound.
 - Examples include host-only paths outside the container mount set, host-installed toolchains, or workflows explicitly configured to run via the host worker.
 - The routing decision is made by the PA before execution begins and should be reflected in approval/audit metadata.
 - Host execution remains subject to host-worker enablement, allowed-path checks, and approval policy.
+- Python execution routed to the host worker must require explicit user approval for each action in v1. The PA should explain why sandbox execution is insufficient before requesting approval.
 - Sandbox containers must not receive the Docker socket, must not run in privileged mode, must not use host networking, and must receive only explicitly approved mounts.
 - Sandbox recovery defaults to **destroy and recreate**. The PA should prefer replacing a broken sandbox with a fresh instance over repairing an untrusted environment in place.
 - When multiple sub-agents are active, the PA may either place them in a shared sandbox or assign isolated sandboxes per sub-agent based on isolation need, expected package/runtime conflicts, risk level, and current resource quotas.
@@ -1869,6 +1886,13 @@ Each external MCP server declares a minimum `privacy_tier`. If the active FAITH 
 
 The PA's MCP adapter layer (Section 4.1) works transparently with external MCP servers — models that don't support MCP natively can still use GitHub, Jira, and Slack via the same translation mechanism.
 
+**Framework discovery rule:** once an external MCP server is registered, installed,
+enabled, and healthy, its available tool actions should flow into the same
+framework-owned canonical inventory used for FAITH-owned tools. The framework then
+decides which agents can see and call those actions based on permissions, privacy
+profile, and runtime health. Adding a server should not require manual per-agent
+prompt edits beyond normal permission/config assignment.
+
 #### 4.11.5 Confluence Note
 
 The browser-based Confluence automation (Section 4.5) remains the primary method for QA report generation — it requires no API tokens and works with any Confluence version. The Atlassian MCP server is an optional complement for structured operations (ticket creation, page listing, status queries) where browser automation would be unnecessarily heavy.
@@ -1956,11 +1980,11 @@ Uses `ripgrep` (via subprocess) as the search engine — it is already available
 
 ---
 
-### 4.15 Web Search Tool (SearXNG-backed)
+### 4.15 Web Search Tool (Tavily-backed)
 
 #### 4.15.1 Purpose
 
-Allows agents to search the web for documentation, library APIs, error message solutions, security advisories, and dependency information without launching a full browser session and without requiring a paid search API for the default path.
+Allows agents to search the web for documentation, library APIs, error message solutions, security advisories, and dependency information without launching a full browser session. FAITH v1 uses Tavily as the hosted search and page-retrieval provider.
 
 **Use cases:**
 - Looking up a library's API when documentation isn't in `workspace/docs/`
@@ -1970,39 +1994,41 @@ Allows agents to search the web for documentation, library APIs, error message s
 
 #### 4.15.2 Implementation
 
-FAITH v1 uses a FAITH-managed **SearXNG** container as the default free and open-source web search backend. SearXNG is a self-hosted metasearch engine: it queries configured upstream search engines and aggregates their results. FAITH must not scrape Google Search directly with `curl`, `requests`, browser-like headers, or browser automation for this tool.
+FAITH v1 uses **Tavily** as the web search and page-retrieval backend. FAITH must not scrape Google Search directly with `curl`, `requests`, browser-like headers, or browser automation for this tool.
 
-The Web Search MCP server calls the local SearXNG HTTP API, using `format=json`, and normalises results into compact structured payloads. The tool returns `title`, `url`, `snippet`, and source/engine metadata where available. It must not return full page HTML. Fetching full page content from a selected result is a separate capability and should use a dedicated page-fetch or browser tool.
+The Web Search MCP server calls Tavily Search for result discovery and Tavily Extract for explicit page retrieval, then normalises responses into compact structured payloads. Search returns `title`, `url`, `snippet`, and relevance/source metadata where available. Retrieval returns bounded page content and metadata for selected URLs only.
 
 **Runtime requirements:**
-- The FAITH runtime defines a managed SearXNG service/container for web search.
-- SearXNG JSON output is enabled for FAITH-internal calls.
-- The SearXNG endpoint is configurable, but defaults to the FAITH-managed internal service.
-- The SearXNG service is internal to the FAITH network by default and is not exposed as a user-facing browser UI unless a future setting explicitly enables it.
-- Optional paid providers such as Brave Search, Tavily, Exa, Serper, or SerpAPI may be added later behind configuration, but they are not the v1 default.
+- The FAITH runtime does not define a SearXNG service/container for the v1 web-search path.
+- The Tavily API key is loaded from FAITH secrets or environment configuration, for example `TAVILY_API_KEY`.
+- The Tavily API key is never committed, logged, or returned to agents.
+- Tavily provider access remains behind the provider-neutral Web Search MCP interface so a future backend can be swapped without changing agent-facing tool calls.
 
-**Privacy:** disabled automatically when the privacy profile is `confidential`. When `internal`, results are fetched through SearXNG but FAITH does not add external caching of result data. The privacy check happens at the start of every command so hot-reloaded profile changes take effect before any outbound request is made.
+**Privacy:** disabled automatically when the privacy profile is `confidential`. When `internal`, results are fetched through Tavily but FAITH does not add external caching of result data. The privacy check happens at the start of every command so hot-reloaded profile changes take effect before any outbound request is made.
 
-**Reliability note:** SearXNG depends on upstream public search engines. Those upstream engines may rate-limit, block, or change response formats. FAITH must surface those failures clearly as structured tool errors or warnings rather than pretending web search is guaranteed.
+**Reliability note:** Tavily is an external hosted provider and may be unavailable, unauthorised, rate-limited, or out of quota. FAITH must surface those failures clearly as structured tool errors or warnings rather than pretending web search is guaranteed.
 
 #### 4.15.3 Commands
 
 | Command | Description |
 |---|---|
-| `search(query, max_results?, language?, time_range?)` | Web search through local SearXNG; returns titles, URLs, snippets, and source metadata |
-| `search_docs(query, site?, max_results?)` | Search biased toward documentation; uses `site:<domain>` query shaping when `site` is provided |
-| `status()` | Report SearXNG reachability and whether JSON search output appears enabled |
+| `search(query, max_results?, search_depth?, topic?, time_range?, include_domains?, exclude_domains?)` | Web search through Tavily Search; returns titles, URLs, snippets, and source metadata |
+| `search_docs(query, site?, max_results?)` | Search biased toward documentation; uses Tavily domain filtering where possible |
+| `retrieve(url or urls, extract_depth?, format?, max_chars?)` | Retrieve bounded page content through Tavily Extract |
+| `status()` | Report Tavily configuration and optional provider reachability |
 
 #### 4.15.4 Error Handling
 
 | Scenario | Behaviour |
 |---|---|
-| SearXNG unavailable | Return a structured error response; do not raise raw exceptions to agents |
-| SearXNG returns non-JSON or HTTP 403 | Return a configuration error mentioning JSON output may not be enabled |
-| Upstream engines rate-limit SearXNG | Return partial results/errors from SearXNG plus a clear warning |
-| Privacy profile is `confidential` | Return an error immediately; do not call SearXNG |
-| Empty query | Return a validation error |
-| Excessive `max_results` | Clamp to the configured maximum |
+| Tavily API key missing | Return a structured configuration error explaining how to configure `TAVILY_API_KEY` |
+| Tavily returns 401/403 | Return a structured authentication error without exposing the API key |
+| Tavily returns 429/quota errors | Return a clear rate-limit/quota error and preserve retry guidance when available |
+| Tavily unavailable or request times out | Return a structured provider-unavailable error; do not raise raw exceptions to agents |
+| Tavily returns malformed JSON | Return a provider-response error with safe diagnostic metadata |
+| Privacy profile is `confidential` | Return an error immediately; do not call Tavily |
+| Empty query or URL | Return a validation error |
+| Excessive `max_results` or `max_chars` | Clamp to the configured maximum |
 
 ---
 
@@ -2225,13 +2251,11 @@ The Web UI adopts a **terminal-inspired, multi-panel workspace** aesthetic — s
 |---|---|---|
 | Backend | FastAPI (Python) | Native async, WebSocket support, Jinja2 templates, zero-config static file serving |
 | Templates | Jinja2 | Server-side HTML rendering for initial page load; no client-side routing needed |
-| Panel Management | GoldenLayout (CDN) | IDE-grade dockable, draggable, resizable, tab-grouped panels; no npm required |
-| Reactivity | Vue 3 ES Module (CDN) | Per-panel reactive state and WebSocket data binding; no build step in no-build mode |
+| Panel Management | Dockview | IDE-grade dockable, draggable, resizable, tab-grouped, floatable panels with layout serialization |
+| Reactivity | React | Component-based state and WebSocket data binding in the bundled UI shell |
 | Terminal Rendering | xterm.js (CDN) | Full terminal emulator per panel — monospace output, ANSI colour codes, scrollback |
 | Styling | Custom CSS | Dark terminal theme; monospace fonts; no UI framework dependency |
 | Real-time Comms | FastAPI WebSockets | One WebSocket endpoint per agent/tool; panels subscribe independently |
-
-**No npm. No Node.js. No build pipeline.** The Docker web-ui container runs only Python.
 
 ---
 
@@ -2263,6 +2287,7 @@ The Web UI adopts a **terminal-inspired, multi-panel workspace** aesthetic — s
 | `POST /approve/{request_id}` | HTTP | Submit approval decision |
 | `GET /api/pa/system-prompt` | HTTP | Return the active Project Agent system prompt and metadata for the prompt editor panel |
 | `PUT /api/pa/system-prompt` | HTTP | Validate and persist an updated Project Agent system prompt for future PA turns |
+| `POST /api/pa/system-prompt/reset` | HTTP | Reset the Project Agent system prompt to the safe built-in default |
 
 #### 6.3.3 Message Relay Flow
 
@@ -2286,9 +2311,9 @@ User types message
 
 ### 6.4 Panel System
 
-#### 6.4.1 GoldenLayout Configuration
+#### 6.4.1 Dockview Workspace Configuration
 
-GoldenLayout manages the panel workspace. On first load, a default layout is rendered. The user can then freely rearrange panels, and the layout is persisted to `localStorage` so it survives page refreshes.
+Dockview manages the panel workspace. On first load, a default layout is rendered. The user can then freely rearrange panels, and the layout is persisted to `localStorage` so it survives page refreshes.
 
 **Default layout on first load (illustrative):**
 
@@ -2308,6 +2333,8 @@ GoldenLayout manages the panel workspace. On first load, a default layout is ren
 
 This is intentionally minimal. Only the Project Agent is shown by default. Specialist agent panels must be created only after the PA has decided those agents are needed and has started them. The default layout must not assume a software-team workflow or pre-create Software Developer, QA, Security, or tool-specific panels before those runtimes exist.
 
+The workspace layout manager should be implemented with **Dockview** so panels can be docked, tab-stacked, reordered, resized, floated, and restored from saved layout state. Desktop-style menus and context menus should be implemented with **Radix UI** primitives rather than being re-created from scratch.
+
 **Implementation task anchors:**
 - Minimal first-load layout requirements derive the implementation task for the default Project Agent/Input/Approvals/Status workspace.
 - Runtime status card requirements derive the implementation task for replacing raw status JSON with readable FAITH-managed container cards.
@@ -2315,9 +2342,25 @@ This is intentionally minimal. Only the Project Agent is shown by default. Speci
 - Snap-grid layout requirements derive the implementation task for tidy dashboard-like movement and resizing behaviour.
 - Panel title-bar requirements derive the implementation task for moving names into panel title bars and adding visible close controls.
 - Theme-aware chat transcript requirements derive the implementation task for readable Project Agent chat bubbles, visible retained context, and streamed assistant replies.
+- Restart-time transcript rehydration requirements derive the implementation task for restoring the latest persisted Project Agent conversation back into the Project Agent panel after Web UI or PA restart.
 - PA system prompt editor requirements derive the implementation task for a dedicated prompt panel plus runtime prompt update endpoints.
+- Runtime time-context requirements derive the implementation task for injecting the current date/time plus explicit user timezone into every agent's system-level prompt context on every turn.
+- User timezone source-resolution requirements derive the implementation task for capturing, persisting, defaulting, and overriding the timezone used by runtime time-context injection.
+- User settings window requirements derive the implementation task for a dedicated Web UI settings surface where user-scoped information and preferences can be viewed and edited after first-run setup.
+- Speech-to-text input requirements derive the implementation task for microphone-driven dictation in the Input panel backed by a local transcription service.
+- Input composer keyboard-shortcut requirements derive the implementation task for Enter-to-send behaviour, Alt+Enter newline insertion, and visible shortcut help text in the Input panel.
+- Frontend build-pipeline requirements derive the implementation task for introducing the bundled React toolchain and compiled browser assets consumed by the Web UI service.
+- Dockview migration requirements derive the implementation task for replacing the legacy layout shell with a React + Dockview workspace shell.
+- Dockview layout constraints requirements derive the implementation task for the default PA/System Status stack, lower chat region, and non-stacked Approvals placement.
+- Minimized-panel tray requirements derive the implementation task for bottom-strip minimize/restore behaviour layered on top of Dockview state.
+- Radix UI menu requirements derive the implementation task for desktop-style menu bar and popup/context menu primitives in the Web UI.
 
 **Supported user interactions:**
+
+- Drag panels to reorder, dock, or tab-stack them using Dockview interactions.
+- Float supported panels when the workspace needs temporary detached views.
+- Minimize supported panels into a bottom restore strip and restore them to their previous layout position.
+- Use menu bar items and context menus where a discoverable desktop-style command surface is better than inline buttons alone.
 - Drag a panel by its header to a new position — other panels reflow.
 - Drag a panel onto another to create a tab group.
 - Resize any panel by dragging its border.
@@ -2329,7 +2372,7 @@ This is intentionally minimal. Only the Project Agent is shown by default. Speci
 - The UI must prevent accidental duplicate singleton panels. At minimum, Input, Approvals, and System Status must not be duplicated by repeated add-panel actions.
 - Agent and tool panels must also avoid unbounded duplication for the same runtime identity. Attempting to add a panel that already exists for the same `agent_id` or `tool_id` should focus or reveal the existing panel rather than create a duplicate.
 - Panel removal must be intentional and reliable. Closing a panel must remove it cleanly from the layout state, and reopening it through the toolbar must recreate exactly one instance.
-- Dragging and resizing should feel structured rather than sloppy. v1 may use GoldenLayout docking alone, but a snap-to-grid style refinement for movement/resizing is preferred where practical so panels settle into tidy dashboard-like arrangements.
+- Dragging and resizing should feel structured rather than sloppy. A snap-to-grid style refinement for movement/resizing is preferred where practical so panels settle into tidy dashboard-like arrangements.
 
 #### 6.4.2 Panel Types
 
@@ -2338,6 +2381,8 @@ This is intentionally minimal. Only the Project Agent is shown by default. Speci
 One panel per agent. Renders the agent's output as a terminal using xterm.js.
 
 - Panel header shows: agent name, current status badge (`idle` / `active` / `blocked` / `waiting`), assigned model name.
+- For runtime-backed agents or services shown in the workspace, visible status badges must be derived from authoritative backend/runtime status rather than only local UI connection state.
+- If the backing container or service stops, the corresponding badge must change to a degraded or disconnected state within 10 seconds of the next runtime refresh cycle.
 - Output is streamed character-by-character from the agent's WebSocket feed.
 - Supports ANSI colour codes — agent output can use colour to distinguish message types (tasks, responses, protocol messages, errors).
 - Scrollback buffer retained in-browser (configurable depth).
@@ -2353,11 +2398,13 @@ For the Project Agent's interactive chat view, the transcript must be rendered a
 - Streaming PA responses must append into the active assistant bubble instead of producing disconnected raw fragments.
 - If the PA sends prior conversation context back to the model, the visible transcript must either show that retained context or clearly indicate the retained summary being used. The UI must not appear to remember hidden previous text with no user-visible explanation.
 - Tool progress and thinking state may be shown as compact inline status rows, but they must not obscure or replace the final user/assistant message transcript.
-- The Project Agent panel must not grow taller as messages are added. The transcript body must have a fixed height within the panel layout and scroll internally when content exceeds the available space.
+- The Project Agent transcript body must scroll internally when content exceeds the available space provided by the current resizable panel layout.
 - When PA text is appended and the user is already at or near the bottom of the transcript, the view must automatically stay pinned to the newest text.
 - If the user has intentionally scrolled upward to read earlier transcript content, new PA text must not forcibly steal their scroll position. In that case, the UI should indicate that newer text is available.
 - A visible `Jump to latest` control must allow the user to scroll immediately to the newest transcript entry or streamed text chunk.
 - The `Jump to latest` control should only be prominent when the transcript is not already at the bottom, so it helps without adding noise.
+- When the Web UI reloads or the PA/Web UI services restart, the Project Agent panel must rehydrate the most recent persisted Project Agent transcript from the latest available session log so the visible conversation matches the retained backend context.
+- The restored transcript must be presented before new live WebSocket output resumes, and it must not require the user to resend messages just to make retained context visible.
 
 **PA System Prompt Panel**
 
@@ -2367,10 +2414,25 @@ A dedicated panel must allow the user to inspect and update the Project Agent sy
 - The user can edit the prompt in-browser and submit it back to the server.
 - Prompt updates are validated before being applied. Invalid updates leave the previous prompt active and return a plain-English error.
 - Accepted updates are persisted through the approved configuration path for the PA prompt and take effect on future PA model calls.
+- On every agent turn, FAITH must inject runtime-managed time context into the effective system prompt or equivalent system-level instruction block: the current local date, current local time, and the user's timezone identifier. These values are regenerated per turn and must not require rewriting persisted prompt files.
+- The injected timezone must be explicit so every agent can reason correctly about relative dates such as `today`, `tomorrow`, and `next week`.
+- FAITH should support a setup-time defaulting path that can propose a timezone from the browser or host environment, but once the user has confirmed or overridden that value, the persisted user-selected timezone becomes the authoritative source for future turns.
 - Updating the prompt must not rewrite or reinterpret historical conversation messages.
 - The panel must expose clear actions for Save, Reload from disk/server, and Reset to default where a safe default prompt exists.
 - Unsaved changes must be visible to the user before navigating away, resetting layout, or closing the panel.
 - Prompt changes should publish a Web UI notification or status event so the user can see that the PA will use the new prompt on the next turn.
+
+**User Settings Panel**
+
+A dedicated settings panel or window must allow the user to inspect and update user-scoped preferences and profile metadata after the initial setup flow.
+
+- The settings UI must preload existing saved values rather than showing an empty form when settings already exist.
+- The settings UI must expose the persisted timezone used for runtime date/time context and allow the user to update it explicitly.
+- The settings UI should be designed to accommodate additional user-scoped fields over time, such as display name, preferred locale, or other user metadata needed by future agent context features.
+- Changes must be validated before they are persisted, and invalid updates must leave the previous values active while returning a plain-English error.
+- Accepted updates must flow through the approved configuration pipeline rather than bypassing config validation and hot-reload behaviour.
+- The settings UI should align with the first-run wizard so values established during setup can be reviewed and changed later without reopening raw config files.
+- Saving settings that affect runtime context, such as timezone, must make those values available to future agent turns without requiring the user to restart FAITH manually.
 
 **Tool Panel**
 
@@ -2378,6 +2440,15 @@ One panel per MCP tool. Shows all commands sent to the tool and the tool's respo
 
 - Output format mirrors a shell session: command echoed, then output below.
 - Commands awaiting approval are shown with a `[PENDING APPROVAL]` indicator.
+
+**Input Panel**
+
+The Input panel is the primary text-entry surface for the Project Agent conversation and related uploads.
+
+- Pressing `Enter` while focused in the main message input must submit the current message as if the user clicked the Send button.
+- Pressing `Alt+Enter` must insert a newline into the current draft rather than sending it.
+- The UI must show compact helper text beneath the text box and above the action buttons describing the available keyboard shortcuts.
+- The helper text should remain visible but visually secondary so it informs without dominating the panel layout.
 - Completed commands show exit status (success / failure / timeout).
 
 **Input Panel**
@@ -2387,6 +2458,10 @@ The primary user interaction area.
 - Text input field (multi-line, expandable).
 - Image paste support: paste from clipboard directly into the input area; image thumbnail shown inline.
 - Document upload: drag-and-drop or file picker; accepted types: PDF, DOCX, TXT, MD, images.
+- The panel should expose a microphone/dictation control so the user can record speech and have it transcribed into the text input before sending.
+- Speech-to-text should prefer a free local/offline path in v1 using a dedicated transcription runtime rather than a paid hosted API by default.
+- The transcription result should be inserted into the editable input box so the user can review or correct the text before pressing Send.
+- The UI must show clear recording / transcribing / failed states and must ask the browser for microphone permission only when the user explicitly starts dictation.
 - Send button + keyboard shortcut (`Ctrl+Enter`).
 - Sent messages are echoed into the PA panel for continuity.
 
@@ -2414,6 +2489,8 @@ Live overview of the framework state.
 - The default visual presentation must be user-friendly rather than raw JSON. Status data should be rendered as readable cards or similarly compact UI elements.
 - FAITH-managed Docker resources should be surfaced as one compact card per container showing at least: container name, role, running state (tick/cross or equivalent), health text when available, and a human-usable URL only when the service exposes one.
 - On first load, the panel should prioritise the bootstrap containers that define whether FAITH is usable: Project Agent, Web UI, Redis, Ollama, and MCP Registry. Agent, tool, runtime, and sandbox container cards appear dynamically as those containers exist.
+- The System Status panel must refresh FAITH-managed runtime/container state at least every 10 seconds, or sooner when a push/event feed provides newer information.
+- Runtime status shown in the System Status panel and runtime-derived badges elsewhere in the UI must be sourced from the same backend truth so the user does not see contradictory states.
 
 **Docker Runtime Panel**
 
@@ -2424,6 +2501,7 @@ Dedicated operational overview for FAITH-managed Docker resources.
 - Shows container role, health, created time, restart count, and owning session/task/sandbox where applicable.
 - Surfaces image inventory relevant to the current project/session so the user can see exactly what versions FAITH is running.
 - Updates in real time via a dedicated backend feed and remains read-only in v1.
+- If a pure push feed is not sufficient on its own, the UI/backend may combine event streaming with a periodic runtime refresh cycle no slower than every 10 seconds to keep container status accurate.
 - The status panel may show a compact subset of this information for quick operational awareness, while the dedicated Docker Runtime Panel remains the detailed operational view.
 
 ---
@@ -2447,7 +2525,7 @@ Agent Container
 This means:
 - Panels update independently — the QA panel streaming does not block the Dev panel.
 - If a panel is closed, its WebSocket closes and the Redis subscription drops cleanly.
-- Reconnection is handled automatically by the Vue 3 component on connection loss.
+- Reconnection is handled automatically by the React component on connection loss.
 
 #### 6.5.2 Streaming Format
 
@@ -2459,7 +2537,7 @@ Messages sent over the WebSocket are newline-delimited JSON:
 {"type": "approval_required", "request_id": "apr-042", "agent": "dev", "action": "run_command", "detail": "pytest tests/auth/"}
 ```
 
-The Vue 3 component per panel dispatches each message to the appropriate handler — terminal output goes to xterm.js `write()`, status updates trigger reactive badge changes, approval events are forwarded to the Approval panel.
+The React component per panel dispatches each message to the appropriate handler — terminal output goes to xterm.js `write()`, status updates trigger badge and state changes, approval events are forwarded to the Approval panel.
 
 ---
 
@@ -2469,7 +2547,7 @@ The UI is styled to feel like a professional terminal environment:
 
 - **Colour scheme:** Dark background (`#0d1117` or similar), with agent output in light grey. Distinct colours per agent (configurable) for easy visual separation in tab groups. ANSI standard colour palette for agent-generated colour codes.
 - **Font:** Monospace throughout — `JetBrains Mono` or `Fira Code` loaded as a web font (self-hosted in the static directory to avoid external CDN dependency).
-- **Panel borders:** Subtle, low-contrast dividers. GoldenLayout's default chrome is replaced with a minimal custom theme.
+- **Panel borders:** Subtle, low-contrast dividers. Dockview chrome is styled to match the FAITH theme.
 - **Status badges:** Small coloured dots (green = active, amber = waiting, red = blocked, grey = idle) — no text labels needed once the user is familiar.
 - **Animations:** Minimal. Cursor blink in xterm panels. Subtle fade-in for new approval cards. No transitions that slow down perceived responsiveness.
 
@@ -2507,7 +2585,7 @@ A project switcher dropdown in the Web UI toolbar lists recently used projects (
 
 ### 6.10 Layout Persistence
 
-- The user's panel layout is serialised by GoldenLayout and saved to `localStorage` under a key namespaced to the framework (e.g. `faith_layout_v1`).
+- The user's panel layout is serialised by Dockview and saved to `localStorage` under a key namespaced to the framework (e.g. `faith_layout_v1`).
 - On page load, the saved layout is restored automatically.
 - If no saved layout exists, the default layout (Section 6.4.1) is rendered.
 - A `Reset Layout` button in the toolbar clears `localStorage` and restores the default.
@@ -2523,18 +2601,18 @@ The web-ui Docker container runs a single FastAPI process:
 web-ui-container
 ├── main.py              (FastAPI app, WebSocket workers, HTTP endpoints)
 ├── templates/
-│   └── index.html       (Jinja2 shell — loads GoldenLayout, Vue 3, xterm.js from CDN or local static)
+│   └── index.html       (Jinja2 shell — loads the bundled React UI shell plus Dockview and xterm.js assets)
 └── static/
     ├── css/
     │   └── theme.css    (terminal dark theme)
     ├── js/
-    │   ├── app.js       (Vue 3 app — panel components, WebSocket logic)
-    │   └── layout.js    (GoldenLayout initialisation and panel registration)
+    │   ├── src/         (React source — workspace shell, panels, menus, hooks)
+    │   └── dist/        (Compiled browser bundle served by FastAPI)
     └── fonts/
         └── JetBrainsMono.woff2
 ```
 
-CDN libraries (`goldenlayout.js`, `vue.esm-browser.js`, `xterm.js`) can be pinned to specific versions and optionally vendored into `static/js/vendor/` for offline/air-gapped deployment. This decision is configurable at setup time.
+Runtime UI libraries such as Dockview, React, Radix UI, and xterm.js should be pinned to specific versions, bundled into versioned static assets, and may be mirrored or vendored for offline or air-gapped deployment where needed.
 
 ---
 
@@ -2873,6 +2951,8 @@ summary: "token expiry tests written, one edge case found in refresh logic"
 agents/software-developer/sessions.index.md
 ```
 Lists sessions and tasks the agent participated in with links to the relevant session log directories.
+
+The latest `pa-user.log` is also the canonical source used to rehydrate the Project Agent transcript back into the Web UI after restart or browser reload. The UI must prefer this persisted conversation over an empty panel whenever retained Project Agent context exists.
 
 ---
 
@@ -3917,7 +3997,7 @@ The following open source projects occupy adjacent space to FAITH. None combines
 
 ## Appendix B: Open Questions
 
-1. **Frontend framework:** ~~React (richer, heavier) vs HTMX (simpler, lighter) for the web UI?~~ **Decided:** GoldenLayout + Vue 3 (no-build, CDN) + xterm.js. No npm, no build step — see Section 6.
+1. **Frontend framework:** ~~React (richer, heavier) vs HTMX (simpler, lighter) for the web UI?~~ **Decided:** React + Dockview + Radix UI + xterm.js. React is the chosen frontend framework, Dockview is the workspace layout manager, and Radix UI provides maintained menu primitives. See Section 6.
 2. **Browser automation library:** ~~Playwright (recommended, modern) vs Selenium for the browser tool?~~ **Decided:** Playwright. See Section 4.5.
 3. **Project name:** ~~Working title TBD.~~ **Decided: FAITH** — Framework AI Team Hive. Verify trademark availability before finalising.
 4. **Max agents per channel:** ~~Should there be a limit to prevent noisy channels?~~ **Decided:** Soft limit of 5 (configurable in `system.yaml`, 0 = disabled). PA warns and suggests splitting channels. No hard block. PA stages agent involvement rather than running all agents simultaneously. See loop detection below.

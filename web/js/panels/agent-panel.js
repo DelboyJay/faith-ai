@@ -10,6 +10,7 @@
 
 (function initialiseFaithAgentPanel(globalScope) {
   const AGENT_WS_PATH_PREFIX = "/ws/agent/";
+  const PROJECT_AGENT_TRANSCRIPT_PATH = "/api/pa/transcript";
   const MAX_RECONNECT_DELAY_MS = 8000;
   const INITIAL_RECONNECT_DELAY_MS = 400;
 
@@ -28,6 +29,24 @@
     const base = new URL(globalScope.location.href);
     base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
     base.pathname = `${AGENT_WS_PATH_PREFIX}${encodeURIComponent(agentId)}`;
+    base.search = "";
+    base.hash = "";
+    return base.toString();
+  }
+
+  /**
+   * Description:
+   *   Build the HTTP URL used to restore the saved Project Agent transcript.
+   *
+   * Requirements:
+   *   - Preserve the current browser origin.
+   *   - Point at the same-origin transcript rehydration API path.
+   *
+   * @returns {string} Absolute transcript API URL.
+   */
+  function buildProjectAgentTranscriptUrl() {
+    const base = new URL(globalScope.location.href);
+    base.pathname = PROJECT_AGENT_TRANSCRIPT_PATH;
     base.search = "";
     base.hash = "";
     return base.toString();
@@ -73,19 +92,41 @@
    * @param {HTMLElement} host: Terminal host element.
    * @returns {object} Terminal adapter with write, writeLine, clear, copy, resize, and dispose methods.
    */
-  function createTerminalAdapter(host) {
+  function createTerminalAdapter(host, onContentChanged, isPinnedToLatest) {
     const pre = document.createElement("pre");
     pre.className = "faith-agent-panel__fallback-terminal";
     host.appendChild(pre);
+
+    /**
+     * Description:
+     *   Notify the panel that transcript content changed.
+     *
+     * Requirements:
+     *   - Keep fake DOM runtime tests able to simulate scroll growth.
+     *   - Avoid relying on browser-only layout reads inside the adapter.
+     */
+    function notifyContentChanged() {
+      const wasNearBottom = typeof isPinnedToLatest === "function" ? isPinnedToLatest() : true;
+      if (typeof host.clientHeight === "number" && typeof host.scrollHeight === "number") {
+        host.scrollHeight = Math.max(host.clientHeight, pre.textContent.length + host.clientHeight);
+      }
+      if (typeof onContentChanged === "function") {
+        onContentChanged(wasNearBottom);
+      }
+    }
+
     return {
       write(text) {
         pre.textContent += text;
+        notifyContentChanged();
       },
       writeLine(text) {
         pre.textContent += `${text}\n`;
+        notifyContentChanged();
       },
       clear() {
         pre.textContent = "";
+        notifyContentChanged();
       },
       async copy() {
         if (globalScope.navigator && globalScope.navigator.clipboard) {
@@ -214,18 +255,83 @@
     thinkingIndicator.hidden = true;
     thinkingIndicator.textContent = `${panelState.displayName || "Project Agent"} is thinking...`;
 
+    const jumpToLatestButton = document.createElement("button");
+    jumpToLatestButton.type = "button";
+    jumpToLatestButton.className = "faith-agent-panel__jump";
+    jumpToLatestButton.textContent = "Jump to latest";
+    jumpToLatestButton.hidden = true;
+
     wrapper.appendChild(topBar);
     wrapper.appendChild(thinkingIndicator);
     wrapper.appendChild(terminalHost);
+    wrapper.appendChild(jumpToLatestButton);
     target.replaceChildren(wrapper);
 
-    const terminal = createTerminalAdapter(terminalHost);
+    const SCROLL_BOTTOM_THRESHOLD_PX = 24;
+    let hasUnreadBelow = false;
+
+    /**
+     * Description:
+     *   Determine whether the transcript is already at or near the bottom.
+     *
+     * Requirements:
+     *   - Tolerate tiny layout differences by using a small threshold.
+     *
+     * @returns {boolean} True when the newest text is already visible.
+     */
+    function isNearBottom() {
+      const distanceFromBottom =
+        terminalHost.scrollHeight - terminalHost.clientHeight - terminalHost.scrollTop;
+      return distanceFromBottom <= SCROLL_BOTTOM_THRESHOLD_PX;
+    }
+
+    /**
+     * Description:
+     *   Scroll the transcript to the newest visible content.
+     *
+     * Requirements:
+     *   - Work for both live browser layout and the lightweight runtime harness.
+     *
+     * @returns {void}
+     */
+    function scrollTranscriptToLatest() {
+      terminalHost.scrollTop = Math.max(0, terminalHost.scrollHeight - terminalHost.clientHeight);
+      hasUnreadBelow = false;
+      jumpToLatestButton.hidden = true;
+    }
+
+    /**
+     * Description:
+     *   React to transcript content growth after one terminal write.
+     *
+     * Requirements:
+     *   - Keep the latest text visible when the user is already near the bottom.
+     *   - Preserve scroll position and expose a jump affordance when the user
+     *     is reading earlier content.
+     *
+     * @returns {void}
+     */
+    function handleTranscriptContentChanged(wasNearBottom) {
+      if (wasNearBottom) {
+        scrollTranscriptToLatest();
+        return;
+      }
+      hasUnreadBelow = true;
+      jumpToLatestButton.hidden = false;
+    }
+
+    const terminal = createTerminalAdapter(
+      terminalHost,
+      handleTranscriptContentChanged,
+      isNearBottom,
+    );
     const queuedMessages = [];
     let isPaused = false;
     let isPinned = false;
     let reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
     let reconnectTimer = null;
     let socket = null;
+    let reconnectScheduledForSocket = null;
     let destroyed = false;
 
     /**
@@ -285,6 +391,56 @@
 
     /**
      * Description:
+     *   Render one saved transcript message before the live WebSocket stream starts.
+     *
+     * Requirements:
+     *   - Preserve the current terminal-style transcript labels for existing UI behaviour.
+     *   - Ignore malformed restore payload entries safely.
+     *
+     * @param {object} message: Saved transcript message entry.
+     */
+    function processSavedTranscriptMessage(message) {
+      if (!message || typeof message !== "object") {
+        return;
+      }
+      const role = message.role === "assistant" ? "PA" : "User";
+      const content = typeof message.content === "string" ? message.content : "";
+      if (!content) {
+        return;
+      }
+      terminal.writeLine(`${role}: ${content}`);
+    }
+
+    /**
+     * Description:
+     *   Restore the latest saved Project Agent transcript before opening the live stream.
+     *
+     * Requirements:
+     *   - Use the same-origin transcript endpoint when `fetch` is available.
+     *   - Degrade silently when the transcript endpoint is unavailable.
+     */
+    async function loadSavedTranscript() {
+      if (typeof globalScope.fetch !== "function") {
+        return;
+      }
+      try {
+        const response = await globalScope.fetch(buildProjectAgentTranscriptUrl());
+        if (!response || response.ok !== true) {
+          return;
+        }
+        const payload = await response.json();
+        if (!payload || !Array.isArray(payload.messages)) {
+          return;
+        }
+        payload.messages.forEach(processSavedTranscriptMessage);
+        scrollTranscriptToLatest();
+      } catch (error) {
+        return;
+      }
+    }
+
+    /**
+     * Description:
      *   Process one raw WebSocket frame.
      *
      * Requirements:
@@ -313,11 +469,38 @@
       if (destroyed || reconnectTimer !== null) {
         return;
       }
-      reconnectTimer = globalScope.setTimeout(function reconnectLater() {
+      let callbackRanSynchronously = false;
+      const timerHandle = globalScope.setTimeout(function reconnectLater() {
+        callbackRanSynchronously = true;
         reconnectTimer = null;
+        reconnectScheduledForSocket = null;
         connect();
       }, reconnectDelay);
+      reconnectTimer = callbackRanSynchronously ? null : timerHandle;
       reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY_MS);
+    }
+
+    /**
+     * Description:
+     *   Handle one socket failure event and schedule a safe reconnect.
+     *
+     * Requirements:
+     *   - Ignore stale socket events once a newer socket has been created.
+     *   - Avoid scheduling duplicate reconnects for the same failed socket.
+     *
+     * @param {WebSocket} failedSocket: Socket instance that failed.
+     * @param {string} visibleStatus: Status label to surface before reconnecting.
+     */
+    function handleSocketFailure(failedSocket, visibleStatus) {
+      if (destroyed || failedSocket !== socket) {
+        return;
+      }
+      setHeaderState(visibleStatus, panelState.model);
+      if (reconnectScheduledForSocket === failedSocket) {
+        return;
+      }
+      reconnectScheduledForSocket = failedSocket;
+      scheduleReconnect();
     }
 
     /**
@@ -333,20 +516,21 @@
         return;
       }
       setHeaderState("connecting", panelState.model);
-      socket = new globalScope.WebSocket(buildAgentWebSocketUrl(panelState.agentId));
-      socket.addEventListener("open", function onOpen() {
+      const nextSocket = new globalScope.WebSocket(buildAgentWebSocketUrl(panelState.agentId));
+      socket = nextSocket;
+      nextSocket.addEventListener("open", function onOpen() {
         reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+        reconnectScheduledForSocket = null;
         setHeaderState("connected", panelState.model);
       });
-      socket.addEventListener("message", function onMessage(event) {
+      nextSocket.addEventListener("message", function onMessage(event) {
         handleFrame(event.data);
       });
-      socket.addEventListener("close", function onClose() {
-        setHeaderState("disconnected", panelState.model);
-        scheduleReconnect();
+      nextSocket.addEventListener("close", function onClose() {
+        handleSocketFailure(nextSocket, "disconnected");
       });
-      socket.addEventListener("error", function onError() {
-        setHeaderState("error", panelState.model);
+      nextSocket.addEventListener("error", function onError() {
+        handleSocketFailure(nextSocket, "error");
       });
     }
 
@@ -372,7 +556,20 @@
       pinButton.textContent = isPinned ? "Unpin" : "Pin";
     });
 
-    connect();
+    terminalHost.addEventListener("scroll", function onTranscriptScroll() {
+      if (isNearBottom()) {
+        hasUnreadBelow = false;
+        jumpToLatestButton.hidden = true;
+        return;
+      }
+      jumpToLatestButton.hidden = !hasUnreadBelow;
+    });
+
+    jumpToLatestButton.addEventListener("click", function onJumpToLatestClick() {
+      scrollTranscriptToLatest();
+    });
+
+    void loadSavedTranscript().finally(connect);
 
     const stopWatchingRemoval = watchPanelRemoval(target, cleanup);
 
@@ -404,7 +601,9 @@
 
   globalScope.faithAgentPanel = {
     AGENT_WS_PATH_PREFIX: AGENT_WS_PATH_PREFIX,
+    PROJECT_AGENT_TRANSCRIPT_PATH: PROJECT_AGENT_TRANSCRIPT_PATH,
     buildAgentWebSocketUrl: buildAgentWebSocketUrl,
+    buildProjectAgentTranscriptUrl: buildProjectAgentTranscriptUrl,
     mountPanel: mountPanel,
     normaliseAgentMessages: normaliseAgentMessages,
   };

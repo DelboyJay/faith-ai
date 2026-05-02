@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "faith-cli"
-version = "0.1.0"
+version = "0.6.4"
 description = "Framework AI Team Hive"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,6 +27,7 @@ dependencies = [
   "redis>=5.0,<6.0",
   "requests>=2.31",
   "ruff>=0.15.8",
+  "tzdata>=2025.2",
   "uvicorn[standard]>=0.29,<1.0",
   "websocket-client>=1.6",
 ]

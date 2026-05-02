@@ -274,3 +274,63 @@ async def test_session_manager_end_session_completes_active_tasks(
     task_meta = json.loads((task.path / "task.meta.json").read_text(encoding="utf-8"))
     assert task_meta["status"] == "complete"
     assert manager.current_session is None
+
+
+@pytest.mark.asyncio
+async def test_session_manager_writes_and_reads_project_agent_transcript(
+    tmp_path: Path, system_config: SystemConfig
+) -> None:
+    """Description:
+    Verify the session manager persists the PA-user transcript and can reload it from disk.
+
+    Requirements:
+        - This test is needed to prove browser chat history survives PA restarts through the session log.
+        - Verify `pa-user.log` is written at session level and reloads the stored user/assistant messages in order.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
+    """
+
+    manager = SessionManager(project_root=tmp_path, system_config=system_config)
+    await manager.start_session(trigger="web-ui")
+
+    manager.append_project_agent_message("user", "Hello from the user.")
+    manager.append_project_agent_message("assistant", "Hello from the assistant.")
+
+    transcript_log = manager.session_path() / "pa-user.log"
+    transcript = manager.load_project_agent_transcript()
+
+    assert transcript_log.exists()
+    assert transcript == [
+        {"role": "user", "content": "Hello from the user."},
+        {"role": "assistant", "content": "Hello from the assistant."},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_session_manager_recovers_latest_project_agent_transcript_after_restart(
+    tmp_path: Path, system_config: SystemConfig
+) -> None:
+    """Description:
+    Verify a fresh session manager can recover the latest persisted PA transcript after restart.
+
+    Requirements:
+        - This test is needed to prove restart-time transcript rehydration does not depend on old in-memory state.
+        - Verify the latest session transcript is loaded from `.faith/sessions/` by a new manager instance.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
+    """
+
+    first_manager = SessionManager(project_root=tmp_path, system_config=system_config)
+    await first_manager.start_session(trigger="web-ui")
+    first_manager.append_project_agent_message("user", "Persist me across restarts.")
+    first_manager.append_project_agent_message("assistant", "Recovered successfully.")
+
+    restarted_manager = SessionManager(project_root=tmp_path, system_config=system_config)
+    transcript = restarted_manager.load_latest_project_agent_transcript()
+
+    assert transcript == [
+        {"role": "user", "content": "Persist me across restarts."},
+        {"role": "assistant", "content": "Recovered successfully."},
+    ]

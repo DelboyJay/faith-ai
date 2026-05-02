@@ -24,6 +24,8 @@ from faith_mcp.python_exec import (
     execute_code,
     load_python_config,
 )
+from faith_pa.pa.container_manager import ContainerManager, InMemoryContainerRuntime
+from faith_pa.pa.sandbox_manager import SandboxManager
 
 
 class DummyPublisher:
@@ -323,3 +325,75 @@ def test_python_server_reload_config_replaces_timeout(tmp_path: Path) -> None:
     server.reload_config(PythonToolConfig(timeout_seconds=15))
     assert server.config.timeout_seconds == 15
     assert server.executor.config.timeout_seconds == 15
+
+
+@pytest.mark.asyncio
+async def test_python_server_executes_code_via_managed_sandbox_container(tmp_path: Path) -> None:
+    """
+    Description:
+        Verify the Python server can execute code through the managed sandbox-container path.
+
+    Requirements:
+        - This test is needed to prove the Python MCP server uses the disposable sandbox runtime rather than only local subprocess execution.
+        - Verify a managed sandbox container record is created and the code still returns structured output.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    runtime = InMemoryContainerRuntime()
+    container_manager = ContainerManager(runtime)
+    sandbox_manager = SandboxManager(container_manager, image="python:3.13-slim")
+    server = PythonExecutionServer(
+        config=PythonToolConfig(timeout_seconds=5),
+        allowed_paths=[tmp_path],
+        sandbox_manager=sandbox_manager,
+    )
+
+    response = await server.execute_python(
+        "print('sandboxed')\nresult = {'mode': 'sandbox'}\n",
+        agent_id="dev",
+        working_directory=tmp_path,
+    )
+
+    assert response["success"] is True
+    assert response["stdout"] == "sandboxed\n"
+    assert response["return_value"] == {"mode": "sandbox"}
+    assert runtime.inspect("faith-sandbox-sbx-0001").container_type == "sandbox"
+
+
+@pytest.mark.asyncio
+async def test_python_server_reuses_managed_sandbox_container_between_runs(tmp_path: Path) -> None:
+    """
+    Description:
+        Verify repeated Python execution requests reuse the managed shared sandbox when isolation is unnecessary.
+
+    Requirements:
+        - This test is needed to prove the Python MCP path benefits from the PA sandbox scheduler rather than creating a brand-new runtime every time.
+        - Verify two ordinary runs keep using the same sandbox container identifier.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    runtime = InMemoryContainerRuntime()
+    container_manager = ContainerManager(runtime)
+    sandbox_manager = SandboxManager(container_manager, image="python:3.13-slim")
+    server = PythonExecutionServer(
+        config=PythonToolConfig(timeout_seconds=5),
+        allowed_paths=[tmp_path],
+        sandbox_manager=sandbox_manager,
+    )
+
+    first = await server.execute_python(
+        "result = 'first'\n",
+        agent_id="dev-a",
+        working_directory=tmp_path,
+    )
+    second = await server.execute_python(
+        "result = 'second'\n",
+        agent_id="dev-b",
+        working_directory=tmp_path,
+    )
+
+    assert first["success"] is True
+    assert second["success"] is True
+    assert list(runtime.records) == ["faith-sandbox-sbx-0001"]

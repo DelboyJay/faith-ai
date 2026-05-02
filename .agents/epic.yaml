@@ -1,5 +1,5 @@
 metadata:
-  generated_from: 'FRS-Multi-Agent-AI-Framework.md v0.1'
+  generated_from: 'FRS-Multi-Agent-AI-Framework.md v0.1.1'
   date: '2026-03-23'
   purpose: 'Top-level task breakdown for implementation. Each task maps to one or more detailed task documents in tasks/.'
 status_values: [TODO, IN PROGRESS, DONE]
@@ -150,7 +150,7 @@ phases:
         task_doc: 'tasks/FAITH-012-mcp-adapter-layer.md'
         dependencies: ['FAITH-010']
         frs_reference: 'Section 4.1'
-        summary: 'Implement the transparent MCP translation layer in the PA. Agent requests always use compact protocol format (`type: tool_call`). PA checks model capability flag in `.faith/agents/{id}/config.yaml`. Native MCP: forward directly. Non-MCP: translate to structured prompt instruction, execute, return result in same format. Stateless, mechanical — no reasoning. Works transparently with external MCP servers (Section 4.11).'
+        summary: 'Implement the transparent MCP translation layer in the PA. Agent requests always use compact protocol format (`type: tool_call`). PA checks model capability flag in `.faith/agents/{id}/config.yaml`. Native MCP: forward directly. Non-MCP: translate to structured prompt instruction, execute, return result in same format. Stateless, mechanical — no reasoning. Works transparently with external MCP servers (Section 4.11) and must consume the framework-owned canonical MCP inventory rather than per-tool hard-coded manifests.'
       - id: 'FAITH-013'
         name: 'LLM API Client (Ollama + OpenRouter)'
         complexity: 'M'
@@ -281,11 +281,11 @@ phases:
         name: 'Python Execution MCP Server'
         complexity: 'M'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'DONE'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-024-python-execution-mcp.md'
         dependencies: ['FAITH-003', 'FAITH-008', 'FAITH-057']
         frs_reference: 'Section 4.2'
-        summary: 'Implement a FAITH-owned Python execution MCP server. This is a core trust-boundary tool and must enforce FAITH-specific sandboxing, approvals, package policy, audit logging, and filesystem restrictions. Execution is container-first by default, but the PA should route directly to the optional host-worker path when the task clearly requires host-only context or resources. Sandbox containers may run as root only inside the container and only under strict isolation controls: no Docker socket, no privileged mode, no host networking, and approved mounts only. The implementation must include explicit security hardening and security-focused testing, not just functional behavior.'
+        summary: 'Implement a FAITH-owned Python execution MCP server. This is a core trust-boundary tool and must enforce FAITH-specific sandboxing, approvals, package policy, audit logging, and filesystem restrictions. Routine Python work must run inside PA-managed disposable sandbox containers by default, without a per-call approval prompt, while still respecting mount restrictions, audit logging, and any network/package policy. The PA should route directly to the optional host-worker path only when the task clearly requires host-only context or resources, and host-routed Python execution must require explicit user approval for each action in v1. Sandbox containers may run as root only inside the container and only under strict isolation controls: no Docker socket, no privileged mode, no host networking, and approved mounts only. The implementation must include explicit security hardening and security-focused testing, not just functional behavior.'
       - id: 'FAITH-025'
         name: 'PostgreSQL Database MCP Server'
         complexity: 'M'
@@ -348,7 +348,7 @@ phases:
         task_doc: 'tasks/FAITH-031-web-search-mcp.md'
         dependencies: ['FAITH-003', 'FAITH-035']
         frs_reference: 'Section 4.15'
-        summary: 'Implement web search through a FAITH-managed SearXNG container as the default free and open-source backend. The Web Search MCP server must call the local SearXNG JSON API, normalise results to title/URL/snippet/source metadata, support docs-biased search and status checks, disable itself for confidential projects before network calls, and avoid direct Google scraping or browser automation.'
+        summary: 'Implement web search and page retrieval through the Tavily API. The Web Search MCP server must call Tavily Search for result discovery and Tavily Extract for selected page retrieval, normalise results to title/URL/snippet/score metadata and bounded page content, load the Tavily API key from FAITH secrets or environment configuration without exposing it, support docs-biased search and status checks, disable itself for confidential projects before network calls, and avoid direct Google scraping, SearXNG container use, or browser automation for search results pages.'
       - id: 'FAITH-032'
         name: 'Full-Text Search MCP Server'
         complexity: 'S'
@@ -371,7 +371,7 @@ phases:
     title: 'CAG & External MCP Integration'
     status: 'IN PROGRESS'
     summary: ''
-    task_count: 5
+    task_count: 6
     tasks:
       - id: 'FAITH-034'
         name: 'CAG Implementation'
@@ -390,7 +390,7 @@ phases:
         task_doc: 'tasks/FAITH-035-external-mcp-lifecycle.md'
         dependencies: ['FAITH-014', 'FAITH-003']
         frs_reference: 'Section 4.11'
-        summary: 'Implement external MCP server registration via dedicated config files in `.faith/tools/`. For v1, support standards-aligned MCP onboarding from registry/package references only, resolved through the self-hosted MCP Registry service. Support `stdio` transport only and npm package-backed registry entries only. Environment variable resolution via `secret_ref` from `config/secrets.yaml`. Privacy tier enforcement: skip servers whose tier exceeds the active privacy profile. Start on demand when a session involves agents with access. Stop when session ends. Registrations and updates must be version-pinned and user-confirmed; no silent upgrades. MCP adapter layer (FAITH-012) works transparently with external servers.'
+        summary: 'Implement external MCP server registration via dedicated config files in `.faith/tools/`. For v1, support standards-aligned MCP onboarding from registry/package references only, resolved through the self-hosted MCP Registry service. Support `stdio` transport only and npm package-backed registry entries only. Environment variable resolution via `secret_ref` from `config/secrets.yaml`. Privacy tier enforcement: skip servers whose tier exceeds the active privacy profile. Start on demand when a session involves agents with access. Stop when session ends. Registrations and updates must be version-pinned and user-confirmed; no silent upgrades. Once an external server is enabled and healthy, its tool actions must be registered into the framework-owned canonical MCP inventory automatically.'
       - id: 'FAITH-066'
         name: 'Project `cag/` Auto-Loading & Budget Guidance'
         complexity: 'M'
@@ -406,23 +406,32 @@ phases:
         model: 'Sonnet / GPT-5.4'
         status: 'DONE'
         task_doc: 'tasks/FAITH-068-pa-chat-mcp-tool-loop.md'
-        dependencies: ['FAITH-012', 'FAITH-016', 'FAITH-022', 'FAITH-036', 'FAITH-038']
+        dependencies: ['FAITH-012', 'FAITH-016', 'FAITH-022', 'FAITH-036', 'FAITH-038', 'FAITH-081']
         frs_reference: 'Section 4.1.1'
-        summary: 'Expose enabled MCP tools to the interactive Project Agent chat path. The PA must include a compact tool manifest for non-native local models, parse JSON `tool_call` requests, execute supported tools through the PA MCP execution path, feed structured tool results back to the model, stream visible tool-use progress to the UI, and stop on a final answer or bounded safety limit. Initial v1 scope exposes filesystem read/list/stat for Project Agent inspection.'
+        summary: 'Expose enabled MCP tools to the interactive Project Agent chat path. The PA must include a compact tool manifest for non-native local models, parse JSON `tool_call` requests, execute supported tools through the PA MCP execution path, feed structured tool results back to the model, stream visible tool-use progress to the UI, and stop on a final answer or bounded safety limit. The visible chat-time manifest must be derived from the framework-owned canonical MCP inventory rather than a hard-coded per-tool list.'
       - id: 'FAITH-069'
         name: 'PA MCP Inventory Grounding'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
         status: 'DONE'
         task_doc: 'tasks/FAITH-069-pa-mcp-inventory-grounding.md'
-        dependencies: ['FAITH-068']
+        dependencies: ['FAITH-068', 'FAITH-081']
         frs_reference: 'Section 4.1.2'
-        summary: 'Ground Project Agent answers about available FAITH MCP servers/tools in a canonical PA-owned inventory. The PA must define MCP as Model Context Protocol, prevent Microsoft Configuration Manager hallucinations, expose `mcp.list_tools`, answer inventory questions without calling the LLM, and include the available filesystem chat actions (`filesystem.read`, `filesystem.list`, `filesystem.stat`).'
+        summary: 'Ground Project Agent answers about available FAITH MCP servers/tools in a canonical framework-owned inventory. The PA must define MCP as Model Context Protocol, prevent Microsoft Configuration Manager hallucinations, expose `mcp.list_tools`, answer inventory questions without calling the LLM, and name only the tool actions that are currently enabled and healthy for the requesting agent/runtime context.'
+      - id: 'FAITH-081'
+        name: 'Canonical MCP Registry & Agent Tool Manifest Propagation'
+        complexity: 'L'
+        model: 'Opus / GPT-5.4 high reasoning'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-081-canonical-mcp-registry-agent-manifest-propagation.md'
+        dependencies: ['FAITH-012', 'FAITH-014', 'FAITH-035']
+        frs_reference: 'Section 4.1.1, 4.1.2, 4.11'
+        summary: 'Implement a framework-owned canonical MCP inventory that both FAITH-owned and external MCP servers register into automatically when they become enabled, installed, healthy, or reconfigured. The framework must derive per-agent visible tool manifests from that inventory subject to permissions, privacy profile, and runtime state, propagate those manifests to the PA and specialist agents without manual per-tool prompt edits, and make new MCP tools available immediately after registration/hot-reload rather than requiring bespoke chat-loop wiring.'
   - id: 8
     title: 'Web UI'
     status: 'TODO'
     summary: ''
-    task_count: 18
+    task_count: 21
     tasks:
       - id: 'FAITH-036'
         name: 'FastAPI Server Setup & WebSocket Endpoints'
@@ -433,76 +442,67 @@ phases:
         dependencies: ['FAITH-002', 'FAITH-008']
         frs_reference: 'Section 6.3'
         summary: 'Build the `src/faith_web/` package that consumes the PA API. Serve `index.html` via Jinja2/fast static hosting as appropriate for the chosen implementation. HTTP endpoints exposed by the UI service include `POST /input`, `POST /upload`, `POST /approve/{request_id}` as client-facing actions, backed by PA API calls/WebSockets. WebSocket endpoints include `/ws/agent/{agent_id}`, `/ws/tool/{tool_id}`, `/ws/approvals`, `/ws/status`. The user-facing message relay flow remains: user → UI action → PA API/Redis → agent → Redis/PA API → UI WebSocket → browser.'
-      - id: 'FAITH-037'
-        name: 'GoldenLayout Panel Framework'
-        complexity: 'M'
-        model: 'Opus / GPT-5.4 high reasoning'
-        status: 'DONE'
-        task_doc: 'tasks/FAITH-037-goldenlayout-panels.md'
-        dependencies: ['FAITH-036']
-        frs_reference: 'Section 6.4'
-        summary: 'Initialise GoldenLayout (CDN or vendored) with the default panel layout. Register panel component types: Agent, Tool, Input, Approval, Status. Implement layout persistence to `localStorage`. Toolbar with: tab bar, `+` button for adding panels, `Reset Layout` button. Panel interactions: drag, dock, resize, tab-group, detach to floating window.'
       - id: 'FAITH-038'
-        name: 'Agent Panel Component (xterm.js + Vue 3)'
+        name: 'Agent Panel Component (xterm.js + React)'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'DONE'
+        status: 'TODO'
         task_doc: 'tasks/FAITH-038-agent-panel-component.md'
-        dependencies: ['FAITH-037']
+        dependencies: ['FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.2'
-        summary: 'Vue 3 component wrapping xterm.js for each agent. Panel header: agent name, status badge (idle/active/blocked/waiting), model name. WebSocket connection to `/ws/agent/{agent_id}`. Stream character-by-character output. ANSI colour support. Dimmed colour for compact protocol messages. Per-panel toolbar: Clear, Copy, Pause, Pin. Scrollback buffer (configurable depth). Auto-reconnect on WebSocket drop.'
+        summary: 'React component wrapping xterm.js for each agent. Panel header: agent name, status badge (idle/active/blocked/waiting), model name. WebSocket connection to `/ws/agent/{agent_id}`. Stream character-by-character output. ANSI colour support. Dimmed colour for compact protocol messages. Per-panel toolbar: Clear, Copy, Pause, Pin. Scrollback buffer (configurable depth). Auto-reconnect on WebSocket drop.'
       - id: 'FAITH-039'
         name: 'Approval Panel Component'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
         status: 'TODO'
         task_doc: 'tasks/FAITH-039-approval-panel-component.md'
-        dependencies: ['FAITH-037', 'FAITH-020']
+        dependencies: ['FAITH-020', 'FAITH-074']
         frs_reference: 'Section 5.6, 6.4.2'
-        summary: 'Vue 3 component for the approval queue. WebSocket to `/ws/approvals`. Each request card: agent name, action details, context summary, six action buttons (`Allow once`, `Approve for session`, `Always allow`, `Always ask`, `Deny once`, `Deny permanently`). Visual de-emphasis on persisted options. For persisted decisions, display the regex rule or path scope that will be written before confirming. Approved/denied cards collapse to history section. Subtle alert on new requests.'
+        summary: 'React-based approval queue panel for the Dockview workspace. Subscribe to `/ws/approvals`, render pending approval cards with the six canonical actions, preview learned rules before persisted decisions are submitted, collapse resolved items into history, and keep reconnect/degraded states explicit without depending on legacy layout-specific APIs.'
       - id: 'FAITH-040'
         name: 'Status Bar & System Health Panel'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
         status: 'TODO'
         task_doc: 'tasks/FAITH-040-status-health-panel.md'
-        dependencies: ['FAITH-037']
+        dependencies: ['FAITH-036', 'FAITH-074']
         frs_reference: 'Section 6.4.2'
-        summary: 'Vue 3 component showing: agent status table (name, model, status, session tokens), active channels (name, agents, message count), tool status (online/offline/error per tool), Redis status, session token usage and estimated cost, hot-reload indicator. Each MCP tool row must expose a route or action to open that tool''s dedicated configuration page in the Web UI. The configuration page must support enable/disable, agent assignment, privacy tier, pinned-version update, reinstall, rollback, and uninstall where applicable. WebSocket to `/ws/status`.'
+        summary: 'React-based System Status panel for the Dockview workspace. Subscribe to `/ws/status`, render agent/channel/tool/Redis/token/cost/hot-reload summaries, surface degraded and reconnecting states clearly, and expose per-tool configuration routes where the backend advertises them.'
       - id: 'FAITH-058'
         name: 'Docker Runtime & Image Panel'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'DONE'
+        status: 'TODO'
         task_doc: 'tasks/FAITH-058-docker-runtime-image-panel.md'
-        dependencies: ['FAITH-014', 'FAITH-036', 'FAITH-037']
+        dependencies: ['FAITH-014', 'FAITH-036', 'FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.2, 6.5'
         summary: 'Implement a dedicated Web UI panel that provides at-a-glance visibility into FAITH-managed Docker resources. The panel must list running and recently stopped containers, show image names plus version tags/digests, indicate container role/health/restart count, and identify related session/task/sandbox ownership where applicable. Updates stream in real time via a dedicated backend feed (`/ws/docker`) or equivalent API path defined by the UI service.'
       - id: 'FAITH-041'
         name: 'Input Panel & File Upload'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'DONE'
+        status: 'TODO'
         task_doc: 'tasks/FAITH-041-input-panel-upload.md'
-        dependencies: ['FAITH-037']
+        dependencies: ['FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.2'
-        summary: 'Vue 3 component: multi-line text input, image paste from clipboard with inline thumbnail, drag-and-drop document upload (PDF, DOCX, TXT, MD, images). Send via `POST /input` or `POST /upload`. Keyboard shortcut `Ctrl+Enter` to send. Sent messages echoed into PA panel.'
+        summary: 'React component: multi-line text input, image paste from clipboard with inline thumbnail, drag-and-drop document upload (PDF, DOCX, TXT, MD, images). Send via `POST /input` or `POST /upload`. Keyboard shortcut `Ctrl+Enter` to send. Sent messages echoed into PA panel.'
       - id: 'FAITH-042'
         name: 'Terminal Dark Theme CSS'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
         status: 'TODO'
         task_doc: 'tasks/FAITH-042-terminal-dark-theme.md'
-        dependencies: ['FAITH-037']
+        dependencies: ['FAITH-074', 'FAITH-077']
         frs_reference: 'Section 6.6'
-        summary: 'Custom CSS: dark background (`#0d1117`), monospace font (JetBrains Mono, self-hosted woff2), subtle panel borders, minimal GoldenLayout chrome override, coloured status badges (green/amber/red/grey), per-agent colour coding (configurable). No animations except cursor blink and subtle approval card fade-in.'
+        summary: 'Shared Web UI theme for the React, Dockview, and Radix UI stack: dark background, self-hosted monospace font, Dockview chrome styling, Radix menu styling, coloured status badges, and reusable panel tokens with minimal motion.'
       - id: 'FAITH-043'
         name: 'Project Switcher UI'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
         status: 'TODO'
         task_doc: 'tasks/FAITH-043-project-switcher-ui.md'
-        dependencies: ['FAITH-037', 'FAITH-015']
+        dependencies: ['FAITH-015', 'FAITH-074']
         frs_reference: 'Section 6.9, 2.5'
         summary: 'Toolbar dropdown listing recent projects from `config/recent-projects.yaml` (framework-level, not per-project). Selecting a project triggers the PA''s coordinated teardown flow (save `state.md` per agent, stop containers) via `POST /input`, then mounts new project and reconstructs team from `.faith/agents/*/config.yaml`.'
       - id: 'FAITH-044'
@@ -511,34 +511,25 @@ phases:
         model: 'Opus / GPT-5.4 high reasoning'
         status: 'TODO'
         task_doc: 'tasks/FAITH-044-web-ui-log-views.md'
-        dependencies: ['FAITH-037', 'FAITH-021']
+        dependencies: ['FAITH-021', 'FAITH-074']
         frs_reference: 'Section 8.7'
-        summary: 'Implement read-only log viewer panels: Audit trail (filter by agent/tool/action/date, search by command), Event timeline (chronological, filter by type/agent), Session history (browse sessions/tasks, open channel logs), Token usage (per-agent chart, cumulative cost, session comparisons), Approval history (all decisions with context). All source from `logs/` directory, read via FastAPI endpoints.'
-      - id: 'FAITH-060'
-        name: 'Minimal First-Load Layout'
-        complexity: 'S'
-        model: 'Haiku / GPT-5.4-mini'
-        status: 'DONE'
-        task_doc: 'tasks/FAITH-060-minimal-first-load-layout.md'
-        dependencies: ['FAITH-037', 'FAITH-041']
-        frs_reference: 'Section 6.4.1, 6.10'
-        summary: 'Refine the default GoldenLayout workspace so first load shows only the Project Agent plus the user interaction surface needed to begin work: Project Agent, Input, Approvals, and System Status. Do not pre-create specialist agent panels such as Software Developer or QA Engineer until the PA has created those agents dynamically.'
+        summary: 'Implement read-only log viewer panels inside the Dockview workspace: Audit trail, Event timeline, Session history, Token usage, and Approval history. All data remains read-only, served through FastAPI endpoints, and mounted from `logs/` without browser write paths.'
       - id: 'FAITH-061'
         name: 'Runtime Status Cards'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
         status: 'TODO'
         task_doc: 'tasks/FAITH-061-runtime-status-cards.md'
-        dependencies: ['FAITH-040', 'FAITH-058']
+        dependencies: ['FAITH-040', 'FAITH-058', 'FAITH-074']
         frs_reference: 'Section 6.4.2'
         summary: 'Improve the System Status panel UX so FAITH-managed runtime state is shown as readable cards rather than raw JSON. Render one compact card per relevant bootstrap, agent, tool, sandbox, or runtime container with state, health, role, and human-usable URL where applicable, while keeping the dedicated Docker Runtime panel as the detailed operational view.'
       - id: 'FAITH-062'
         name: 'Panel Lifecycle & Deduping'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'DONE'
+        status: 'TODO'
         task_doc: 'tasks/FAITH-062-panel-lifecycle-deduping.md'
-        dependencies: ['FAITH-037', 'FAITH-060', 'FAITH-061']
+        dependencies: ['FAITH-074', 'FAITH-061']
         frs_reference: 'Section 6.4.1, 6.10'
         summary: 'Make panel lifecycle behaviour reliable. Panels must close and reopen cleanly, singleton panels must not duplicate, and agent/tool panels must dedupe by runtime identity. If the user tries to add an already-open panel, focus the existing panel instead of creating another copy.'
       - id: 'FAITH-063'
@@ -547,16 +538,16 @@ phases:
         model: 'Sonnet / GPT-5.4'
         status: 'TODO'
         task_doc: 'tasks/FAITH-063-snap-grid-panel-layout.md'
-        dependencies: ['FAITH-037', 'FAITH-062']
+        dependencies: ['FAITH-062', 'FAITH-074', 'FAITH-075']
         frs_reference: 'Section 6.4.1, 6.10'
-        summary: 'Refine panel movement and resizing so the workspace feels structured and dashboard-like. Preserve GoldenLayout docking/tab behaviour while adding practical snap-to-grid or grid-alignment rules where feasible, so panels land in tidy arrangements rather than sloppy free-form placements.'
+        summary: 'Refine Dockview panel movement and resizing so the workspace feels structured and dashboard-like. Preserve Dockview docking/tab/floating behaviour while adding practical grid-alignment or layout-guided refinement where feasible so panels land in tidy arrangements.'
       - id: 'FAITH-064'
         name: 'Panel Title-Bar Actions'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'DONE'
+        status: 'TODO'
         task_doc: 'tasks/FAITH-064-panel-titlebar-actions.md'
-        dependencies: ['FAITH-037', 'FAITH-062']
+        dependencies: ['FAITH-074', 'FAITH-062']
         frs_reference: 'Section 6.4.1, 6.10'
         summary: 'Clean up panel chrome so names live in the title bar and closable panels expose an obvious title-bar close affordance. Remove duplicated side labels, keep alignment tidy, and preserve compatibility with panel lifecycle and dedupe flows.'
       - id: 'FAITH-070'
@@ -574,18 +565,72 @@ phases:
         model: 'Sonnet / GPT-5.4'
         status: 'TODO'
         task_doc: 'tasks/FAITH-071-pa-system-prompt-editor-panel.md'
-        dependencies: ['FAITH-036', 'FAITH-037', 'FAITH-038']
+        dependencies: ['FAITH-036', 'FAITH-038', 'FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.3, 6.4.2, 7.3'
         summary: 'Add a dedicated Web UI panel for viewing and editing the Project Agent system prompt at runtime. The panel must load the active prompt from the server, allow edits, validate and submit updates back to the PA, persist the prompt through the approved configuration path, and make changes affect future PA turns without mutating historical messages.'
       - id: 'FAITH-072'
         name: 'PA Transcript Scroll Containment'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-072-pa-transcript-scroll-containment.md'
         dependencies: ['FAITH-038', 'FAITH-070']
         frs_reference: 'Section 6.4.2'
-        summary: 'Keep the Project Agent transcript panel at a fixed layout height as messages accumulate. The transcript body must scroll internally, auto-scroll to the newest PA text while the user is already near the bottom, avoid stealing scroll position when the user is reading earlier content, and provide a visible Jump to latest control that moves to the newest transcript entry.'
+        summary: 'Keep the Project Agent transcript readable as messages accumulate. The transcript body must scroll internally within the current resizable panel space, auto-scroll to the newest PA text while the user is already near the bottom, avoid stealing scroll position when the user is reading earlier content, and provide a visible Jump to latest control that moves to the newest transcript entry.'
+      - id: 'FAITH-073'
+        name: 'Agent Runtime Date Time Prompt Injection'
+        complexity: 'S'
+        model: 'Haiku / GPT-5.4-mini'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-073-pa-runtime-date-time-prompt-injection.md'
+        dependencies: ['FAITH-010', 'FAITH-038', 'FAITH-071']
+        frs_reference: 'Section 3.5.1, 6.3, 7.3'
+        summary: 'Inject runtime-managed time context into every agent''s system-level prompt on every turn. FAITH must resolve the current date and current time in the user''s configured timezone, include the timezone identifier explicitly in the runtime system context for the PA and all specialist agents, refresh those values for each new turn without rewriting persisted prompt files, and keep relative-date reasoning such as `today` and `tomorrow` grounded to that timezone.'
+      - id: 'FAITH-079'
+        name: 'Runtime Badge & Container Status Sync'
+        complexity: 'S'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-079-runtime-badge-container-status-sync.md'
+        dependencies: ['FAITH-038', 'FAITH-040', 'FAITH-058', 'FAITH-061', 'FAITH-074']
+        frs_reference: 'Section 6.4.2, 6.5'
+        summary: 'Keep runtime-derived UI status in sync with actual FAITH container/service health. Poll or refresh the authoritative runtime snapshot at least every 10 seconds (or faster when newer push data is available), update the Project Agent and other relevant badges from that shared truth, and ensure the System Status panel and badge chrome both reflect stopped/degraded services within the same refresh window.'
+      - id: 'FAITH-080'
+        name: 'Speech-to-Text Dictation Input'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-080-speech-to-text-dictation-input.md'
+        dependencies: ['FAITH-041', 'FAITH-074', 'FAITH-078']
+        frs_reference: 'Section 6.4.1, 6.4.2'
+        summary: 'Add microphone-driven dictation to the Input panel. Capture audio from the browser only after explicit user action, transcribe it through a free local transcription path by default using a dedicated STT runtime/service, insert the transcript back into the editable input box before send, and surface clear recording / transcribing / failure states without blocking normal typed input.'
+      - id: 'FAITH-084'
+        name: 'User Settings Window & Profile Preferences'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-084-user-settings-window-profile-preferences.md'
+        dependencies: ['FAITH-003', 'FAITH-004', 'FAITH-049', 'FAITH-074', 'FAITH-078', 'FAITH-083']
+        frs_reference: 'Section 6.4.2, 7.2, 9.3'
+        summary: 'Add a dedicated Web UI settings window/panel for user-scoped information and preferences. The UI must expose editable user metadata such as timezone and future profile fields, preload values established during the first-run wizard, validate and persist updates through the approved config pipeline, and make those saved settings available to runtime agent context and other user-facing features without requiring manual file edits.'
+      - id: 'FAITH-085'
+        name: 'Input Panel Enter-to-Send & Newline Hint'
+        complexity: 'S'
+        model: 'Haiku / GPT-5.4-mini'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-085-input-panel-enter-send-newline-hint.md'
+        dependencies: ['FAITH-041', 'FAITH-074', 'FAITH-078']
+        frs_reference: 'Section 6.4.2'
+        summary: 'Improve the chat composer ergonomics in the Input panel. Pressing `Enter` in the message box should submit the message as if the Send button were clicked, while `Alt+Enter` should insert a newline into the current draft. The panel must also show small helper text beneath the text box and above the action buttons explaining the keyboard shortcuts.'
+      - id: 'FAITH-082'
+        name: 'Project Agent Transcript Rehydration on Restart'
+        complexity: 'S'
+        model: 'Sonnet / GPT-5.4'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-082-pa-transcript-rehydration-on-restart.md'
+        dependencies: ['FAITH-015', 'FAITH-038', 'FAITH-046', 'FAITH-074']
+        frs_reference: 'Section 6.4.2, 8.4'
+        summary: 'Restore the latest persisted Project Agent conversation into the Web UI panel after browser reload, Web UI restart, or PA restart. The PA must persist the session-level transcript to `pa-user.log`, expose an API for the latest transcript, resume the latest session when appropriate, and render the saved conversation before live WebSocket streaming resumes so the visible transcript matches retained backend context.'
   - id: 9
     title: 'Logging & Observability'
     status: 'TODO'
@@ -605,7 +650,7 @@ phases:
         name: 'Session & Task Log Writer'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-046-session-task-log-writer.md'
         dependencies: ['FAITH-015']
         frs_reference: 'Section 8.4'
@@ -632,7 +677,7 @@ phases:
     title: 'First-Run Wizard & Setup'
     status: 'TODO'
     summary: ''
-    task_count: 6
+    task_count: 7
     tasks:
       - id: 'FAITH-049'
         name: 'First-Run Wizard: Multi-Step UI'
@@ -688,6 +733,15 @@ phases:
         dependencies: ['FAITH-005']
         frs_reference: 'Section 9.2.1, 9.2.2'
         summary: 'Improve `faith init` and related CLI startup checks so they distinguish between “Docker not installed” and “Docker installed but daemon/Desktop not running”. Detect the host OS and print the appropriate remediation guidance: Windows and macOS should tell the user to start Docker Desktop, Linux should provide the service-start command expected for systemd-based setups and explain that equivalent distro-specific commands may be needed. The CLI should then tell the user to run `faith init` again rather than attempting automatic elevation or service startup in v1.'
+      - id: 'FAITH-083'
+        name: 'User Timezone Preference Resolution & Persistence'
+        complexity: 'S'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-083-user-timezone-preference-resolution-persistence.md'
+        dependencies: ['FAITH-003', 'FAITH-049', 'FAITH-073']
+        frs_reference: 'Section 3.5.1, 7.2, 9.3'
+        summary: 'Define and implement the authoritative source for user timezone resolution used by runtime time-context injection. Add a persisted user-configurable timezone setting, allow the wizard or UI to propose an initial default from browser or host signals, let the user override that value explicitly, and ensure all agent runtime date/time context uses the persisted timezone rather than container-local defaults.'
   - id: 11
     title: 'CLI & Skill Execution'
     status: 'TODO'
@@ -745,6 +799,57 @@ phases:
         dependencies: ['All previous phases']
         frs_reference: 'Section 12'
         summary: 'Adapt FAITH for cloud deployment: Kubernetes orchestration (replace Docker socket with scoped service account), OAuth2/SSO via control plane, per-project namespace isolation, S3-compatible object storage, server-side layout persistence, per-project or shared Redis. Build the FAITH Management Service: user auth, project CRUD, billing integration, licence enforcement. Ensure PA/agent/tool code is identical between local and cloud — only orchestration layer differs.'
+  - id: 13
+    title: 'Web UI Workspace Migration'
+    status: 'IN PROGRESS'
+    summary: 'Move the Web UI onto a bundled React + Dockview frontend and add Radix UI menu primitives for maintained panel and command surfaces.'
+    task_count: 5
+    tasks:
+      - id: 'FAITH-074'
+        name: 'React + Dockview Workspace Shell Migration'
+        complexity: 'L'
+        model: 'Sonnet / GPT-5.4'
+        status: 'IN PROGRESS'
+        task_doc: 'tasks/FAITH-074-dockview-workspace-shell-migration.md'
+        dependencies: ['FAITH-036', 'FAITH-078']
+        frs_reference: 'Section 2.2.5, 6.4.1, 6.10'
+        summary: 'Replace the legacy workspace shell with a bundled React + Dockview shell. Preserve panel identity, layout persistence, reset-layout behaviour, drag/drop docking, tab stacking, resize support, and compatibility with the existing PA/Input/Approvals/System Status panels while removing the legacy layout engine from the runtime path.'
+      - id: 'FAITH-075'
+        name: 'Dockview Default Layout & Panel Constraints'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-075-dockview-default-layout-panel-constraints.md'
+        dependencies: ['FAITH-074', 'FAITH-070', 'FAITH-072']
+        frs_reference: 'Section 6.4.1, 6.4.2, 6.10'
+        summary: 'Implement the new default Dockview layout: the Project Agent as the main upper view with fixed-height internal scrolling, System Status tab-stacked with the Project Agent, the chat/input region below taking the remaining height, and the Approvals panel placed to the left of the lower chat region without default stacking. Users must still be able to drag, resize, and re-stack panels afterwards within Dockview capabilities.'
+      - id: 'FAITH-076'
+        name: 'Minimized Panel Tray for Dockview'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-076-minimized-panel-tray-for-dockview.md'
+        dependencies: ['FAITH-074']
+        frs_reference: 'Section 6.4.1, 6.10'
+        summary: 'Add FAITH-managed minimize/restore behaviour on top of Dockview. Minimized panels must collapse out of the active layout, appear as small restore buttons in a bottom strip, and restore to their previous size and position when clicked. Persist minimized state alongside normal layout state where appropriate.'
+      - id: 'FAITH-077'
+        name: 'Radix UI Menubar & Context Menu Integration'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-077-radix-vue-menubar-context-menu-integration.md'
+        dependencies: ['FAITH-074']
+        frs_reference: 'Section 2.2.5, 6.4.1, 6.4.2'
+        summary: 'Introduce Radix UI as the maintained menu primitive layer for the Web UI. Provide a desktop-style menubar for high-level workspace actions and context/popup menus for panel and tab actions where discoverable menus are preferable to inline controls. Integrate cleanly with Dockview panel identity and command routing.'
+      - id: 'FAITH-078'
+        name: 'Frontend Build Pipeline & Bundled Asset Integration'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'IN PROGRESS'
+        task_doc: 'tasks/FAITH-078-frontend-build-pipeline-bundled-assets.md'
+        dependencies: ['FAITH-036']
+        frs_reference: 'Section 2.2.5, 6.3, 6.10'
+        summary: 'Introduce the Node-based frontend build pipeline required by React + Dockview. Add package manifests, pinned frontend dependencies, container build integration, and compiled browser bundles served by the existing FastAPI Web UI service. The host machine must not require Node directly; the supported path is containerised or build-stage execution.'
 
 
 

@@ -38,11 +38,24 @@ body {
   gap: 2px;
 }
 
+.faith-toolbar__brand-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .faith-toolbar__eyebrow {
   color: var(--accent-strong);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   font-size: 0.7rem;
+}
+
+.faith-toolbar__version {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .faith-toolbar__title {
@@ -113,6 +126,46 @@ body {
 .faith-layout-container {
   height: calc(100vh - 52px);
   min-height: 520px;
+}
+
+.faith-goldenlayout-fallback,
+.faith-goldenlayout-fallback .lm_row,
+.faith-goldenlayout-fallback .lm_column {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.faith-goldenlayout-fallback .lm_row {
+  flex-direction: row;
+}
+
+.faith-goldenlayout-fallback .lm_column {
+  flex-direction: column;
+}
+
+.faith-goldenlayout-fallback .lm_stack,
+.faith-goldenlayout-fallback .lm_item_shell {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.faith-goldenlayout-fallback .lm_content,
+.faith-goldenlayout-fallback .lm_stack__panel,
+.faith-goldenlayout-fallback .lm_item_container {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.faith-goldenlayout-fallback .lm_stack__panel[hidden] {
+  display: none;
 }
 
 .lm_goldenlayout {
@@ -320,6 +373,14 @@ pre {
   gap: 10px;
 }
 
+.faith-panel--agent-output {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+}
+
 .faith-agent-panel__bar {
   justify-content: space-between;
   flex-wrap: wrap;
@@ -362,7 +423,8 @@ pre {
 }
 
 .faith-agent-panel__terminal {
-  min-height: 260px;
+  flex: 1 1 auto;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 8px;
@@ -399,7 +461,23 @@ pre {
 }
 
 .faith-agent-panel__fallback-terminal {
-  min-height: 240px;
+  min-height: 100%;
+  margin: 0;
+}
+
+.faith-agent-panel__jump {
+  align-self: flex-end;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(88, 166, 255, 0.12);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.faith-agent-panel__jump[hidden] {
+  display: none;
 }
 
 @keyframes faith-thinking-pulse {
@@ -465,7 +543,8 @@ pre {
 
 .faith-agent-panel__actions button,
 .faith-input-panel__controls button,
-.faith-input-panel__attachment button {
+.faith-input-panel__attachment button,
+.faith-pa-prompt-panel__controls button {
   min-height: 32px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -477,8 +556,66 @@ pre {
 
 .faith-agent-panel__actions button:hover,
 .faith-input-panel__controls button:hover,
-.faith-input-panel__attachment button:hover {
+.faith-input-panel__attachment button:hover,
+.faith-pa-prompt-panel__controls button:hover {
   background: #30363d;
+}
+
+.faith-pa-prompt-panel__metadata {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  margin: 0;
+}
+
+.faith-pa-prompt-panel__metadata dt {
+  color: var(--muted);
+}
+
+.faith-pa-prompt-panel__metadata dd {
+  margin: 0;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.faith-pa-prompt-panel__textarea {
+  width: 100%;
+  min-height: 280px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  resize: vertical;
+  background: #0d1117;
+  color: var(--text);
+  font: 0.92rem Consolas, "Cascadia Code", monospace;
+  line-height: 1.5;
+}
+
+.faith-pa-prompt-panel__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.faith-pa-prompt-panel__status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.faith-pa-prompt-panel__status--dirty {
+  color: #d48936;
+}
+
+.faith-pa-prompt-panel__status--error {
+  color: #f85149;
+}
+
+.faith-pa-prompt-panel__status--saved {
+  color: #3fb950;
+}
+
+.faith-pa-prompt-panel--dirty {
+  box-shadow: inset 0 0 0 1px rgba(212, 137, 54, 0.4);
 }
 
 .faith-approval-panel__header {

@@ -15,14 +15,17 @@ import json
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from faith_pa import __version__
 from faith_pa.agent.llm_client import LLMClient
 from faith_pa.config import (
+    ConfigLoadError,
     ConfigSummary,
     DockerRuntimeSnapshot,
     RedisStatus,
@@ -40,6 +43,8 @@ from faith_pa.pa.chat_tool_loop import (
     parse_chat_tool_call,
 )
 from faith_pa.pa.container_manager import ContainerManager
+from faith_pa.pa.session import SessionManager
+from faith_pa.runtime_time_context import RuntimeTimeContextProvider
 from faith_pa.utils import (
     SYSTEM_EVENTS_CHANNEL,
     USER_INPUT_CHANNEL,
@@ -85,13 +90,187 @@ BOOTSTRAP_CONTAINER_METADATA: dict[str, dict[str, str]] = {
 PROJECT_AGENT_ID = "project-agent"
 PROJECT_AGENT_OUTPUT_CHANNEL = f"agent:{PROJECT_AGENT_ID}:output"
 DEFAULT_PROJECT_AGENT_MODEL = os.getenv("FAITH_PROJECT_AGENT_MODEL", "ollama/llama3:8b")
-PROJECT_AGENT_SYSTEM_PROMPT = (
-    "You are the FAITH Project Agent. Answer the user's question clearly, "
-    "concisely, and helpfully. When you do not know something, say so plainly."
+DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT = (
+    "You are the FAITH Project Agent.\n"
+    "* Answer the user's question clearly, concisely, and helpfully. When you do not know something, say so plainly.\n"
+    "* when tools provide a response do not acknowledge this with messages like "
+    '"Thank you for the tool result! According to the output, ...", instead just pass on the output to the user.\n'
+    "* When reporting the date and time to the user use the format `<day of week>, <day> <month name> <full year> <24 hour time>` "
+    "here is an example, `Monday, 27rd April 2026 15:35:00`\n"
 )
+PROJECT_AGENT_SYSTEM_PROMPT = DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_PROJECT_AGENT_SESSION_ROOT_NAME = "pa-runtime"
+MAX_PROJECT_AGENT_PROMPT_CHARS = 20_000
 MAX_PROJECT_AGENT_HISTORY = 12
 MAX_PROJECT_AGENT_TOOL_ITERATIONS = 3
 STREAM_CHUNK_SIZE = 24
+
+
+class ProjectAgentPromptUpdate(BaseModel):
+    """Description:
+        Validate a user-submitted Project Agent system prompt update.
+
+    Requirements:
+        - Accept the edited prompt text from the prompt editor panel.
+    """
+
+    prompt: str
+
+
+def _project_agent_session_root() -> Path:
+    """Description:
+        Resolve the persistent Project Agent session root directory.
+
+    Requirements:
+        - Honour the explicit `FAITH_PA_SESSION_ROOT` override when present.
+        - Otherwise place PA session state under the mounted FAITH data directory when configured.
+        - Fall back to the repository-root behaviour only when no persistent runtime path is configured.
+
+    :returns: Filesystem root used for Project Agent session persistence.
+    """
+
+    explicit_root = os.environ.get("FAITH_PA_SESSION_ROOT", "").strip()
+    if explicit_root:
+        return Path(explicit_root).resolve()
+
+    data_root = os.environ.get("FAITH_DATA_DIR", "").strip()
+    if data_root:
+        return (Path(data_root).resolve() / DEFAULT_PROJECT_AGENT_SESSION_ROOT_NAME).resolve()
+
+    return PROJECT_ROOT
+
+
+class ProjectAgentPromptStore:
+    """Description:
+        Read, validate, persist, and reset the Project Agent system prompt.
+
+    Requirements:
+        - Use `.faith/agents/project-agent/prompt.md` as the approved prompt path.
+        - Fall back to the built-in prompt when no custom prompt file exists.
+        - Reject invalid prompt updates before mutating the active prompt file.
+
+    :param project_root: Repository or FAITH workspace root containing `.faith`.
+    :param default_prompt: Built-in prompt used when no custom prompt exists.
+    """
+
+    def __init__(
+        self,
+        *,
+        project_root: Path | None = None,
+        default_prompt: str = DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT,
+    ) -> None:
+        """Description:
+            Initialise the Project Agent prompt store.
+
+        Requirements:
+            - Resolve the prompt path relative to the supplied or default project root.
+
+        :param project_root: Repository or FAITH workspace root containing `.faith`.
+        :param default_prompt: Built-in prompt used when no custom prompt exists.
+        """
+
+        self.project_root = Path(project_root or PROJECT_ROOT)
+        self.default_prompt = default_prompt
+        self.prompt_path = self.project_root / ".faith" / "agents" / PROJECT_AGENT_ID / "prompt.md"
+
+    def read(self) -> dict[str, Any]:
+        """Description:
+            Return the active Project Agent prompt and editor metadata.
+
+        Requirements:
+            - Report whether the active prompt came from disk or from the default.
+            - Include path, update metadata, and whether the active prompt
+              differs from the built-in default for the browser editor.
+
+        :returns: Active prompt metadata payload.
+        """
+
+        if self.prompt_path.exists():
+            prompt_text = self.prompt_path.read_text(encoding="utf-8")
+            updated_at = datetime.fromtimestamp(
+                self.prompt_path.stat().st_mtime,
+                tz=timezone.utc,
+            ).isoformat()
+            return {
+                "prompt": prompt_text,
+                "source": "custom",
+                "path": self.prompt_path.as_posix(),
+                "default_available": True,
+                "differs_from_default": prompt_text != self.default_prompt,
+                "updated_at": updated_at,
+            }
+        return {
+            "prompt": self.default_prompt,
+            "source": "default",
+            "path": self.prompt_path.as_posix(),
+            "default_available": True,
+            "differs_from_default": False,
+            "updated_at": None,
+        }
+
+    def get_active_prompt(self) -> str:
+        """Description:
+            Return only the active prompt text for model calls.
+
+        Requirements:
+            - Avoid exposing editor metadata to the chat runtime.
+
+        :returns: Active Project Agent system prompt text.
+        """
+
+        return str(self.read()["prompt"])
+
+    def update(self, prompt: str) -> dict[str, Any]:
+        """Description:
+            Validate and persist one Project Agent prompt update.
+
+        Requirements:
+            - Reject invalid prompts before writing to disk.
+            - Create the prompt directory when needed.
+
+        :param prompt: Candidate prompt text.
+        :raises ValueError: If the prompt is invalid.
+        :returns: Updated active prompt metadata.
+        """
+
+        self.validate(prompt)
+        self.prompt_path.parent.mkdir(parents=True, exist_ok=True)
+        self.prompt_path.write_text(prompt, encoding="utf-8")
+        return self.read()
+
+    def reset(self) -> dict[str, Any]:
+        """Description:
+            Remove the custom prompt file and return the default prompt metadata.
+
+        Requirements:
+            - Succeed even when no custom prompt file currently exists.
+
+        :returns: Default active prompt metadata.
+        """
+
+        if self.prompt_path.exists():
+            self.prompt_path.unlink()
+        return self.read()
+
+    def validate(self, prompt: str) -> None:
+        """Description:
+            Validate one candidate Project Agent system prompt.
+
+        Requirements:
+            - Reject blank prompts with a plain-English message.
+            - Reject prompts that exceed the safe editor limit.
+
+        :param prompt: Candidate prompt text.
+        :raises ValueError: If the prompt is invalid.
+        """
+
+        if not prompt.strip():
+            raise ValueError("Prompt cannot be empty.")
+        if len(prompt) > MAX_PROJECT_AGENT_PROMPT_CHARS:
+            raise ValueError(
+                f"Prompt is too long. Maximum length is {MAX_PROJECT_AGENT_PROMPT_CHARS} characters."
+            )
 
 
 class ProjectAgentChatRuntime:
@@ -109,6 +288,9 @@ class ProjectAgentChatRuntime:
     :param llm_client: Shared LLM client used to generate assistant replies.
     :param model_name: Human-readable model name surfaced to the UI.
     :param tool_executor: Optional PA MCP tool executor used for chat-time tool calls.
+    :param prompt_store: Prompt store used to load the active PA system prompt.
+    :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
+    :param session_manager: Shared session manager used for transcript persistence and recovery.
     :param output_channel: Redis output channel used by the Project Agent panel.
     """
 
@@ -119,6 +301,9 @@ class ProjectAgentChatRuntime:
         llm_client: Any,
         model_name: str,
         tool_executor: Any | None = None,
+        prompt_store: ProjectAgentPromptStore | None = None,
+        time_context_provider: RuntimeTimeContextProvider | None = None,
+        session_manager: SessionManager | None = None,
         output_channel: str = PROJECT_AGENT_OUTPUT_CHANNEL,
     ) -> None:
         """Description:
@@ -132,6 +317,9 @@ class ProjectAgentChatRuntime:
         :param llm_client: Shared LLM client used to generate assistant replies.
         :param model_name: Human-readable model name surfaced to the UI.
         :param tool_executor: Optional PA MCP tool executor used for chat-time tool calls.
+        :param prompt_store: Prompt store used to load the active PA system prompt.
+        :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
+        :param session_manager: Shared session manager used for transcript persistence and recovery.
         :param output_channel: Redis output channel used by the Project Agent panel.
         """
 
@@ -139,11 +327,20 @@ class ProjectAgentChatRuntime:
         self.llm_client = llm_client
         self.model_name = model_name
         self.tool_executor = tool_executor or ProjectAgentMCPToolExecutor()
+        self.prompt_store = prompt_store or ProjectAgentPromptStore()
+        self.time_context_provider = time_context_provider or RuntimeTimeContextProvider(
+            configured_timezone=self._load_configured_timezone(),
+        )
+        self.session_manager = session_manager or SessionManager(
+            project_root=_project_agent_session_root()
+        )
         self.output_channel = output_channel
         self.history: list[dict[str, str]] = []
+        self.transcript_messages: list[dict[str, str]] = []
         self._pubsub: Any | None = None
         self._running = False
         self._task: asyncio.Task | None = None
+        self._restore_saved_transcript()
 
     async def start(self) -> asyncio.Task:
         """Description:
@@ -249,19 +446,29 @@ class ProjectAgentChatRuntime:
         if not user_text:
             return
 
+        await self._ensure_active_session()
         await self._publish_status("active")
+        self._record_transcript_message("user", user_text)
         await self._publish_output(f"User: {user_text}\n")
 
         try:
             if is_mcp_inventory_question(user_text):
-                reply_text = build_mcp_inventory_answer()
-            else:
-                messages = self._build_chat_messages(user_text)
-                reply_text = await self._generate_reply_with_tools(messages)
+                list_available_tools = getattr(self.tool_executor, "list_available_tools", None)
+                tools = list_available_tools() if callable(list_available_tools) else ()
+                reply_text = build_mcp_inventory_answer(tuple(tools))
+                self._append_history("user", user_text)
+                self._append_history("assistant", reply_text)
+                self._record_transcript_message("assistant", reply_text)
+                await self._stream_assistant_reply(reply_text)
+                await self._publish_status("idle")
+                return
+            messages = self._build_chat_messages(user_text)
+            reply_text = await self._generate_reply_with_tools(messages)
             if not reply_text:
                 reply_text = "I did not generate a reply for that message."
             self._append_history("user", user_text)
             self._append_history("assistant", reply_text)
+            self._record_transcript_message("assistant", reply_text)
             await self._stream_assistant_reply(reply_text)
             await self._publish_status("idle")
         except Exception as exc:
@@ -308,7 +515,7 @@ class ProjectAgentChatRuntime:
             Build the lightweight chat payload for one browser message.
 
         Requirements:
-            - Include the stable Project Agent system prompt first.
+            - Include the active Project Agent system prompt first.
             - Preserve a bounded recent conversation history.
 
         :param user_text: Current user message text.
@@ -318,12 +525,33 @@ class ProjectAgentChatRuntime:
         messages: list[dict[str, str]] = [
             {
                 "role": "system",
-                "content": f"{PROJECT_AGENT_SYSTEM_PROMPT}\n\n{build_tool_manifest_prompt()}",
+                "content": (
+                    f"{self.prompt_store.get_active_prompt()}\n\n"
+                    f"{self.time_context_provider.build_prompt_block()}\n\n"
+                    f"{build_tool_manifest_prompt()}"
+                ),
             },
             *self.history,
             {"role": "user", "content": user_text},
         ]
         return messages
+
+    @staticmethod
+    def _load_configured_timezone() -> str | None:
+        """Description:
+            Load the configured project timezone for PA browser-chat prompt assembly.
+
+        Requirements:
+            - Reuse the project system configuration when it is available.
+            - Fall back cleanly when project config is not ready yet.
+
+        :returns: Configured timezone identifier when available.
+        """
+
+        try:
+            return load_system_config().timezone
+        except ConfigLoadError:
+            return None
 
     async def _generate_reply_with_tools(self, messages: list[dict[str, str]]) -> str:
         """Description:
@@ -376,6 +604,62 @@ class ProjectAgentChatRuntime:
         self.history.append({"role": role, "content": content})
         if len(self.history) > MAX_PROJECT_AGENT_HISTORY:
             self.history = self.history[-MAX_PROJECT_AGENT_HISTORY:]
+
+    def _restore_saved_transcript(self) -> None:
+        """Description:
+            Restore the latest persisted Project Agent transcript into runtime memory.
+
+        Requirements:
+            - Reload the newest transcript from the session log on startup.
+            - Keep only a bounded suffix in ``history`` for future LLM calls.
+            - Resume the latest non-ended session when one exists.
+        """
+
+        self.session_manager.resume_latest_session()
+        self.transcript_messages = self.session_manager.load_latest_project_agent_transcript()
+        self.history = self.transcript_messages[-MAX_PROJECT_AGENT_HISTORY:]
+
+    async def _ensure_active_session(self) -> None:
+        """Description:
+            Ensure the Project Agent transcript has an active session before writing new messages.
+
+        Requirements:
+            - Reuse the restored active session when one exists.
+            - Start a new Web UI session lazily on first new message after restart or teardown.
+        """
+
+        if self.session_manager.current_session is not None:
+            return
+        await self.session_manager.start_session(trigger="web-ui")
+
+    def _record_transcript_message(self, role: str, content: str) -> None:
+        """Description:
+            Persist one Project Agent transcript message and mirror it into the exported UI transcript state.
+
+        Requirements:
+            - Keep the full exported transcript separate from the bounded LLM history.
+            - Persist every user and assistant message into ``pa-user.log``.
+
+        :param role: Transcript role name.
+        :param content: Transcript content to persist.
+        """
+
+        message = {"role": role, "content": content}
+        self.transcript_messages.append(message)
+        self.session_manager.append_project_agent_message(role, content)
+
+    def export_transcript_messages(self) -> list[dict[str, str]]:
+        """Description:
+            Return the full persisted Project Agent transcript for UI rehydration.
+
+        Requirements:
+            - Preserve the transcript in chronological order.
+            - Return a detached copy safe for API serialisation.
+
+        :returns: Full Project Agent transcript message list.
+        """
+
+        return list(self.transcript_messages)
 
     async def _stream_assistant_reply(self, reply_text: str) -> None:
         """Description:
@@ -801,6 +1085,38 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 service="faith-project-agent",
                 protocol="http",
                 method="GET",
+                path="/api/pa/system-prompt",
+                summary="Return the active Project Agent system prompt and metadata.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
+                method="GET",
+                path="/api/pa/transcript",
+                summary="Return the latest persisted Project Agent transcript for Web UI rehydration.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
+                method="PUT",
+                path="/api/pa/system-prompt",
+                summary="Validate and persist an edited Project Agent system prompt.",
+                expected_status_codes=[200, 400],
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
+                method="POST",
+                path="/api/pa/system-prompt/reset",
+                summary="Reset the Project Agent system prompt to the built-in default.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
+                method="GET",
                 path="/api/routes",
                 summary="Return the structured PA route manifest for CLI discovery.",
                 expected_status_codes=[200],
@@ -834,6 +1150,44 @@ def _require_redis(app: FastAPI):
     return redis_client
 
 
+def _get_project_agent_prompt_store(app: FastAPI) -> ProjectAgentPromptStore:
+    """Description:
+        Return the shared Project Agent prompt store for the PA application.
+
+    Requirements:
+        - Reuse the lifespan-created store when present.
+        - Lazily create a store for tests or direct module usage.
+
+    :param app: FastAPI application holding shared runtime state.
+    :returns: Shared Project Agent prompt store.
+    """
+
+    prompt_store = getattr(app.state, "project_agent_prompt_store", None)
+    if prompt_store is None:
+        prompt_store = ProjectAgentPromptStore()
+        app.state.project_agent_prompt_store = prompt_store
+    return prompt_store
+
+
+def _get_project_agent_session_manager(app: FastAPI) -> SessionManager:
+    """Description:
+        Return the shared Project Agent session manager.
+
+    Requirements:
+        - Reuse the lifespan-created session manager when present.
+        - Lazily create a manager for tests or direct module usage.
+
+    :param app: FastAPI application holding shared runtime state.
+    :returns: Shared Project Agent session manager.
+    """
+
+    session_manager = getattr(app.state, "project_agent_session_manager", None)
+    if session_manager is None:
+        session_manager = SessionManager(project_root=_project_agent_session_root())
+        app.state.project_agent_session_manager = session_manager
+    return session_manager
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Description:
@@ -849,6 +1203,10 @@ async def lifespan(app: FastAPI):
     :yields: Control back to FastAPI once startup has completed.
     """
 
+    app.state.project_agent_prompt_store = ProjectAgentPromptStore()
+    app.state.project_agent_session_manager = SessionManager(
+        project_root=_project_agent_session_root()
+    )
     app.state.redis = await get_async_client()
     chat_runtime = None
     if app.state.redis is not None:
@@ -858,6 +1216,8 @@ async def lifespan(app: FastAPI):
             redis_client=app.state.redis,
             llm_client=llm_client,
             model_name=_build_project_agent_model_name(),
+            prompt_store=app.state.project_agent_prompt_store,
+            session_manager=app.state.project_agent_session_manager,
         )
         app.state.project_agent_chat_runtime = chat_runtime
         await chat_runtime.start()
@@ -912,6 +1272,82 @@ async def api_config() -> ConfigSummary:
     """Return the redacted config summary."""
 
     return build_config_summary()
+
+
+@app.get("/api/pa/system-prompt")
+async def api_get_project_agent_system_prompt() -> dict[str, Any]:
+    """Description:
+        Return the active Project Agent system prompt and editor metadata.
+
+    Requirements:
+        - Load the prompt from the approved prompt store.
+        - Remain available without depending on Redis health.
+
+    :returns: Active prompt metadata payload.
+    """
+
+    return _get_project_agent_prompt_store(app).read()
+
+
+@app.get("/api/pa/transcript")
+async def api_get_project_agent_transcript() -> dict[str, Any]:
+    """Description:
+        Return the latest persisted Project Agent transcript for browser rehydration.
+
+    Requirements:
+        - Remain available even when the live Redis chat runtime is unavailable.
+        - Return the newest persisted transcript and its session identifier.
+
+    :returns: Transcript payload for the Web UI Project Agent panel.
+    """
+
+    session_manager = _get_project_agent_session_manager(app)
+    chat_runtime = getattr(app.state, "project_agent_chat_runtime", None)
+    if chat_runtime is not None:
+        messages = chat_runtime.export_transcript_messages()
+    else:
+        messages = session_manager.load_latest_project_agent_transcript()
+    return {
+        "session_id": session_manager.latest_project_agent_session_id(),
+        "messages": messages,
+    }
+
+
+@app.put("/api/pa/system-prompt")
+async def api_update_project_agent_system_prompt(
+    body: ProjectAgentPromptUpdate,
+) -> dict[str, Any]:
+    """Description:
+        Validate and persist an edited Project Agent system prompt.
+
+    Requirements:
+        - Reject invalid edits with a plain-English HTTP 400 error.
+        - Persist accepted edits for future Project Agent model calls.
+
+    :param body: User-submitted prompt update payload.
+    :raises HTTPException: If validation fails.
+    :returns: Updated active prompt metadata payload.
+    """
+
+    try:
+        return _get_project_agent_prompt_store(app).update(body.prompt)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/pa/system-prompt/reset")
+async def api_reset_project_agent_system_prompt() -> dict[str, Any]:
+    """Description:
+        Reset the active Project Agent system prompt to the built-in default.
+
+    Requirements:
+        - Remove the persisted custom prompt when present.
+        - Return the active default prompt metadata after reset.
+
+    :returns: Default active prompt metadata payload.
+    """
+
+    return _get_project_agent_prompt_store(app).reset()
 
 
 @app.post("/api/events/test")

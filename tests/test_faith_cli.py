@@ -219,7 +219,7 @@ def test_check_docker_reports_timeout_without_traceback(monkeypatch) -> None:
 
     Requirements:
         - This test is needed to prevent `faith init` from crashing with a Python traceback when Docker hangs.
-        - Verify the error explains that Docker did not respond and tells the user to start Docker Desktop.
+        - Verify the error explains that Docker did not respond and tells the user to start Docker Desktop before rerunning either startup command.
 
     :param monkeypatch: Pytest monkeypatch fixture.
     """
@@ -257,8 +257,67 @@ def test_check_docker_reports_timeout_without_traceback(monkeypatch) -> None:
 
     message = str(exc_info.value)
     assert "Docker did not respond" in message
-    assert "Docker Desktop" in message
+    assert "Docker Desktop does not appear to be running" in message
     assert "faith init" in message
+    assert "faith start" in message
+
+
+def test_check_docker_reports_windows_docker_desktop_not_running(monkeypatch) -> None:
+    """Description:
+        Verify Windows named-pipe Docker Desktop connection failures become a friendly CLI error.
+
+    Requirements:
+        - This test is needed to prevent `faith init` and `faith start` from surfacing raw Docker named-pipe errors to the user.
+        - Verify the error explains Docker Desktop does not appear to be running and tells the user to start it before rerunning either startup command.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
+    def _docker_not_running(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        timeout: int,
+    ) -> subprocess.CompletedProcess[str]:
+        """Description:
+            Simulate Docker returning the Windows Docker Desktop named-pipe error.
+
+        Requirements:
+            - Preserve the subprocess.run call signature used by the Docker check.
+            - Return the raw stderr text currently emitted when Docker Desktop is not running.
+
+        :param args: Command arguments supplied by the Docker check.
+        :param capture_output: Whether subprocess output capture was requested.
+        :param text: Whether text-mode output was requested.
+        :param timeout: Timeout passed by the Docker check.
+        :returns: Failed completed process containing the raw Docker Desktop error text.
+        """
+
+        del capture_output, text, timeout
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=1,
+            stdout="",
+            stderr=(
+                "failed to connect to the docker API at "
+                "npipe:////./pipe/dockerDesktopLinuxEngine; check if the path is correct "
+                "and if the daemon is running: open //./pipe/dockerDesktopLinuxEngine: "
+                "The system cannot find the file specified."
+            ),
+        )
+
+    monkeypatch.setattr(checks_module.shutil, "which", lambda command: command)
+    monkeypatch.setattr(checks_module.subprocess, "run", _docker_not_running)
+
+    with pytest.raises(click.ClickException) as exc_info:
+        check_docker()
+
+    message = str(exc_info.value)
+    assert "Docker Desktop does not appear to be running" in message
+    assert "run it first" in message.lower()
+    assert "faith init" in message
+    assert "faith start" in message
 
 
 def test_init_bootstraps_home(monkeypatch, tmp_path: Path) -> None:
@@ -641,6 +700,29 @@ def test_editable_compose_enables_ollama_nvidia_gpu(monkeypatch, tmp_path: Path)
     assert devices == [{"driver": "nvidia", "count": 1, "capabilities": ["gpu"]}]
 
 
+def test_editable_compose_sets_project_agent_session_root(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+        Verify editable-install compose generation pins PA session persistence to the host-backed data mount.
+
+    Requirements:
+        - This test is needed to prove browser transcript/session state survives PA container rebuilds and recreation.
+        - Verify the generated PA environment includes an explicit session-root path under `/data`.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    _fake_home(monkeypatch, tmp_path)
+
+    compose_data = yaml.safe_load(paths.editable_compose_contents())
+    environment = compose_data["services"]["pa"]["environment"]
+
+    assert "FAITH_PA_SESSION_ROOT=/data/pa-runtime" in environment
+
+
 def test_packaged_compose_sets_default_project_agent_model() -> None:
     """Description:
         Verify the packaged compose file declares the default local PA model.
@@ -653,6 +735,20 @@ def test_packaged_compose_sets_default_project_agent_model() -> None:
     compose_text = paths.bundled_compose_file().read_text(encoding="utf-8")
 
     assert "FAITH_PROJECT_AGENT_MODEL=ollama/llama3:8b" in compose_text
+
+
+def test_packaged_compose_sets_project_agent_session_root() -> None:
+    """Description:
+        Verify the packaged compose file pins PA session persistence to the host-backed data mount.
+
+    Requirements:
+        - This test is needed to prove wheel installs preserve browser transcript/session state across PA container rebuilds.
+        - Verify the packaged PA environment includes an explicit session-root path under `/data`.
+    """
+
+    compose_text = paths.bundled_compose_file().read_text(encoding="utf-8")
+
+    assert "FAITH_PA_SESSION_ROOT=/data/pa-runtime" in compose_text
 
 
 def test_packaged_compose_enables_ollama_nvidia_gpu() -> None:

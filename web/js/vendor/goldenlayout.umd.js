@@ -189,6 +189,7 @@
 
     this.containerElement.replaceChildren();
     this.containerElement.classList.add("lm_goldenlayout");
+    this.containerElement.classList.add("faith-goldenlayout-fallback");
 
     if (!this._config || !this._config.root) {
       return;
@@ -207,7 +208,7 @@
    * @param {object} node Layout node to render.
    * @returns {HTMLElement} Rendered DOM node.
    */
-  FaithGoldenLayout.prototype._renderNode = function _renderNode(node) {
+  FaithGoldenLayout.prototype._renderNode = function _renderNode(node, options) {
     if (!node || typeof node !== "object") {
       var emptyNode = document.createElement("div");
       return emptyNode;
@@ -222,7 +223,7 @@
     }
 
     if (node.type === "component") {
-      return this._renderComponentNode(node);
+      return this._renderComponentNode(node, options || {});
     }
 
     var unknownNode = document.createElement("div");
@@ -279,17 +280,31 @@
     var contentHost = document.createElement("div");
     contentHost.className = "lm_content";
 
+    function activateStackChild(activeIndex) {
+      Array.from(header.children).forEach(function updateTab(tab, tabIndex) {
+        tab.classList.toggle("lm_active", tabIndex === activeIndex);
+      });
+      Array.from(contentHost.children).forEach(function updatePanel(panel, panelIndex) {
+        panel.hidden = panelIndex !== activeIndex;
+      });
+    }
+
     (node.content || []).forEach(
       function renderStackChild(child, index) {
         var tab = document.createElement("button");
         tab.className = "lm_tab" + (index === 0 ? " lm_active" : "");
         tab.type = "button";
         tab.textContent = child.title || child.componentType || "Panel";
+        tab.addEventListener("click", function onStackTabClick() {
+          activateStackChild(index);
+        });
         header.appendChild(tab);
 
-        if (index === 0) {
-          contentHost.appendChild(this._renderNode(child));
-        }
+        var panel = document.createElement("div");
+        panel.className = "lm_stack__panel";
+        panel.hidden = index !== 0;
+        panel.appendChild(this._renderNode(child, { suppressHeader: true }));
+        contentHost.appendChild(panel);
       }.bind(this)
     );
 
@@ -309,9 +324,10 @@
    * @param {object} node Component node to render.
    * @returns {HTMLElement} Rendered component wrapper.
    */
-  FaithGoldenLayout.prototype._renderComponentNode = function _renderComponentNode(node) {
+  FaithGoldenLayout.prototype._renderComponentNode = function _renderComponentNode(node, options) {
     var shell = document.createElement("section");
     shell.className = "lm_item_shell";
+    var shouldRenderHeader = !(options && options.suppressHeader);
 
     var header = document.createElement("div");
     header.className = "lm_header faith-panel__fallback-header";
@@ -352,13 +368,17 @@
     var factory = this._componentFactories[node.componentType];
     if (typeof factory === "function") {
       factory({ element: element }, cloneLayoutValue(node.componentState || {}));
-      shell.appendChild(header);
+      if (shouldRenderHeader) {
+        shell.appendChild(header);
+      }
       shell.appendChild(element);
       return shell;
     }
 
     element.textContent = node.title || node.componentType || "Panel";
-    shell.appendChild(header);
+    if (shouldRenderHeader) {
+      shell.appendChild(header);
+    }
     shell.appendChild(element);
     return shell;
   };

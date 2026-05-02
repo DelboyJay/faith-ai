@@ -24,6 +24,7 @@ from faith_pa.agent.cag import CAGManager, CAGValidationResult
 from faith_pa.agent.llm_client import LLMClient
 from faith_pa.agent.summariser import ContextSummariser
 from faith_pa.config.models import AgentConfig, SystemConfig
+from faith_pa.runtime_time_context import RuntimeTimeContextProvider
 from faith_pa.utils.tokens import (
     context_threshold,
     count_message_tokens,
@@ -143,6 +144,7 @@ class BaseAgent:
     :param context_window_tokens: Total context window available to the model.
     :param redis_client: Optional Redis client used for channel subscriptions and event publishing.
     :param llm_client: Optional LLM client override used for chat completions.
+    :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
     """
 
     def __init__(
@@ -157,6 +159,7 @@ class BaseAgent:
         context_window_tokens: int = DEFAULT_CONTEXT_WINDOW,
         redis_client: Any | None = None,
         llm_client: Any | None = None,
+        time_context_provider: RuntimeTimeContextProvider | None = None,
     ) -> None:
         """Description:
             Initialise the base agent runtime.
@@ -174,6 +177,7 @@ class BaseAgent:
         :param context_window_tokens: Total context window available to the model.
         :param redis_client: Optional Redis client used for channel subscriptions and event publishing.
         :param llm_client: Optional LLM client override used for chat completions.
+        :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
         """
 
         self.agent_id = agent_id
@@ -194,6 +198,9 @@ class BaseAgent:
             faith_dir=faith_dir,
         )
         self.context_summary = context_summary.strip() or self.summariser.load_summary()
+        self.time_context_provider = time_context_provider or RuntimeTimeContextProvider(
+            configured_timezone=self.system_config.timezone,
+        )
         self.llm_client = llm_client or LLMClient(
             model=self.model_name,
             fallback_model=self.system_config.pa.fallback_model,
@@ -422,6 +429,10 @@ class BaseAgent:
         """
 
         parts: list[str] = [self.prompt_text]
+
+        runtime_time_context = self.time_context_provider.build_prompt_block().strip()
+        if runtime_time_context:
+            parts.append(runtime_time_context)
 
         role_reminder = self.build_role_reminder().strip()
         if role_reminder:

@@ -5,7 +5,7 @@ Description:
 Requirements:
     - Enforce allowed working-directory boundaries before execution.
     - Publish tool lifecycle events around execution and package installation.
-    - Delegate subprocess execution to the sandbox layer.
+    - Delegate sandbox execution either to the managed sandbox lifecycle or the local subprocess fallback.
     - Route explicitly host-bound work to the optional host runner when enabled.
 """
 
@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from faith_mcp.python_exec.managed_sandbox import ManagedSandboxPythonRunner
 from faith_mcp.python_exec.sandbox import (
     ExecutionResult,
     SandboxConfig,
@@ -42,6 +43,7 @@ class PythonExecutor:
     :param host_runner: Optional callable used for host-routed execution.
     :param host_worker_enabled: Whether host routing is currently enabled.
     :param host_allowed_paths: Host path roots the optional host runner may use.
+    :param sandbox_runner: Optional runner that executes sandbox-bound actions through the managed sandbox lifecycle.
     """
 
     def __init__(
@@ -53,6 +55,7 @@ class PythonExecutor:
         host_runner: Callable[[str, dict[str, Any]], ExecutionResult] | None = None,
         host_worker_enabled: bool = False,
         host_allowed_paths: list[Path] | None = None,
+        sandbox_runner: ManagedSandboxPythonRunner | None = None,
     ) -> None:
         """
         Description:
@@ -67,6 +70,7 @@ class PythonExecutor:
         :param host_runner: Optional callable used for host-routed execution.
         :param host_worker_enabled: Whether host routing is currently enabled.
         :param host_allowed_paths: Host path roots the optional host runner may use.
+        :param sandbox_runner: Optional runner that executes sandbox-bound actions through the managed sandbox lifecycle.
         """
 
         self.config = config
@@ -75,6 +79,7 @@ class PythonExecutor:
         self.host_runner = host_runner
         self.host_worker_enabled = host_worker_enabled
         self.host_allowed_paths = [Path(path).resolve() for path in (host_allowed_paths or [])]
+        self.sandbox_runner = sandbox_runner
 
     async def run_code(
         self,
@@ -115,12 +120,13 @@ class PythonExecutor:
                 "execution_target": execution_target,
             },
         )
-        result = self._run_target(
+        result = await self._run_target(
             "execute",
             {
                 "code": code,
                 "working_directory": str(resolved_working_directory),
                 "timeout_seconds": self.config.timeout_seconds,
+                "agent_id": agent_id,
             },
             execution_target=execution_target,
         )
@@ -188,9 +194,13 @@ class PythonExecutor:
                 "packages": list(packages),
             },
         )
-        result = self._run_target(
+        result = await self._run_target(
             "pip_install",
-            {"packages": list(packages), "working_directory": str(resolved_working_directory)},
+            {
+                "packages": list(packages),
+                "working_directory": str(resolved_working_directory),
+                "agent_id": agent_id,
+            },
             execution_target=execution_target,
         )
         await self._publish(
@@ -246,9 +256,13 @@ class PythonExecutor:
                 "packages": list(packages),
             },
         )
-        result = self._run_target(
+        result = await self._run_target(
             "os_package_install",
-            {"packages": list(packages), "working_directory": str(resolved_working_directory)},
+            {
+                "packages": list(packages),
+                "working_directory": str(resolved_working_directory),
+                "agent_id": agent_id,
+            },
             execution_target=execution_target,
         )
         await self._publish(
@@ -290,7 +304,7 @@ class PythonExecutor:
         self._ensure_allowed_path(working_directory, self.allowed_paths)
         return "sandbox"
 
-    def _run_target(
+    async def _run_target(
         self,
         action: str,
         payload: dict[str, Any],
@@ -316,6 +330,15 @@ class PythonExecutor:
             result = self.host_runner(action, payload)
             result.execution_target = "host"
             return result
+        if self.sandbox_runner is not None:
+            return await self.sandbox_runner.run(
+                action,
+                payload,
+                agent_id=str(payload.get("agent_id", "unknown")),
+                working_directory=Path(payload["working_directory"]),
+                allowed_paths=self.allowed_paths,
+                timeout_seconds=int(payload.get("timeout_seconds", self.config.timeout_seconds)),
+            )
         config = SandboxConfig(
             timeout_seconds=int(payload.get("timeout_seconds", self.config.timeout_seconds)),
             working_directory=Path(payload["working_directory"]),

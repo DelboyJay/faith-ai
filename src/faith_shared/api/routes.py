@@ -31,7 +31,7 @@ class RouteManifestEntry(BaseModel):
 
     service: str
     protocol: Literal["http", "websocket"]
-    method: Literal["GET", "POST"] | None = None
+    method: Literal["GET", "POST", "PUT"] | None = None
     path: str
     summary: str
     expected_status_codes: list[int] = Field(default_factory=list)

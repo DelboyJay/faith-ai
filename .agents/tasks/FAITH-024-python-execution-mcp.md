@@ -3,7 +3,7 @@
 **Phase:** 6 — Tool MCP Servers
 **Complexity:** M
 **Model:** Opus / GPT-5.4 high reasoning
-**Status:** DONE
+**Status:** IN PROGRESS
 **Dependencies:** FAITH-003, FAITH-008, FAITH-057
 **FRS Reference:** Section 4.2
 
@@ -13,7 +13,7 @@
 
 Implement the FAITH-owned Python Execution MCP server that runs as a dedicated Docker container (`tool-python-container`). The server receives Python code from agents via MCP tool calls, executes it inside PA-managed disposable sandbox containers with configurable timeout, captures stdout/stderr/return values/tracebacks as separate fields, enforces workspace mount permissions, supports runtime `pip install` and OS package installation inside the sandbox, and publishes tool lifecycle events (`tool:call_started`, `tool:call_complete`, `tool:error`) to the `system-events` Redis channel. Sandbox containers may run as root inside the container, but they must never receive the Docker socket, must not run in privileged mode, must not use host networking, and must receive only explicitly approved mounts.
 
-Execution is container-first by default, but the PA should route directly to the optional host-worker path when the requested action clearly requires host-only context or resources. The system should avoid wasting time on a doomed container attempt when the correct execution boundary is evident in advance.
+Execution is container-first by default. Routine Python work should run inside the disposable sandbox without a per-call approval prompt, while still respecting audit logging, allowed mounts, and any configured network/package policy. The PA should route directly to the optional host-worker path only when the requested action clearly requires host-only context or resources. Host-routed Python execution must require explicit user approval for each action in v1. The system should avoid wasting time on a doomed container attempt when the correct execution boundary is evident in advance.
 
 This tool is part of FAITH's core security boundary. The implementation must include explicit security hardening and security-focused testing around sandbox escape, package installation, resource exhaustion, approval enforcement, filesystem boundary controls, and violations of the sandbox isolation rules (Docker socket exposure, privileged mode, host networking, or over-broad mounts).
 

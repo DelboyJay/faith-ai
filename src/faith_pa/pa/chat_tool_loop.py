@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from faith_mcp.filesystem import FilesystemServer
+from faith_mcp.python_exec.server import load_server_from_faith_dir
 from faith_pa.config import (
     ConfigLoadError,
     load_agent_config,
@@ -26,21 +27,11 @@ from faith_pa.config import (
 )
 
 TOOL_CALL_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
-TOOL_MANIFEST_PROMPT = """In FAITH, MCP always means Model Context Protocol.
-Never interpret MCP as Microsoft Configuration Manager.
-
-You can use FAITH MCP tools when needed.
-
-Available MCP tools:
-- mcp.list_tools args: {}
-- filesystem.read args: {"mount": "project", "path": "relative/path"}
-- filesystem.list args: {"mount": "project", "path": "relative/path"}
-- filesystem.stat args: {"mount": "project", "path": "relative/path"}
-
-When a tool is needed, reply with only one JSON object in this exact shape:
-{"type": "tool_call", "tool": "filesystem", "action": "read", "args": {"mount": "project", "path": "README.md"}}
-
-After FAITH returns a tool result, answer the user normally using that result."""
+INVENTORY_QUESTION_PATTERN = re.compile(
+    r"\b(mcp|tool|tools|server|servers)\b.*\b(available|enabled|have|using|use)\b"
+    r"|\bwhat\b.*\b(mcp|tool|tools|server|servers)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,11 +65,13 @@ class MCPToolDescriptor:
     :param server: MCP server or tool family name.
     :param action: Action exposed by the server.
     :param description: Human-readable action description.
+    :param args_example: Example JSON args payload shown in the manifest.
     """
 
     server: str
     action: str
     description: str
+    args_example: dict[str, Any] = field(default_factory=dict)
 
     @property
     def name(self) -> str:
@@ -94,28 +87,65 @@ class MCPToolDescriptor:
         return f"{self.server}.{self.action}"
 
 
-AVAILABLE_CHAT_MCP_TOOLS: tuple[MCPToolDescriptor, ...] = (
+DEFAULT_CHAT_MCP_TOOLS: tuple[MCPToolDescriptor, ...] = (
     MCPToolDescriptor(
         server="mcp",
         action="list_tools",
         description="List the FAITH MCP tools exposed to the Project Agent chat loop.",
+        args_example={},
     ),
     MCPToolDescriptor(
         server="filesystem",
         action="read",
         description="Read a file from an allowed project mount.",
+        args_example={"mount": "project", "path": "relative/path"},
     ),
     MCPToolDescriptor(
         server="filesystem",
         action="list",
         description="List files and directories from an allowed project mount.",
+        args_example={"mount": "project", "path": "relative/path"},
     ),
     MCPToolDescriptor(
         server="filesystem",
         action="stat",
         description="Return metadata for a file or directory on an allowed project mount.",
+        args_example={"mount": "project", "path": "relative/path"},
+    ),
+    MCPToolDescriptor(
+        server="python",
+        action="execute_python",
+        description="Execute Python code inside the allowed FAITH workspace sandbox.",
+        args_example={"code": "from datetime import datetime\nprint(datetime.now())"},
+    ),
+    MCPToolDescriptor(
+        server="python",
+        action="pip_install",
+        description="Install Python packages for the active FAITH Python environment.",
+        args_example={"packages": ["requests"]},
+    ),
+    MCPToolDescriptor(
+        server="python",
+        action="os_package_install",
+        description="Install OS packages for the active FAITH Python environment.",
+        args_example={"packages": ["git"]},
     ),
 )
+
+
+def list_available_chat_mcp_tools() -> tuple[MCPToolDescriptor, ...]:
+    """Description:
+        Return the canonical chat-visible MCP inventory for the Project Agent.
+
+    Requirements:
+        - Keep the inventory in one framework-owned location.
+        - Return descriptors for every chat-callable MCP action currently
+          supported by the PA chat runtime.
+
+    :returns: Canonical tuple of chat-visible MCP tool descriptors.
+    """
+
+    return DEFAULT_CHAT_MCP_TOOLS
 
 
 def build_tool_manifest_prompt() -> str:
@@ -129,52 +159,58 @@ def build_tool_manifest_prompt() -> str:
     :returns: Tool manifest prompt text.
     """
 
-    return TOOL_MANIFEST_PROMPT
+    tool_lines = "\n".join(
+        f"- {tool.name} args: {json.dumps(tool.args_example, sort_keys=True)}"
+        for tool in list_available_chat_mcp_tools()
+    )
+    return (
+        "In FAITH, MCP always means Model Context Protocol.\n"
+        "Never interpret MCP as Microsoft Configuration Manager.\n\n"
+        "You can use FAITH MCP tools when needed.\n\n"
+        "Available MCP tools:\n"
+        f"{tool_lines}\n\n"
+        "When a tool is needed, reply with only one JSON object in this exact shape:\n"
+        '{"type": "tool_call", "tool": "filesystem", "action": "read", '
+        '"args": {"mount": "project", "path": "README.md"}}\n\n'
+        "After FAITH returns a tool result, answer the user normally using that result."
+    )
 
 
 def is_mcp_inventory_question(user_text: str) -> bool:
     """Description:
-        Return whether a user message asks for the FAITH MCP tool inventory.
+        Detect whether the user is asking for the available MCP tool inventory.
 
     Requirements:
-        - Detect common wording around available MCP servers or tools.
-        - Avoid routing broad unrelated MCP questions into a fixed inventory answer.
+        - Match common questions about available MCP tools or servers.
+        - Avoid treating ordinary execution requests as inventory questions.
 
-    :param user_text: User message text to classify.
-    :returns: ``True`` when the PA should answer from canonical inventory.
+    :param user_text: User-authored browser-chat message text.
+    :returns: ``True`` when the message asks for available MCP tools.
     """
 
-    text = user_text.lower()
-    has_mcp = "mcp" in text
-    asks_availability = any(term in text for term in ("available", "what", "which", "list"))
-    asks_inventory = any(term in text for term in ("server", "servers", "tool", "tools"))
-    return has_mcp and asks_availability and asks_inventory
+    normalised = user_text.strip()
+    if not normalised:
+        return False
+    return INVENTORY_QUESTION_PATTERN.search(normalised) is not None
 
 
-def build_mcp_inventory_answer() -> str:
+def build_mcp_inventory_answer(tools: tuple[MCPToolDescriptor, ...]) -> str:
     """Description:
-        Build the deterministic Project Agent answer for available MCP tools.
+        Build a deterministic human-readable answer for MCP inventory questions.
 
     Requirements:
-        - Define MCP as Model Context Protocol.
-        - Report the canonical PA-visible tool inventory without involving the LLM.
-        - Mention that only read-only filesystem actions are currently exposed
-          to the interactive chat loop.
+        - State that MCP means Model Context Protocol.
+        - List each available tool action by its canonical compact name.
+        - Avoid relying on LLM improvisation for inventory questions.
 
-    :returns: User-facing MCP inventory answer.
+    :param tools: Canonical tool descriptors available in the current runtime.
+    :returns: User-facing inventory answer text.
     """
 
-    tool_lines = "\n".join(
-        f"- `{tool.name}`: {tool.description}" for tool in AVAILABLE_CHAT_MCP_TOOLS
-    )
-    return (
-        "In FAITH, MCP means Model Context Protocol.\n\n"
-        "The Project Agent chat loop currently exposes these MCP tools:\n"
-        f"{tool_lines}\n\n"
-        "The filesystem MCP server is available for read-only project inspection in chat. "
-        "Mutating filesystem actions are intentionally not exposed here until the approval "
-        "path is wired into the interactive chat loop."
-    )
+    lines = ["FAITH MCP means Model Context Protocol.", "", "The available tools are:", ""]
+    for index, tool in enumerate(tools, start=1):
+        lines.append(f"{index}. `{tool.name}`: {tool.description}")
+    return "\n".join(lines)
 
 
 def parse_chat_tool_call(output: str) -> ChatToolCall | None:
@@ -256,6 +292,21 @@ class ProjectAgentMCPToolExecutor:
         self.root = (root or project_root()).resolve()
         self._filesystem_server: FilesystemServer | None = None
         self._filesystem_agent_mounts: dict[str, str] | None = None
+        self._python_server: Any | None = None
+
+    def list_available_tools(self) -> tuple[MCPToolDescriptor, ...]:
+        """Description:
+            Return the canonical chat-visible MCP inventory for this executor.
+
+        Requirements:
+            - Reuse the framework-owned canonical descriptor set.
+            - Keep inventory generation centralised instead of duplicating tool
+              lists across the PA chat loop.
+
+        :returns: Canonical tuple of chat-visible MCP tool descriptors.
+        """
+
+        return list_available_chat_mcp_tools()
 
     async def execute(self, request: ChatToolCall) -> dict[str, Any]:
         """Description:
@@ -283,12 +334,15 @@ class ProjectAgentMCPToolExecutor:
                                 "name": tool.name,
                                 "description": tool.description,
                             }
-                            for tool in AVAILABLE_CHAT_MCP_TOOLS
+                            for tool in self.list_available_tools()
                         ]
                     },
                 }
             if request.tool == "filesystem":
                 result = await self._execute_filesystem(request)
+                return {"success": True, "result": result}
+            if request.tool == "python":
+                result = await self._execute_python(request)
                 return {"success": True, "result": result}
             return {"success": False, "error": f"Unsupported MCP tool '{request.tool}'."}
         except Exception as exc:
@@ -314,6 +368,28 @@ class ProjectAgentMCPToolExecutor:
             request.args,
             agent_id="project-agent",
             agent_mounts=agent_mounts,
+        )
+
+    async def _execute_python(self, request: ChatToolCall) -> dict[str, Any]:
+        """Description:
+            Execute one Python MCP action for the Project Agent.
+
+        Requirements:
+            - Route Python actions through the shared Python MCP server facade.
+            - Keep the working directory inside the active project root by
+              default when the caller did not request a subdirectory.
+
+        :param request: Python tool-call request.
+        :returns: Python MCP server result payload.
+        """
+
+        server = self._get_python_server()
+        working_directory = Path(request.args.get("working_directory", self.root))
+        return await server.handle_tool_call(
+            request.action,
+            request.args,
+            agent_id="project-agent",
+            working_directory=working_directory,
         )
 
     def _get_filesystem_server(self) -> FilesystemServer:
@@ -389,3 +465,21 @@ class ProjectAgentMCPToolExecutor:
                 if isinstance(mount, dict)
             }
         return self._filesystem_agent_mounts
+
+    def _get_python_server(self) -> Any:
+        """Description:
+            Return a lazily built Python MCP server facade.
+
+        Requirements:
+            - Reuse the server after first construction.
+            - Constrain execution to the active project root by default.
+
+        :returns: Python execution MCP server facade.
+        """
+
+        if self._python_server is None:
+            self._python_server = load_server_from_faith_dir(
+                project_config_dir(self.root),
+                allowed_paths=[self.root],
+            )
+        return self._python_server

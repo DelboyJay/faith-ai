@@ -6,20 +6,11 @@
     <title>FAITH Web UI</title>
     <link
       rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/dist/css/goldenlayout-base.css"
-      onerror="window.faithSwapStylesheetFallback(this, '/static/js/vendor/goldenlayout-base.css')"
-    >
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/dist/css/themes/goldenlayout-dark-theme.css"
-      onerror="window.faithSwapStylesheetFallback(this, '/static/js/vendor/goldenlayout-dark-theme.css')"
-    >
-    <link
-      rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/xterm@5.5.0/css/xterm.min.css"
       onerror="window.faithSwapStylesheetFallback(this, '/static/js/vendor/xterm.min.css')"
     >
     <link rel="stylesheet" href="/static/css/theme.css?v={{ asset_version }}">
+    <link rel="stylesheet" href="/static/dist/faith-ui.css?v={{ asset_version }}">
     <script>
       window.faithSwapStylesheetFallback = function faithSwapStylesheetFallback(node, fallbackHref) {
         node.onerror = null;
@@ -33,14 +24,6 @@
       };
     </script>
     <script
-      src="https://cdn.jsdelivr.net/npm/golden-layout@2.6.0/dist/goldenlayout.umd.js"
-      onerror="window.faithLoadVendoredFallback('goldenlayout')"
-    ></script>
-    <script
-      src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"
-      onerror="window.faithLoadVendoredFallback('vue.global.prod')"
-    ></script>
-    <script
       src="https://cdn.jsdelivr.net/npm/xterm@5.5.0/lib/xterm.min.js"
       onerror="window.faithLoadVendoredFallback('xterm.min')"
     ></script>
@@ -48,16 +31,21 @@
     <script src="/static/js/panels/input-panel.js?v={{ asset_version }}"></script>
     <script src="/static/js/panels/approval-panel.js?v={{ asset_version }}"></script>
     <script src="/static/js/panels/docker-runtime-panel.js?v={{ asset_version }}"></script>
-    <script src="/static/js/layout.js?v={{ asset_version }}"></script>
+    <script src="/static/js/panels/pa-system-prompt-panel.js?v={{ asset_version }}"></script>
+    <script src="/static/js/workspace-config.js?v={{ asset_version }}"></script>
   </head>
   <body>
     <div id="faith-toolbar" class="faith-toolbar">
       <div class="faith-toolbar__brand">
-        <span class="faith-toolbar__eyebrow">FAITH</span>
+        <div class="faith-toolbar__brand-row">
+          <span class="faith-toolbar__eyebrow">FAITH</span>
+          <span class="faith-toolbar__version" aria-label="Web UI version">v{{ ui_version }}</span>
+        </div>
         <span class="faith-toolbar__title">Panel Workspace</span>
       </div>
+      <div id="faith-toolbar-controls" class="faith-toolbar__controls"></div>
     </div>
-    <div id="faith-layout" class="faith-layout-container" aria-label="FAITH panel workspace"></div>
-    <script src="/static/js/app.js?v={{ asset_version }}"></script>
+    <div id="faith-app" class="faith-layout-container" aria-label="FAITH panel workspace"></div>
+    <script src="/static/dist/faith-ui.js?v={{ asset_version }}"></script>
   </body>
 </html>

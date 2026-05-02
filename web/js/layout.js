@@ -16,9 +16,10 @@
    *   Store the localStorage namespace for persisted layout state.
    *
    * Requirements:
-   *   - Keep the key stable so the browser restores layouts across reloads.
+   *   - Version the key when default layout geometry changes materially.
    */
-  const LAYOUT_STORAGE_KEY = "faith_layout_v1";
+  const LAYOUT_STORAGE_KEY = "faith_layout_v4";
+  const LEGACY_LAYOUT_STORAGE_KEYS = Object.freeze(["faith_layout_v1", "faith_layout_v2", "faith_layout_v3"]);
   let isResettingLayout = false;
 
   /**
@@ -35,6 +36,7 @@
     APPROVAL: "approval-panel",
     STATUS: "status-panel",
     DOCKER_RUNTIME: "docker-runtime-panel",
+    PA_SYSTEM_PROMPT: "pa-system-prompt-panel",
   });
 
   /**
@@ -53,7 +55,8 @@
     if (
       componentType === COMPONENT_TYPES.INPUT ||
       componentType === COMPONENT_TYPES.APPROVAL ||
-      componentType === COMPONENT_TYPES.STATUS
+      componentType === COMPONENT_TYPES.STATUS ||
+      componentType === COMPONENT_TYPES.PA_SYSTEM_PROMPT
     ) {
       return componentType;
     }
@@ -88,56 +91,132 @@
 
   /**
    * Description:
-   *   Build the default workspace layout described by the FRS.
+   *   Return the shared workspace descriptor provider used during the Dockview
+   *   migration.
    *
    * Requirements:
-   *   - Render the minimal first-load workspace on a fresh browser load.
-   *   - Keep Project Agent, Input, Approvals, and System Status present by default.
-   *   - Avoid pre-creating specialist agent panels before the PA decides they are needed.
+   *   - Prefer the dedicated shared workspace config asset when it is loaded.
+   *   - Fall back to a local descriptor so the browser shell stays usable if the
+   *     shared asset fails to load unexpectedly.
+   *
+   * @returns {{buildDefaultWorkspaceDescriptor: Function}} Workspace config API.
+   */
+  function getWorkspaceConfigApi() {
+    if (
+      globalScope.faithWorkspaceConfig &&
+      typeof globalScope.faithWorkspaceConfig.buildDefaultWorkspaceDescriptor === "function"
+    ) {
+      return globalScope.faithWorkspaceConfig;
+    }
+
+    return {
+      /**
+       * Description:
+       *   Return a local fallback workspace descriptor.
+       *
+       * Requirements:
+       *   - Mirror the baseline first-load workspace so the browser remains functional.
+       *   - Preserve stable panel identities expected by later helpers.
+       *
+       * @returns {object} Fallback workspace descriptor.
+       */
+      buildDefaultWorkspaceDescriptor() {
+        return {
+          version: "v1",
+          upperGroup: {
+            panels: [
+              {
+                id: "project-agent",
+                componentType: COMPONENT_TYPES.AGENT,
+                title: "Project Agent",
+                componentState: {
+                  agentId: "project-agent",
+                  displayName: "Project Agent",
+                  model: "ollama/llama3:8b",
+                },
+              },
+              {
+                id: "system-status",
+                componentType: COMPONENT_TYPES.STATUS,
+                title: "System Status",
+                componentState: {},
+              },
+            ],
+          },
+          lowerGroup: {
+            panels: [
+              {
+                id: "input",
+                componentType: COMPONENT_TYPES.INPUT,
+                title: "Input",
+                size: 34,
+                componentState: {},
+              },
+              {
+                id: "approvals",
+                componentType: COMPONENT_TYPES.APPROVAL,
+                title: "Approvals",
+                size: 66,
+                componentState: {},
+              },
+            ],
+          },
+        };
+      },
+    };
+  }
+
+  /**
+   * Description:
+   *   Build the current browser layout from the shared workspace descriptor.
+   *
+   * Requirements:
+   *   - Read the panel arrangement from the shared workspace config global.
+   *   - Translate the shared descriptor into the currently mounted layout runtime.
+   *   - Keep the browser-visible first-load workspace stable while the Dockview
+   *     shell is introduced incrementally.
    *
    * @returns {object} GoldenLayout configuration for the default workspace.
    */
   function buildDefaultLayoutConfig() {
+    const workspaceDescriptor = getWorkspaceConfigApi().buildDefaultWorkspaceDescriptor();
+    const upperPanels = workspaceDescriptor.upperGroup && Array.isArray(workspaceDescriptor.upperGroup.panels)
+      ? workspaceDescriptor.upperGroup.panels
+      : [];
+    const lowerPanels = workspaceDescriptor.lowerGroup && Array.isArray(workspaceDescriptor.lowerGroup.panels)
+      ? workspaceDescriptor.lowerGroup.panels
+      : [];
+
     return {
       root: {
         type: "column",
         content: [
           {
-            type: "component",
-            componentType: COMPONENT_TYPES.AGENT,
-            title: "Project Agent",
+            type: "stack",
             size: 58,
-            componentState: {
-              agentId: "project-agent",
-              displayName: "Project Agent",
-            },
+            content: upperPanels.map(function mapUpperPanel(panel) {
+              return {
+                type: "component",
+                componentType: panel.componentType,
+                title: panel.title,
+                componentState: panel.componentState || {},
+              };
+            }),
           },
           {
             type: "row",
             size: 42,
-            content: [
-              {
+            // title: "Input"
+            // title: "Approvals"
+            content: lowerPanels.map(function mapLowerPanel(panel) {
+              return {
                 type: "component",
-                componentType: COMPONENT_TYPES.INPUT,
-                size: 34,
-                title: "Input",
-                componentState: {},
-              },
-              {
-                type: "component",
-                componentType: COMPONENT_TYPES.APPROVAL,
-                size: 33,
-                title: "Approvals",
-                componentState: {},
-              },
-              {
-                type: "component",
-                componentType: COMPONENT_TYPES.STATUS,
-                size: 33,
-                title: "System Status",
-                componentState: {},
-              },
-            ],
+                componentType: panel.componentType,
+                size: panel.size,
+                title: panel.title,
+                componentState: panel.componentState || {},
+              };
+            }),
           },
         ],
       },
@@ -261,6 +340,13 @@
     layout.registerComponentFactoryFunction(COMPONENT_TYPES.STATUS, function mountStatusPanel(container) {
       const target = resolveContainerElement(container);
       target.dataset.faithPanelKey = buildPanelIdentityKey(COMPONENT_TYPES.STATUS, {});
+      if (
+        globalScope.faithDockerRuntimePanel &&
+        typeof globalScope.faithDockerRuntimePanel.mountPanel === "function"
+      ) {
+        void globalScope.faithDockerRuntimePanel.mountPanel(target);
+        return;
+      }
       target.replaceChildren(buildPlaceholderPanel("status", "System Status"));
     });
 
@@ -275,6 +361,26 @@
         return;
       }
       target.replaceChildren(buildPlaceholderPanel("tool", "Docker Runtime"));
+    });
+
+    layout.registerComponentFactoryFunction(COMPONENT_TYPES.PA_SYSTEM_PROMPT, function mountPaSystemPromptPanel(container) {
+      const target = resolveContainerElement(container);
+      target.dataset.faithPanelKey = buildPanelIdentityKey(COMPONENT_TYPES.PA_SYSTEM_PROMPT, {});
+      if (typeof target.__faithCleanup === "function") {
+        target.__faithCleanup();
+        target.__faithCleanup = null;
+      }
+      if (
+        globalScope.faithPaSystemPromptPanel &&
+        typeof globalScope.faithPaSystemPromptPanel.mountPanel === "function"
+      ) {
+        const panel = globalScope.faithPaSystemPromptPanel.mountPanel(target);
+        if (panel && typeof panel.destroy === "function") {
+          target.__faithCleanup = panel.destroy;
+        }
+        return;
+      }
+      target.replaceChildren(buildPlaceholderPanel("tool", "PA System Prompt"));
     });
   }
 
@@ -310,6 +416,9 @@
    */
   function loadSavedLayout() {
     try {
+      LEGACY_LAYOUT_STORAGE_KEYS.forEach(function removeLegacyLayout(legacyKey) {
+        globalScope.localStorage.removeItem(legacyKey);
+      });
       const raw = globalScope.localStorage.getItem(LAYOUT_STORAGE_KEY);
       if (!raw) {
         return null;
@@ -364,7 +473,8 @@
     if (
       componentType === COMPONENT_TYPES.INPUT ||
       componentType === COMPONENT_TYPES.APPROVAL ||
-      componentType === COMPONENT_TYPES.STATUS
+      componentType === COMPONENT_TYPES.STATUS ||
+      componentType === COMPONENT_TYPES.PA_SYSTEM_PROMPT
     ) {
       return true;
     }
@@ -607,6 +717,7 @@
       [COMPONENT_TYPES.APPROVAL]: "Approvals",
       [COMPONENT_TYPES.STATUS]: "System Status",
       [COMPONENT_TYPES.DOCKER_RUNTIME]: "Docker Runtime",
+      [COMPONENT_TYPES.PA_SYSTEM_PROMPT]: "PA System Prompt",
     };
     addComponentToLayout(layout, {
       type: "component",
@@ -651,6 +762,7 @@
       { label: "Approval Panel", type: COMPONENT_TYPES.APPROVAL },
       { label: "Status Panel", type: COMPONENT_TYPES.STATUS },
       { label: "Docker Runtime Panel", type: COMPONENT_TYPES.DOCKER_RUNTIME },
+      { label: "PA System Prompt", type: COMPONENT_TYPES.PA_SYSTEM_PROMPT },
     ];
 
     menuItems.forEach(function appendMenuItem(item) {

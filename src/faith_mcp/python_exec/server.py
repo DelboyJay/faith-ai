@@ -20,6 +20,7 @@ from typing import Any
 import yaml
 
 from faith_mcp.python_exec.executor import PythonExecutor
+from faith_mcp.python_exec.managed_sandbox import ManagedSandboxPythonRunner
 from faith_mcp.python_exec.sandbox import ExecutionResult
 from faith_shared.config.models import PythonToolConfig
 
@@ -36,6 +37,7 @@ class PythonExecutionServer:
     :param config: Python tool configuration.
     :param allowed_paths: Working-directory roots allowed for execution.
     :param event_publisher: Optional lifecycle event publisher.
+    :param sandbox_manager: Optional sandbox manager used for Docker-backed sandbox execution.
     """
 
     def __init__(
@@ -47,6 +49,7 @@ class PythonExecutionServer:
         host_runner: Any | None = None,
         host_worker_enabled: bool = False,
         host_allowed_paths: list[Path] | None = None,
+        sandbox_manager: Any | None = None,
     ) -> None:
         """
         Description:
@@ -61,9 +64,11 @@ class PythonExecutionServer:
         :param host_runner: Optional host-runner callback for host-bound execution.
         :param host_worker_enabled: Whether host routing is enabled.
         :param host_allowed_paths: Host path roots allowed for host-bound execution.
+        :param sandbox_manager: Optional sandbox manager used for Docker-backed sandbox execution.
         """
 
         self.config = config
+        self.sandbox_manager = sandbox_manager
         self.executor = PythonExecutor(
             config=config,
             event_publisher=event_publisher,
@@ -71,6 +76,9 @@ class PythonExecutionServer:
             host_runner=host_runner,
             host_worker_enabled=host_worker_enabled,
             host_allowed_paths=host_allowed_paths,
+            sandbox_runner=ManagedSandboxPythonRunner(sandbox_manager=sandbox_manager)
+            if sandbox_manager is not None
+            else None,
         )
 
     async def execute_python(
@@ -188,6 +196,7 @@ class PythonExecutionServer:
             host_runner=self.executor.host_runner,
             host_worker_enabled=self.executor.host_worker_enabled,
             host_allowed_paths=self.executor.host_allowed_paths,
+            sandbox_runner=self.executor.sandbox_runner,
         )
 
     async def handle_tool_call(

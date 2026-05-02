@@ -13,11 +13,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import faith_pa.pa.app as pa_app_module
+from faith_pa.pa.chat_tool_loop import ChatToolCall, list_available_chat_mcp_tools
+from faith_pa.runtime_time_context import RuntimeTimeContextProvider
 from faith_pa.utils.redis_client import USER_INPUT_CHANNEL
 
 
@@ -360,6 +365,59 @@ class FakeToolExecutor:
         self.calls.append(request)
         return {"success": True, "result": {"content": "README says FAITH is local-first."}}
 
+    def list_available_tools(self) -> tuple[object, ...]:
+        """Description:
+        Return the canonical chat-visible MCP inventory for tests.
+
+        Requirements:
+        - Reuse the production inventory helper so test expectations stay in
+          sync with the PA chat runtime.
+
+        :returns: Canonical tuple of chat-visible MCP tool descriptors.
+        """
+
+        return list_available_chat_mcp_tools()
+
+
+class SequencedClock:
+    """Description:
+    Provide deterministic UTC datetimes for PA runtime time-context tests.
+
+    Requirements:
+    - Return configured datetimes in order.
+    - Reuse the last configured datetime once the sequence is exhausted.
+
+    :param values: Ordered UTC datetimes returned by the callable clock.
+    """
+
+    def __init__(self, *values: datetime) -> None:
+        """Description:
+        Initialise the deterministic PA clock sequence.
+
+        Requirements:
+        - Preserve the supplied datetime order for later calls.
+
+        :param values: Ordered UTC datetimes returned by the callable clock.
+        """
+
+        self.values = list(values)
+        self.last = values[-1]
+
+    def __call__(self) -> datetime:
+        """Description:
+        Return the next configured UTC datetime.
+
+        Requirements:
+        - Consume values in order.
+        - Reuse the final value once the configured sequence is exhausted.
+
+        :returns: Deterministic UTC datetime.
+        """
+
+        if self.values:
+            self.last = self.values.pop(0)
+        return self.last
+
 
 @pytest.fixture
 def fake_redis() -> FakeRedis:
@@ -641,6 +699,202 @@ def test_pa_routes_returns_manifest(client: TestClient) -> None:
     assert payload["service"] == "faith-project-agent"
     assert any(route["path"] == "/api/routes" for route in payload["routes"])
     assert any(route["path"] == "/ws/status" for route in payload["routes"])
+    assert any(route["path"] == "/api/pa/system-prompt" for route in payload["routes"])
+
+
+def test_pa_system_prompt_endpoint_returns_default_prompt(
+    client: TestClient,
+    tmp_path,
+) -> None:
+    """Description:
+    Verify the PA system-prompt endpoint returns the built-in prompt when no override exists.
+
+    Requirements:
+    - This test is needed to prove the prompt editor can load the active prompt.
+    - Verify response metadata identifies the default source and configured file path.
+
+    :param client: Test client for the PA application.
+    :param tmp_path: Temporary project root used by the prompt store.
+    """
+
+    pa_app_module.app.state.project_agent_prompt_store = pa_app_module.ProjectAgentPromptStore(
+        project_root=tmp_path
+    )
+    response = client.get("/api/pa/system-prompt")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["prompt"] == pa_app_module.DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT
+    assert payload["source"] == "default"
+    assert payload["default_available"] is True
+    assert payload["differs_from_default"] is False
+    assert payload["path"].endswith(".faith/agents/project-agent/prompt.md")
+
+
+def test_pa_system_prompt_update_rejects_blank_prompt(
+    client: TestClient,
+    tmp_path,
+) -> None:
+    """Description:
+    Verify blank PA system-prompt updates are rejected without changing the active prompt.
+
+    Requirements:
+    - This test is needed to prove invalid edits fail with a plain-English error.
+    - Verify the default prompt remains active after the rejected update.
+
+    :param client: Test client for the PA application.
+    :param tmp_path: Temporary project root used by the prompt store.
+    """
+
+    pa_app_module.app.state.project_agent_prompt_store = pa_app_module.ProjectAgentPromptStore(
+        project_root=tmp_path
+    )
+    response = client.put("/api/pa/system-prompt", json={"prompt": "   "})
+
+    assert response.status_code == 400
+    assert "Prompt cannot be empty" in response.json()["detail"]
+    current = client.get("/api/pa/system-prompt").json()
+    assert current["prompt"] == pa_app_module.DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT
+    assert current["source"] == "default"
+
+
+def test_pa_system_prompt_update_persists_and_future_messages_use_it(
+    client: TestClient,
+    tmp_path,
+) -> None:
+    """Description:
+    Verify accepted PA prompt updates persist and are used for future chat payloads.
+
+    Requirements:
+    - This test is needed to prove the editor affects future PA inference context.
+    - Verify the prompt file is written under the approved Project Agent path.
+
+    :param client: Test client for the PA application.
+    :param tmp_path: Temporary project root used by the prompt store.
+    """
+
+    prompt_store = pa_app_module.ProjectAgentPromptStore(project_root=tmp_path)
+    pa_app_module.app.state.project_agent_prompt_store = prompt_store
+    custom_prompt = "You are the FAITH Project Agent. Prefer short, verified answers."
+
+    response = client.put("/api/pa/system-prompt", json={"prompt": custom_prompt})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["prompt"] == custom_prompt
+    assert payload["source"] == "custom"
+    assert payload["differs_from_default"] is True
+    assert prompt_store.prompt_path.read_text(encoding="utf-8") == custom_prompt
+
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=FakeLLMClient(),
+        model_name="ollama/llama3:8b",
+        prompt_store=prompt_store,
+        session_manager=pa_app_module.SessionManager(project_root=tmp_path),
+    )
+    system_message = runtime._build_chat_messages("hello")[0]["content"]
+    assert custom_prompt in system_message
+    assert pa_app_module.DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT not in system_message
+
+
+def test_pa_system_prompt_reset_restores_default_prompt(
+    client: TestClient,
+    tmp_path,
+) -> None:
+    """Description:
+    Verify the reset endpoint removes the custom PA prompt and restores the default.
+
+    Requirements:
+    - This test is needed to prove users can safely recover from edited prompts.
+    - Verify the persisted custom prompt file is removed after reset.
+
+    :param client: Test client for the PA application.
+    :param tmp_path: Temporary project root used by the prompt store.
+    """
+
+    prompt_store = pa_app_module.ProjectAgentPromptStore(project_root=tmp_path)
+    pa_app_module.app.state.project_agent_prompt_store = prompt_store
+    client.put("/api/pa/system-prompt", json={"prompt": "Custom prompt."})
+
+    response = client.post("/api/pa/system-prompt/reset")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["prompt"] == pa_app_module.DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT
+    assert payload["source"] == "default"
+    assert not prompt_store.prompt_path.exists()
+
+
+def test_pa_system_prompt_update_does_not_rewrite_history(tmp_path) -> None:
+    """Description:
+    Verify prompt changes do not mutate already stored PA transcript history.
+
+    Requirements:
+    - This test is needed to prove historical transcript entries remain untouched.
+    - Verify future chat payloads include the new prompt while old history content remains unchanged.
+
+    :param tmp_path: Temporary project root used by the prompt store.
+    """
+
+    prompt_store = pa_app_module.ProjectAgentPromptStore(project_root=tmp_path)
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=FakeLLMClient(),
+        model_name="ollama/llama3:8b",
+        prompt_store=prompt_store,
+        session_manager=pa_app_module.SessionManager(project_root=tmp_path),
+    )
+    runtime._append_history("user", "Earlier user message")
+    runtime._append_history("assistant", "Earlier assistant message")
+
+    prompt_store.update("You are the FAITH Project Agent. Use the edited prompt.")
+    messages = runtime._build_chat_messages("New user message")
+
+    assert runtime.history == [
+        {"role": "user", "content": "Earlier user message"},
+        {"role": "assistant", "content": "Earlier assistant message"},
+    ]
+    assert "Use the edited prompt" in messages[0]["content"]
+    assert messages[1:3] == runtime.history
+
+
+def test_pa_chat_messages_include_runtime_time_context_and_refresh_each_turn(tmp_path) -> None:
+    """Description:
+    Verify the PA system message includes runtime-managed time context on every turn.
+
+    Requirements:
+    - This test is needed to prove the Project Agent gets explicit local date,
+      local time, and timezone context without rewriting the persisted prompt.
+    - Verify the time block refreshes between turns when the clock advances.
+
+    :param tmp_path: Temporary project root used by the prompt store.
+    """
+
+    prompt_store = pa_app_module.ProjectAgentPromptStore(project_root=tmp_path)
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=FakeLLMClient(),
+        model_name="ollama/llama3:8b",
+        prompt_store=prompt_store,
+        time_context_provider=RuntimeTimeContextProvider(
+            configured_timezone="Europe/London",
+            now_provider=SequencedClock(
+                datetime(2026, 1, 15, 10, 30, tzinfo=timezone.utc),
+                datetime(2026, 1, 15, 10, 45, tzinfo=timezone.utc),
+            ),
+        ),
+    )
+
+    first_system_message = runtime._build_chat_messages("hello")[0]["content"]
+    second_system_message = runtime._build_chat_messages("hello again")[0]["content"]
+
+    assert "[Runtime Time Context]" in first_system_message
+    assert "Current local date: 2026-01-15" in first_system_message
+    assert "Current local time: 10:30:00" in first_system_message
+    assert "User timezone: Europe/London" in first_system_message
+    assert "Current local time: 10:45:00" in second_system_message
+    assert first_system_message != second_system_message
 
 
 def test_pa_chat_bridge_streams_project_agent_frames(
@@ -756,6 +1010,125 @@ def test_pa_chat_bridge_calls_llm_with_user_message(
     assert llm_client.calls[0]["messages"][-1]["content"] == "Summarise the current task status."
 
 
+def test_pa_chat_bridge_accepts_second_message_after_prompt_update(tmp_path) -> None:
+    """Description:
+    Verify the PA chat runtime still processes a later browser message after the prompt is edited.
+
+    Requirements:
+    - This test is needed to prove prompt updates do not dead-end the ongoing PA chat flow.
+    - Verify the second LLM call uses the updated prompt and still streams output for the later message.
+
+    :param tmp_path: Temporary project root used by the prompt store.
+    """
+
+    llm_client = SequencedFakeLLMClient(
+        [
+            "First reply before the prompt change.",
+            "Second reply after the prompt change.",
+        ]
+    )
+    fake_redis = FakeRedis()
+    prompt_store = pa_app_module.ProjectAgentPromptStore(project_root=tmp_path)
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=fake_redis,
+        llm_client=llm_client,
+        model_name="ollama/llama3:8b",
+        prompt_store=prompt_store,
+    )
+
+    asyncio.run(
+        runtime._handle_payload(
+            {
+                "type": "user_input",
+                "message_id": "msg-before-prompt-update",
+                "message": "Please answer the first message.",
+            }
+        )
+    )
+    prompt_store.update("You are the FAITH Project Agent. Confirm that the new prompt is active.")
+    asyncio.run(
+        runtime._handle_payload(
+            {
+                "type": "user_input",
+                "message_id": "msg-after-prompt-update",
+                "message": "Please answer the second message after the prompt update.",
+            }
+        )
+    )
+
+    assert len(llm_client.calls) == 2
+    assert (
+        pa_app_module.DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT
+        in llm_client.calls[0]["messages"][0]["content"]
+    )
+    assert "Confirm that the new prompt is active." in llm_client.calls[1]["messages"][0]["content"]
+    output_text = "".join(
+        json.loads(payload).get("text", "")
+        for channel, payload in fake_redis.published
+        if channel == "agent:project-agent:output"
+    )
+    assert "Please answer the second message after the prompt update." in output_text
+    assert "Second reply after the prompt change." in output_text
+
+
+def test_pa_chat_runtime_restores_latest_saved_transcript_on_startup(tmp_path: Path) -> None:
+    """Description:
+    Verify the PA chat runtime reloads the latest saved browser transcript during startup.
+
+    Requirements:
+        - This test is needed to prove restart-time browser chat rehydration uses the persisted session log rather than starting blank.
+        - Verify the runtime restores full transcript messages for the UI snapshot and bounded recent history for future LLM turns.
+
+    :param tmp_path: Temporary project root used to hold the persisted session log.
+    """
+
+    session_manager = pa_app_module.SessionManager(project_root=tmp_path)
+    asyncio.run(session_manager.start_session(trigger="web-ui"))
+    session_manager.append_project_agent_message("user", "Recovered user message.")
+    session_manager.append_project_agent_message("assistant", "Recovered assistant reply.")
+
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=FakeLLMClient(),
+        model_name="ollama/llama3:8b",
+        session_manager=pa_app_module.SessionManager(project_root=tmp_path),
+    )
+
+    assert runtime.export_transcript_messages() == [
+        {"role": "user", "content": "Recovered user message."},
+        {"role": "assistant", "content": "Recovered assistant reply."},
+    ]
+    assert runtime.history == [
+        {"role": "user", "content": "Recovered user message."},
+        {"role": "assistant", "content": "Recovered assistant reply."},
+    ]
+
+
+def test_project_agent_session_manager_uses_explicit_session_root(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+        Verify the PA runtime resolves transcript/session persistence from the dedicated session-root setting.
+
+    Requirements:
+        - This test is needed to prove restart-time Project Agent transcript rehydration survives PA container rebuilds.
+        - Verify the default PA session manager uses `FAITH_PA_SESSION_ROOT` instead of the container-local repository path.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    session_root = tmp_path / "persistent-pa-runtime"
+    monkeypatch.setenv("FAITH_PA_SESSION_ROOT", str(session_root))
+
+    test_app = FastAPI()
+    manager = pa_app_module._get_project_agent_session_manager(test_app)
+
+    assert manager.project_root == session_root.resolve()
+    assert manager.faith_dir == session_root.resolve() / ".faith"
+
+
 def test_pa_chat_bridge_advertises_mcp_tools_to_llama() -> None:
     """Description:
     Verify the browser-chat LLM prompt includes the PA MCP tool manifest.
@@ -806,22 +1179,22 @@ def test_pa_chat_bridge_manifest_defines_faith_mcp_inventory() -> None:
     assert "Microsoft Configuration Manager" in system_text
     assert "mcp.list_tools" in system_text
     assert "filesystem.read" in system_text
+    assert "python.execute_python" in system_text
 
 
-def test_pa_chat_bridge_answers_mcp_inventory_without_llm_hallucination() -> None:
+def test_pa_chat_bridge_answers_mcp_inventory_questions_from_canonical_inventory() -> None:
     """Description:
-    Verify MCP inventory questions are answered from PA-owned truth.
+    Verify MCP inventory questions are answered from the canonical inventory.
 
     Requirements:
-    - This test is needed because local models can hallucinate fake MCP servers
-      when asked what MCP servers are available to FAITH.
-    - Verify the PA returns the canonical filesystem MCP inventory without
-      calling the LLM and without mentioning Microsoft Configuration Manager.
+    - This test is needed to prove available-tool answers do not depend on LLM improvisation.
+    - Verify the PA answers directly from the canonical inventory and includes
+      the Python MCP actions when they are available.
     """
 
     llm_client = SequencedFakeLLMClient(
         [
-            "MCP means Microsoft Configuration Manager. MCP Server 1 is available.",
+            "This response should never be used.",
         ]
     )
     fake_redis = FakeRedis()
@@ -851,14 +1224,38 @@ def test_pa_chat_bridge_answers_mcp_inventory_without_llm_hallucination() -> Non
         item.get("text", "") for item in published if item.get("type") == "output"
     )
 
-    assert llm_client.calls == []
+    assert len(llm_client.calls) == 0
     assert "Model Context Protocol" in output_text
-    assert "filesystem MCP server" in output_text
-    assert "filesystem.read" in output_text
-    assert "filesystem.list" in output_text
-    assert "filesystem.stat" in output_text
     assert "Microsoft Configuration Manager" not in output_text
     assert "MCP Server 1" not in output_text
+    assert "mcp.list_tools" in output_text
+    assert "filesystem.read" in output_text
+    assert "python.execute_python" in output_text
+
+
+def test_pa_chat_executor_lists_python_mcp_actions(tmp_path: Path) -> None:
+    """Description:
+    Verify the PA chat executor includes Python actions in the canonical inventory.
+
+    Requirements:
+    - This test is needed to prove `mcp.list_tools` reflects all currently
+      chat-available MCP tools rather than only the filesystem subset.
+    - Verify the returned tool list includes Python execution actions.
+
+    :param tmp_path: Temporary project root used to build the executor safely.
+    """
+
+    executor = pa_app_module.ProjectAgentMCPToolExecutor(root=tmp_path)
+
+    result = asyncio.run(executor.execute(ChatToolCall(tool="mcp", action="list_tools", args={})))
+
+    assert result["success"] is True
+    tools = result["result"]["tools"]
+    tool_names = {tool["name"] for tool in tools}
+    assert "mcp.list_tools" in tool_names
+    assert "filesystem.read" in tool_names
+    assert "python.execute_python" in tool_names
+    assert "python.pip_install" in tool_names
 
 
 def test_pa_chat_bridge_executes_mcp_tool_call_and_returns_final_answer() -> None:

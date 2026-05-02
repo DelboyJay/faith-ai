@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,12 @@ import yaml
 from faith_pa.agent.cag import CAGManager, CAGValidationResult
 from faith_pa.config.loader import load_all_agent_configs
 from faith_pa.config.models import SystemConfig
+
+PROJECT_AGENT_TRANSCRIPT_HEADER = "# Project Agent Transcript\n\n"
+PROJECT_AGENT_TRANSCRIPT_ENTRY_PATTERN = re.compile(
+    r"^## (?P<label>User|Assistant)\n~~~text\n(?P<content>.*?)\n~~~\n?",
+    re.MULTILINE | re.DOTALL,
+)
 
 
 def _now() -> datetime:
@@ -332,6 +339,239 @@ class SessionManager:
         self.tasks: dict[str, TaskRecord] = {}
         self._idle_task: asyncio.Task | None = None
 
+    @staticmethod
+    def _format_project_agent_message(role: str, content: str) -> str:
+        """Description:
+            Render one Project Agent transcript entry as markdown.
+
+        Requirements:
+            - Preserve the visible speaker label in a stable markdown format.
+            - Keep multiline message content recoverable for restart-time rehydration.
+
+        :param role: Transcript role name.
+        :param content: Transcript content to persist.
+        :returns: Markdown representation of one transcript entry.
+        """
+
+        label = "User" if role == "user" else "Assistant"
+        normalised = content.rstrip("\n")
+        return f"## {label}\n~~~text\n{normalised}\n~~~\n\n"
+
+    @staticmethod
+    def _parse_project_agent_transcript(markdown: str) -> list[dict[str, str]]:
+        """Description:
+            Parse one persisted Project Agent transcript markdown file.
+
+        Requirements:
+            - Ignore malformed transcript fragments outside the supported entry format.
+            - Return messages in file order using `user` and `assistant` roles.
+
+        :param markdown: Persisted transcript markdown content.
+        :returns: Parsed transcript messages.
+        """
+
+        messages: list[dict[str, str]] = []
+        for match in PROJECT_AGENT_TRANSCRIPT_ENTRY_PATTERN.finditer(markdown):
+            label = match.group("label")
+            content = match.group("content")
+            messages.append(
+                {
+                    "role": "user" if label == "User" else "assistant",
+                    "content": content,
+                }
+            )
+        return messages
+
+    def _latest_session_path(self) -> Path | None:
+        """Description:
+            Return the newest persisted session directory.
+
+        Requirements:
+            - Ignore non-directory entries under `.faith/sessions/`.
+            - Return `None` when no sessions have been created yet.
+
+        :returns: Newest session directory path, if any.
+        """
+
+        session_paths = [path for path in self.sessions_dir.iterdir() if path.is_dir()]
+        if not session_paths:
+            return None
+        return sorted(session_paths, key=lambda path: path.name)[-1]
+
+    def _project_agent_log_path(self, session_path: Path | None = None) -> Path:
+        """Description:
+            Return the Project Agent transcript log path for one session.
+
+        Requirements:
+            - Default to the current active session when one is available.
+            - Raise when no session path can be resolved.
+
+        :param session_path: Optional explicit session directory.
+        :returns: Session-level `pa-user.log` path.
+        :raises RuntimeError: If no session path can be resolved.
+        """
+
+        resolved = session_path or self.session_dir
+        if resolved is None:
+            raise RuntimeError("project agent transcript log is unavailable without a session")
+        return resolved / "pa-user.log"
+
+    def _write_project_agent_sessions_index(self) -> Path:
+        """Description:
+            Rewrite the Project Agent session index from persisted session metadata.
+
+        Requirements:
+            - Keep the index under `.faith/agents/project-agent/sessions.index.md`.
+            - Include one row per persisted session with status and transcript-log path.
+
+        :returns: Written session-index path.
+        """
+
+        index_path = self.faith_dir / "agents" / "project-agent" / "sessions.index.md"
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        lines = [
+            "# Project Agent Sessions Index",
+            "",
+            "| Session ID | Status | Started | Transcript |",
+            "| --- | --- | --- | --- |",
+        ]
+        for session_path in sorted(
+            [path for path in self.sessions_dir.iterdir() if path.is_dir()],
+            key=lambda path: path.name,
+        ):
+            meta_path = session_path / "session.meta.json"
+            if not meta_path.exists():
+                continue
+            data = json.loads(meta_path.read_text(encoding="utf-8"))
+            transcript_path = session_path / "pa-user.log"
+            lines.append(
+                "| "
+                f"{data.get('session_id', session_path.name)} | "
+                f"{data.get('status', 'unknown')} | "
+                f"{data.get('started_at', '')} | "
+                f"{transcript_path.as_posix()} |"
+            )
+        index_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return index_path
+
+    def append_project_agent_message(self, role: str, content: str) -> Path:
+        """Description:
+            Append one user or assistant transcript message to the session-level Project Agent log.
+
+        Requirements:
+            - Persist the log at `.faith/sessions/<session>/pa-user.log`.
+            - Accept only `user` and `assistant` roles.
+            - Create the log file lazily on first write.
+
+        :param role: Transcript role name.
+        :param content: Transcript content to persist.
+        :returns: Written transcript-log path.
+        :raises ValueError: If the role is unsupported.
+        :raises RuntimeError: If no session is active.
+        """
+
+        if role not in {"user", "assistant"}:
+            raise ValueError("project agent transcript role must be 'user' or 'assistant'")
+        log_path = self._project_agent_log_path()
+        if not log_path.exists():
+            log_path.write_text(PROJECT_AGENT_TRANSCRIPT_HEADER, encoding="utf-8")
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(self._format_project_agent_message(role, content))
+        self._write_project_agent_sessions_index()
+        return log_path
+
+    def load_project_agent_transcript(
+        self,
+        session_path: Path | None = None,
+    ) -> list[dict[str, str]]:
+        """Description:
+            Load one persisted Project Agent transcript from disk.
+
+        Requirements:
+            - Return an empty list when the transcript file does not exist yet.
+            - Parse the markdown transcript back into structured role/content messages.
+
+        :param session_path: Optional explicit session directory.
+        :returns: Parsed transcript messages.
+        """
+
+        try:
+            log_path = self._project_agent_log_path(session_path)
+        except RuntimeError:
+            return []
+        if not log_path.exists():
+            return []
+        return self._parse_project_agent_transcript(log_path.read_text(encoding="utf-8"))
+
+    def load_latest_project_agent_transcript(self) -> list[dict[str, str]]:
+        """Description:
+            Load the newest persisted Project Agent transcript from the sessions tree.
+
+        Requirements:
+            - Return an empty list when no prior session transcript exists.
+
+        :returns: Parsed transcript messages from the newest session.
+        """
+
+        latest_session = self._latest_session_path()
+        if latest_session is None:
+            return []
+        return self.load_project_agent_transcript(latest_session)
+
+    def latest_project_agent_session_id(self) -> str | None:
+        """Description:
+            Return the newest persisted Project Agent session identifier.
+
+        Requirements:
+            - Prefer the active in-memory session when one exists.
+            - Fall back to the newest persisted session metadata.
+
+        :returns: Latest session identifier, if any.
+        """
+
+        if self.current_session is not None:
+            return self.current_session.session_id
+        latest_session = self._latest_session_path()
+        if latest_session is None:
+            return None
+        meta_path = latest_session / "session.meta.json"
+        if not meta_path.exists():
+            return latest_session.name
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        return str(data.get("session_id", latest_session.name))
+
+    def resume_latest_session(self) -> SessionRecord | None:
+        """Description:
+            Restore the newest non-ended session into active in-memory state when appropriate.
+
+        Requirements:
+            - Resume only sessions whose metadata status is not `ended`.
+            - Leave `current_session` unset when the newest session is already ended.
+
+        :returns: Restored active session record, if any.
+        """
+
+        latest_session = self._latest_session_path()
+        if latest_session is None:
+            return None
+        meta_path = latest_session / "session.meta.json"
+        if not meta_path.exists():
+            return None
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        session = SessionRecord(
+            session_id=str(data.get("session_id", latest_session.name)),
+            path=latest_session,
+            trigger=str(data.get("trigger", "web-ui")),
+            started_at=str(data.get("started_at", "")),
+            active_task_id=data.get("active_task_id"),
+        )
+        if str(data.get("status", "active")) == "ended":
+            return session
+        self.current_session = session
+        self.session_id = session.session_id
+        self.session_dir = latest_session
+        return session
+
     @property
     def active_session(self) -> SessionRecord | None:
         """Description:
@@ -466,6 +706,7 @@ class SessionManager:
         self.current_session = session
         self.session_id = session_id
         self.session_dir = session_path
+        self._write_project_agent_sessions_index()
         if self._idle_task and not self._idle_task.done():
             self._idle_task.cancel()
         if self.idle_timeout_seconds:
@@ -807,6 +1048,7 @@ class SessionManager:
         data["agents_active"] = active_agents
         data["active_task_id"] = None
         meta_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        self._write_project_agent_sessions_index()
         self.current_session.active_task_id = None
         if self._idle_task and not self._idle_task.done():
             self._idle_task.cancel()

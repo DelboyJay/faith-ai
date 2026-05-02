@@ -55,7 +55,7 @@ class SandboxManager:
         runtime,
         *,
         quota: SandboxQuota | ResourceQuota | None = None,
-        image: str = "ghcr.io/faith/sandbox:latest",
+        image: str = "python:3.13-slim",
         event_publisher: Any | None = None,
         audit_logger: Any | None = None,
     ):
@@ -135,6 +135,11 @@ class SandboxManager:
         return ContainerSpec(
             name=record.container_name,
             image=self.image,
+            command=[
+                "python",
+                "-c",
+                "import time; print('FAITH sandbox ready'); time.sleep(31536000)",
+            ],
             container_type="sandbox",
             mounts=dict(record.policy.approved_mounts),
             labels={
@@ -145,6 +150,9 @@ class SandboxManager:
                 "faith.allocation_mode": record.allocation_mode.value,
                 "faith.network_mode": record.policy.network_mode,
             },
+            network_mode=record.policy.network_mode,
+            privileged=record.policy.privileged,
+            capabilities=list(record.policy.linux_capabilities),
         )
 
     async def _publish_event(self, event: EventType | str, **data: Any) -> None:

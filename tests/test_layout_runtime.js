@@ -174,10 +174,16 @@ global.setTimeout = (handler) => {
 };
 
 const layoutSource = fs.readFileSync(
+  path.join(process.cwd(), "web", "js", "workspace-config.js"),
+  "utf8",
+);
+vm.runInThisContext(layoutSource, { filename: "workspace-config.js" });
+
+const workspaceLayoutSource = fs.readFileSync(
   path.join(process.cwd(), "web", "js", "layout.js"),
   "utf8",
 );
-vm.runInThisContext(layoutSource, { filename: "layout.js" });
+vm.runInThisContext(workspaceLayoutSource, { filename: "layout.js" });
 
 /**
  * Description:

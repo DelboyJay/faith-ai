@@ -16,9 +16,12 @@ import click
 DOCKER_INSTALL_URL = "https://docs.docker.com/get-docker/"
 COMPOSE_INSTALL_URL = "https://docs.docker.com/compose/install/"
 PYTHON_INSTALL_URL = "https://www.python.org/downloads/"
+DOCKER_DESKTOP_NOT_RUNNING_GUIDANCE = (
+    "Docker Desktop does not appear to be running on your system. Please run it first, "
+    "wait until the engine is running, and then run `faith init` or `faith start` again."
+)
 DOCKER_TIMEOUT_GUIDANCE = (
-    "Docker did not respond within 10 seconds. Start Docker Desktop, wait until "
-    "it reports that the engine is running, then run `faith init` again."
+    f"Docker did not respond within 10 seconds. {DOCKER_DESKTOP_NOT_RUNNING_GUIDANCE}"
 )
 
 
@@ -61,7 +64,9 @@ def check_docker() -> None:
     except subprocess.TimeoutExpired as exc:
         raise click.ClickException(DOCKER_TIMEOUT_GUIDANCE) from exc
     if info.returncode != 0:
-        details = info.stderr.strip() or info.stdout.strip() or "Docker daemon is not running."
+        details = _normalise_docker_daemon_error(
+            info.stderr.strip() or info.stdout.strip() or "Docker daemon is not running."
+        )
         raise click.ClickException(details)
 
     try:
@@ -75,6 +80,27 @@ def check_docker() -> None:
         raise click.ClickException(DOCKER_TIMEOUT_GUIDANCE) from exc
     if compose.returncode != 0:
         raise click.ClickException(f"Docker Compose v2 is not available. See {COMPOSE_INSTALL_URL}")
+
+
+def _normalise_docker_daemon_error(details: str) -> str:
+    """Description:
+        Convert low-level Docker daemon errors into user-friendly CLI guidance.
+
+    Requirements:
+        - Detect the Windows Docker Desktop named-pipe failure and map it to one standard message.
+        - Preserve the original error text for unknown daemon failures so useful diagnostics are not lost.
+
+    :param details: Raw stderr or stdout text returned by the Docker CLI.
+    :returns: User-facing Docker daemon guidance.
+    """
+
+    lowered = details.lower()
+    if (
+        "dockerdesktoplinuxengine" in lowered
+        and "the system cannot find the file specified" in lowered
+    ):
+        return DOCKER_DESKTOP_NOT_RUNNING_GUIDANCE
+    return details
 
 
 def check_git() -> None:

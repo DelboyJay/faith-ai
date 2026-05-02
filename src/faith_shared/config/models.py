@@ -261,14 +261,15 @@ class SystemConfig(BaseModel):
         Define the schema for project-level `.faith/system.yaml`.
 
     Requirements:
-        - Capture PA, privacy, loop-detection, cost, audit, Ollama, retention,
-          and heartbeat settings.
+        - Capture PA, privacy, timezone, loop-detection, cost, audit, Ollama,
+          retention, and heartbeat settings.
     """
 
     schema_version: str = "1.0"
     privacy_profile: PrivacyProfile = PrivacyProfile.INTERNAL
     pa: PAConfig
     default_agent_model: str
+    timezone: str | None = None
     editor: str | None = None
     loop_detection: LoopDetectionConfig = Field(default_factory=LoopDetectionConfig)
     cost_warning: CostWarningConfig = Field(default_factory=CostWarningConfig)

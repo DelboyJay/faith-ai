@@ -13,12 +13,14 @@ __pycache__/
 *.pyc
 *.pyo
 .venv/
+node_modules/
 *.egg-info/
 dist/
 build/
 
 # Docker
 .docker/
+.faith/
 
 # IDE
 .vscode/

@@ -272,6 +272,23 @@ def test_index_returns_html(client: TestClient) -> None:
     assert "FAITH Web UI" in response.text
 
 
+def test_index_renders_visible_web_ui_version(client: TestClient) -> None:
+    """Description:
+        Verify the main browser shell renders the current Web UI version visibly.
+
+    Requirements:
+        - This test is needed so users can confirm the page is serving the latest build.
+        - Verify the header includes the current packaged Web UI version string.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/")
+    assert response.status_code == 200
+    assert 'class="faith-toolbar__version"' in response.text
+    assert "v0.6.4" in response.text
+
+
 def test_index_route_uses_non_deprecated_template_signature(client: TestClient) -> None:
     """Description:
         Verify the index route renders without relying on the deprecated Starlette template response signature.
@@ -323,20 +340,20 @@ def test_static_assets_are_served(client: TestClient) -> None:
     """
 
     css_response = client.get("/static/css/theme.css")
-    js_response = client.get("/static/js/app.js")
+    js_response = client.get("/static/js/layout.js")
     assert css_response.status_code == 200
     assert "--bg" in css_response.text
     assert js_response.status_code == 200
-    assert "refreshStatus" in js_response.text
+    assert "faithLayout" in js_response.text
 
 
-def test_index_bootstraps_goldenlayout_shell(client: TestClient) -> None:
+def test_index_bootstraps_dockview_shell(client: TestClient) -> None:
     """Description:
-        Verify the main HTML shell includes the GoldenLayout mount points and asset bootstrapping.
+        Verify the main HTML shell includes the Dockview bundle mount points and asset bootstrapping.
 
     Requirements:
-        - This test is needed to prove the browser receives the panel-framework shell required by FAITH-037.
-        - Verify the index page includes the toolbar, layout container, and GoldenLayout/layout asset references.
+        - This test is needed to prove the browser receives the new bundled Dockview shell rather than the legacy GoldenLayout script chain.
+        - Verify the index page includes the toolbar, workspace mount, and Dockview bundle asset references.
 
     :param client: FastAPI test client bound to the FAITH web app.
     """
@@ -344,11 +361,10 @@ def test_index_bootstraps_goldenlayout_shell(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert 'id="faith-toolbar"' in response.text
-    assert 'id="faith-layout"' in response.text
-    assert "goldenlayout" in response.text.lower()
-    assert "vue" in response.text.lower()
-    assert "xterm" in response.text.lower()
-    assert "/static/js/layout.js" in response.text
+    assert 'id="faith-app"' in response.text
+    assert "/static/dist/faith-ui.css" in response.text
+    assert "/static/dist/faith-ui.js" in response.text
+    assert "goldenlayout" not in response.text.lower()
 
 
 def test_index_cache_busts_local_static_assets(client: TestClient) -> None:
@@ -366,9 +382,60 @@ def test_index_cache_busts_local_static_assets(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert "/static/css/theme.css?v=" in response.text
-    assert "/static/js/panels/agent-panel.js?v=" in response.text
-    assert "/static/js/layout.js?v=" in response.text
-    assert "/static/js/app.js?v=" in response.text
+    assert "/static/dist/faith-ui.css?v=" in response.text
+    assert "/static/dist/faith-ui.js?v=" in response.text
+
+
+def test_dockview_bundle_assets_are_served(client: TestClient) -> None:
+    """Description:
+        Verify the bundled Dockview frontend assets are served successfully.
+
+    Requirements:
+        - This test is needed to prove the browser can load the new bundled frontend shell without static-file errors.
+        - Verify the JavaScript bundle and its stylesheet are both present.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    css_response = client.get("/static/dist/faith-ui.css")
+    js_response = client.get("/static/dist/faith-ui.js")
+    assert css_response.status_code == 200
+    assert js_response.status_code == 200
+
+
+def test_workspace_config_asset_is_served(client: TestClient) -> None:
+    """Description:
+        Verify the shared workspace configuration asset is served as a static file.
+
+    Requirements:
+        - This test is needed to prove the browser can load the Dockview-target workspace model without server errors.
+        - Verify the asset exposes the FAITH workspace configuration global and the default layout descriptor.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/workspace-config.js")
+    assert response.status_code == 200
+    assert "faithWorkspaceConfig" in response.text
+    assert "buildDefaultWorkspaceDescriptor" in response.text
+    assert "project-agent" in response.text
+
+
+def test_layout_asset_uses_shared_workspace_config(client: TestClient) -> None:
+    """Description:
+        Verify the layout runtime consumes the shared workspace configuration asset.
+
+    Requirements:
+        - This test is needed to prove the GoldenLayout-era runtime is no longer the sole source of truth for the default workspace.
+        - Verify the layout asset reads from the shared workspace config global when building the default layout.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/layout.js")
+    assert response.status_code == 200
+    assert "faithWorkspaceConfig" in response.text
+    assert "buildDefaultWorkspaceDescriptor" in response.text
 
 
 def test_layout_asset_is_served(client: TestClient) -> None:
@@ -385,7 +452,28 @@ def test_layout_asset_is_served(client: TestClient) -> None:
     response = client.get("/static/js/layout.js")
     assert response.status_code == 200
     assert "faithLayout" in response.text
-    assert "faith_layout_v1" in response.text
+    assert "faith_layout_v4" in response.text
+
+
+def test_layout_asset_migrates_old_saved_layout_key(client: TestClient) -> None:
+    """Description:
+        Verify layout changes discard stale browser-saved layouts from older UI versions.
+
+    Requirements:
+        - This test is needed to prove users see the updated default layout after a layout redesign.
+        - Verify the current storage key is versioned and the previous key is removed during load.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/layout.js")
+    assert response.status_code == 200
+    assert 'const LAYOUT_STORAGE_KEY = "faith_layout_v4";' in response.text
+    assert (
+        'const LEGACY_LAYOUT_STORAGE_KEYS = Object.freeze(["faith_layout_v1", "faith_layout_v2", "faith_layout_v3"]);'
+        in response.text
+    )
+    assert "removeItem(legacyKey)" in response.text
 
 
 def test_layout_asset_uses_minimal_first_load_defaults(client: TestClient) -> None:
@@ -410,6 +498,73 @@ def test_layout_asset_uses_minimal_first_load_defaults(client: TestClient) -> No
     assert "QA Engineer" not in response.text
 
 
+def test_layout_asset_stacks_system_status_with_project_agent(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the default layout tabs System Status with the Project Agent.
+
+    Requirements:
+        - This test is needed to prove System Status no longer takes a separate lower column.
+        - Verify the default layout uses a GoldenLayout stack containing Project Agent and System Status.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/layout.js")
+    assert response.status_code == 200
+    assert 'type: "stack"' in response.text
+    assert 'title: "Project Agent"' in response.text
+    assert 'title: "System Status"' in response.text
+    assert "System Status" in response.text.split('title: "Input"')[0]
+    assert 'model: "ollama/llama3:8b"' in response.text
+
+
+def test_layout_asset_places_input_and_approvals_side_by_side(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the default layout keeps Input and Approvals in the same row.
+
+    Requirements:
+        - This test is needed to prove approvals are beside input rather than stacked under it.
+        - Verify the default layout row contains both Input and Approvals panels.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/layout.js")
+    assert response.status_code == 200
+    row_start = response.text.index('type: "row"')
+    row_text = response.text[row_start:]
+    assert 'title: "Input"' in row_text
+    assert 'title: "Approvals"' in row_text
+
+
+def test_system_status_panel_uses_runtime_cards_instead_of_json_placeholder(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify System Status renders the runtime-card status view.
+
+    Requirements:
+        - This test is needed to prevent System Status from regressing to a raw JSON dump.
+        - Verify the status component mounts the Docker runtime panel implementation.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/layout.js")
+    assert response.status_code == 200
+    status_section = response.text[
+        response.text.index("function mountStatusPanel") : response.text.index(
+            "function mountDockerRuntimePanel"
+        )
+    ]
+    assert "faithDockerRuntimePanel.mountPanel" in status_section
+    assert "status-output" not in status_section
+
+
 def test_layout_asset_keeps_saved_layout_and_dynamic_agent_helpers(client: TestClient) -> None:
     """Description:
         Verify the layout asset still supports saved layouts and later agent panel creation.
@@ -424,7 +579,7 @@ def test_layout_asset_keeps_saved_layout_and_dynamic_agent_helpers(client: TestC
 
     response = client.get("/static/js/layout.js")
     assert response.status_code == 200
-    assert "faith_layout_v1" in response.text
+    assert "faith_layout_v4" in response.text
     assert "layout.loadLayout(loadSavedLayout() || buildDefaultLayoutConfig());" in response.text
     assert "addAgentPanel" in response.text
 
@@ -445,6 +600,46 @@ def test_layout_asset_exposes_panel_lifecycle_helpers(client: TestClient) -> Non
     assert "hasExistingPanel" in response.text
     assert "focusExistingPanel" in response.text
     assert "removePanelByIdentity" in response.text
+
+
+def test_layout_asset_registers_pa_system_prompt_panel(client: TestClient) -> None:
+    """Description:
+        Verify the layout asset registers the PA system prompt editor panel.
+
+    Requirements:
+        - This test is needed to prove FAITH-071 exposes the prompt editor inside the panel workspace.
+        - Verify the component type, toolbar label, and panel mount hook are present.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/layout.js")
+    assert response.status_code == 200
+    assert "pa-system-prompt-panel" in response.text
+    assert "PA System Prompt" in response.text
+    assert "faithPaSystemPromptPanel.mountPanel" in response.text
+
+
+def test_pa_system_prompt_panel_asset_supports_edit_save_reload_and_reset(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the PA system prompt panel frontend asset contains the required controls.
+
+    Requirements:
+        - This test is needed to prove FAITH-071 ships browser behaviour for loading and editing the prompt.
+        - Verify the asset calls the read, update, and reset PA prompt endpoints.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/panels/pa-system-prompt-panel.js")
+    assert response.status_code == 200
+    assert "/api/pa/system-prompt" in response.text
+    assert "Save" in response.text
+    assert "Reload" in response.text
+    assert "Reset" in response.text
+    assert "unsaved" in response.text.lower()
 
 
 def test_layout_asset_uses_title_bar_as_primary_panel_label(client: TestClient) -> None:
@@ -496,6 +691,44 @@ def test_vendor_goldenlayout_asset_supports_panel_close_action(client: TestClien
     assert response.status_code == 200
     assert "removePanelByIdentity" in response.text
     assert "faith-panel__close" in response.text
+
+
+def test_vendor_goldenlayout_stack_tabs_switch_visible_component(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the vendored GoldenLayout fallback can switch stack tabs.
+
+    Requirements:
+        - This test is needed because the fallback previously rendered only the first stack child.
+        - Verify stack tabs install click handlers and suppress duplicate inner component headers.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/vendor/goldenlayout.umd.js")
+    assert response.status_code == 200
+    assert "activateStackChild" in response.text
+    assert "tab.addEventListener" in response.text
+    assert "suppressHeader" in response.text
+
+
+def test_theme_styles_fallback_rows_and_stacks(client: TestClient) -> None:
+    """Description:
+        Verify the main stylesheet carries layout rules for the vendored fallback.
+
+    Requirements:
+        - This test is needed because fallback JavaScript can run even when CDN CSS loaded successfully.
+        - Verify fallback rows render horizontally and fallback stacks hide inactive panels.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/css/theme.css")
+    assert response.status_code == 200
+    assert ".faith-goldenlayout-fallback .lm_row" in response.text
+    assert "flex-direction: row" in response.text
+    assert ".faith-goldenlayout-fallback .lm_stack__panel[hidden]" in response.text
 
 
 def test_title_bar_close_affordance_is_styled(client: TestClient) -> None:
@@ -1071,3 +1304,50 @@ def test_api_routes_returns_manifest(client: TestClient) -> None:
     assert any(route["path"] == "/ws/status" for route in payload["routes"])
     assert any(route["path"] == "/api/docker-runtime" for route in payload["routes"])
     assert any(route["path"] == "/ws/docker" for route in payload["routes"])
+
+
+@pytest.mark.asyncio
+async def test_pa_transcript_proxy_returns_saved_transcript(app) -> None:
+    """Description:
+        Verify the Web UI exposes the saved Project Agent transcript through a same-origin proxy route.
+
+    Requirements:
+        - This test is needed to prove the browser can rehydrate the Project Agent panel after restart without talking to the PA service directly.
+        - Verify the proxied response preserves the transcript message list.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    async def _fake_pa_prompt_fetcher(method: str, path: str, *, json_body=None):
+        """Description:
+            Return one deterministic Project Agent transcript payload for the Web UI proxy test.
+
+        Requirements:
+            - Preserve the proxied route path for assertion.
+
+        :param method: Proxied HTTP method.
+        :param path: Proxied upstream PA path.
+        :param json_body: Optional proxied request body.
+        :returns: Deterministic transcript payload.
+        """
+
+        del method, json_body
+        assert path == "/api/pa/transcript"
+        return {
+            "session_id": "sess-0001-20260502120000",
+            "messages": [
+                {"role": "user", "content": "Recovered user message."},
+                {"role": "assistant", "content": "Recovered assistant reply."},
+            ],
+        }
+
+    app.state.pa_prompt_request_proxy = _fake_pa_prompt_fetcher
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        response = await async_client.get("/api/pa/transcript")
+
+    assert response.status_code == 200
+    assert response.json()["messages"] == [
+        {"role": "user", "content": "Recovered user message."},
+        {"role": "assistant", "content": "Recovered assistant reply."},
+    ]

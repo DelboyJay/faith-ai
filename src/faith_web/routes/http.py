@@ -16,10 +16,17 @@ from typing import Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
+from httpx import AsyncClient, HTTPStatusError, RequestError
 from pydantic import BaseModel, Field
 
 from faith_pa.utils.redis_client import USER_INPUT_CHANNEL
-from faith_web.app import APPROVAL_RESPONSES_CHANNEL, get_static_asset_version, templates
+from faith_web.app import (
+    APPROVAL_RESPONSES_CHANNEL,
+    DEFAULT_PA_URL,
+    get_static_asset_version,
+    templates,
+)
+from faith_web.version import __version__
 
 router = APIRouter()
 
@@ -112,6 +119,17 @@ class UploadResponse(BaseModel):
     channel: str
 
 
+class ProjectAgentPromptUpdate(BaseModel):
+    """Description:
+        Validate a Project Agent prompt update submitted through the Web UI proxy.
+
+    Requirements:
+        - Preserve the edited prompt text before forwarding it to the PA service.
+    """
+
+    prompt: str
+
+
 def _utc_now() -> str:
     """Description:
         Return the current UTC timestamp in ISO 8601 format.
@@ -160,7 +178,7 @@ async def index(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"asset_version": get_static_asset_version()},
+        {"asset_version": get_static_asset_version(), "ui_version": __version__},
     )
 
 
@@ -240,6 +258,138 @@ async def upload_file(
         content_type=content_type,
         channel=USER_INPUT_CHANNEL,
     )
+
+
+async def _proxy_pa_prompt_request(
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, str] | None = None,
+) -> dict[str, object]:
+    """Description:
+        Forward one Web UI prompt request to the PA service.
+
+    Requirements:
+        - Keep the browser on same-origin Web UI routes.
+        - Preserve useful upstream validation errors for the prompt editor panel.
+
+    :param method: HTTP method to use for the upstream PA request.
+    :param path: PA API path to call.
+    :param json_body: Optional JSON body to forward.
+    :raises HTTPException: If the PA service is unreachable or rejects the request.
+    :returns: Decoded PA JSON payload.
+    """
+
+    try:
+        async with AsyncClient(base_url=DEFAULT_PA_URL, timeout=10.0) as client:
+            response = await client.request(method, path, json=json_body)
+            response.raise_for_status()
+            return dict(response.json())
+    except HTTPStatusError as exc:
+        try:
+            detail = exc.response.json().get("detail", exc.response.text)
+        except ValueError:
+            detail = exc.response.text
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
+    except RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Project Agent service is unavailable: {exc}",
+        ) from exc
+
+
+async def _proxy_pa_request(
+    request: Request,
+    method: str,
+    path: str,
+    *,
+    json_body: dict[str, str] | None = None,
+) -> dict[str, object]:
+    """Description:
+        Forward one Web UI request to the PA service with test override support.
+
+    Requirements:
+        - Use an app-state override when tests need to intercept proxied PA requests.
+        - Fall back to the normal PA proxy implementation during production use.
+
+    :param request: Incoming Web UI request object.
+    :param method: HTTP method to use for the upstream PA request.
+    :param path: PA API path to call.
+    :param json_body: Optional JSON body to forward.
+    :returns: Decoded PA JSON payload.
+    """
+
+    proxy = getattr(request.app.state, "pa_prompt_request_proxy", None)
+    if callable(proxy):
+        return dict(await proxy(method, path, json_body=json_body))
+    return await _proxy_pa_prompt_request(method, path, json_body=json_body)
+
+
+@router.get("/api/pa/system-prompt")
+async def get_project_agent_system_prompt(request: Request) -> dict[str, object]:
+    """Description:
+        Return the active Project Agent prompt through the Web UI same-origin API.
+
+    Requirements:
+        - Proxy the request to the PA service prompt endpoint.
+
+    :returns: Active prompt metadata payload.
+    """
+
+    return await _proxy_pa_request(request, "GET", "/api/pa/system-prompt")
+
+
+@router.get("/api/pa/transcript")
+async def get_project_agent_transcript(request: Request) -> dict[str, object]:
+    """Description:
+        Return the latest persisted Project Agent transcript through the Web UI same-origin API.
+
+    Requirements:
+        - Proxy the request to the PA transcript endpoint.
+        - Preserve the transcript message list for browser rehydration.
+
+    :param request: Incoming FastAPI request object.
+    :returns: Transcript payload for the Project Agent panel.
+    """
+
+    return await _proxy_pa_request(request, "GET", "/api/pa/transcript")
+
+
+@router.put("/api/pa/system-prompt")
+async def update_project_agent_system_prompt(
+    request: Request,
+    body: ProjectAgentPromptUpdate,
+) -> dict[str, object]:
+    """Description:
+        Forward an edited Project Agent prompt to the PA service.
+
+    Requirements:
+        - Preserve PA-side validation and persistence behaviour.
+
+    :param body: User-submitted prompt update payload.
+    :returns: Updated active prompt metadata payload.
+    """
+
+    return await _proxy_pa_request(
+        request,
+        "PUT",
+        "/api/pa/system-prompt",
+        json_body=body.model_dump(),
+    )
+
+
+@router.post("/api/pa/system-prompt/reset")
+async def reset_project_agent_system_prompt(request: Request) -> dict[str, object]:
+    """Description:
+        Reset the Project Agent prompt through the Web UI same-origin API.
+
+    Requirements:
+        - Proxy the reset request to the PA service prompt endpoint.
+
+    :returns: Default active prompt metadata payload.
+    """
+
+    return await _proxy_pa_request(request, "POST", "/api/pa/system-prompt/reset")
 
 
 @router.post("/approve/{request_id}", response_model=ApprovalDecisionResponse)

@@ -27,9 +27,9 @@ src/faith_web/
 │   ├── http.py          ← POST /input, POST /upload, POST /approve/{request_id}
 │   └── websocket.py     ← WS /ws/agent/{agent_id}, /ws/tool/{tool_id}, /ws/approvals, /ws/status
 └── templates/
-    └── index.html       ← Jinja2 shell (placeholder — content built by FAITH-037+)
+    └── index.html       ← Jinja2 shell (placeholder — content built by FAITH-074+)
 
-web/                         ← Frontend assets (Vue 3)
+web/                         ← Frontend source and bundled assets (React)
 ├── css/
 │   └── theme.css    ← Placeholder terminal dark theme
 ├── js/
@@ -305,8 +305,8 @@ class UploadResponse(BaseModel):
 async def index(request: Request):
     """Serve the main HTML shell via Jinja2.
 
-    The template loads GoldenLayout, Vue 3, and xterm.js from CDN
-    (or vendored static files) and bootstraps the panel workspace.
+    The template loads the bundled React workspace shell assets and
+    bootstraps the panel workspace.
     """
     from faith.web.main import templates
 
@@ -768,7 +768,7 @@ async def ws_status(websocket: WebSocket):
         <p class="status">Connecting to backend...</p>
     </div>
 
-    <!-- Placeholder: GoldenLayout, Vue 3, xterm.js loaded here (FAITH-037+) -->
+    <!-- Placeholder: bundled React workspace assets loaded here (FAITH-074+) -->
     <script src="/static/js/app.js"></script>
 </body>
 </html>
@@ -826,7 +826,7 @@ h1 {
 
 ```javascript
 /* FAITH Web UI — placeholder application script.
-   Full panel system implemented in FAITH-037 (GoldenLayout).
+   Full panel system implemented in FAITH-074 (React + Dockview).
    Full WebSocket logic implemented in FAITH-038 (Panel Components).
 
    FRS Reference: Section 6.3, 6.4
@@ -1330,7 +1330,7 @@ await redis.publish("approval-responses", json.dumps({
 - **No authentication on endpoints**: Per FRS Section 1.4, FAITH runs locally as a single-user system. There is no authentication or session management on the web server. If multi-user support is added in v2, authentication middleware would be added here.
 - **Upload size limit**: The 10 MB limit is enforced in application code, not by FastAPI/Starlette middleware. For production use, consider adding a `max_body_size` middleware or reverse proxy limit as a defence-in-depth measure.
 - **Base64 encoding for uploads**: File content is base64-encoded before publishing to Redis because Redis pub/sub messages are strings. For large files, this is inefficient — a future optimisation could store the file in a shared volume and publish only the file path.
-- **Placeholder templates and static files**: The `index.html`, `theme.css`, and `app.js` files are minimal placeholders. The full panel framework (GoldenLayout, Vue 3, xterm.js) is implemented in FAITH-037 through FAITH-039. This task only needs to verify that template rendering and static serving work.
+- **Placeholder templates and static files**: The `index.html`, `theme.css`, and `app.js` files are minimal placeholders. The full panel framework (React, Dockview, xterm.js) is implemented in FAITH-074 and the dependent panel tasks. This task only needs to verify that template rendering and static serving work.
 - **WebSocket timeout loop**: The `_redis_to_ws_bridge` function uses a 1-second timeout on `pubsub.get_message()`. This means there is up to 1 second of latency between a Redis message arriving and it being forwarded to the browser. This is acceptable for v1; if sub-100ms latency is needed, switch to `pubsub.listen()` with an async generator.
 - **FakeRedis in tests**: The tests use a custom `FakeRedis`/`FakePubSub` pair rather than the `fakeredis` package, matching the pattern established in FAITH-004, FAITH-009, and FAITH-010 test suites.
 - **No Dockerfile in this task**: The `web-ui` container Dockerfile is assumed to be created by the Docker Compose setup (FAITH-001). This task focuses solely on the FastAPI application code.

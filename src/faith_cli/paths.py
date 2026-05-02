@@ -307,6 +307,7 @@ def editable_compose_contents() -> str:
       - FAITH_CONFIG_DIR=/config
       - FAITH_LOG_DIR=/logs
       - FAITH_DATA_DIR=/data
+      - FAITH_PA_SESSION_ROOT=/data/pa-runtime
       - FAITH_REDIS_URL=redis://redis:6379/0
       - FAITH_PROJECT_AGENT_MODEL=ollama/llama3:8b
       - MCP_REGISTRY_URL=http://mcp-registry:8080

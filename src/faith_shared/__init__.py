@@ -15,7 +15,7 @@ from faith_shared.compatibility import (
     validate_schema_compatibility,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.6.4"
 
 __all__ = [
     "__version__",

@@ -8,12 +8,11 @@ titles, phases, dependencies, complexity, and model guidance. It regenerates
 
 from __future__ import annotations
 
+import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
-import os
 from pathlib import Path
-from typing import Iterable
-
 
 ROOT = Path(__file__).resolve().parent
 EPIC_PATH = ROOT / "epic.yaml"
@@ -42,6 +41,7 @@ PHASE_COLOURS = {
     10: ("#1a3a3a", "#40a0a0"),
     11: ("#3a1a3a", "#a040a0"),
     12: ("#4a0a0a", "#ff4040"),
+    13: ("#22315a", "#88a0ff"),
 }
 
 PHASE_NAMES = {
@@ -57,6 +57,7 @@ PHASE_NAMES = {
     10: "First Run",
     11: "CLI & Skills",
     12: "Cloud",
+    13: "Web UI Workspace Migration",
 }
 
 COMPLEXITY_WEIGHTS = {"S": 0.5, "M": 2.0, "L": 4.0, "XL": 6.0}
@@ -265,7 +266,15 @@ def markdown_table(rows: Iterable[Iterable[str]]) -> str:
 def build_registry_table(tasks: list[Task]) -> str:
     rows = [
         ("Task ID", "Task Name", "Phase", "Status", "Dependencies", "Complexity", "Model"),
-        ("---------", "-----------", "-------", "--------", "--------------", "------------", "-------"),
+        (
+            "---------",
+            "-----------",
+            "-------",
+            "--------",
+            "--------------",
+            "------------",
+            "-------",
+        ),
     ]
     for task in sorted(tasks, key=lambda t: t.numeric_id):
         deps = ", ".join(task.dependencies) if task.dependencies else "None"
@@ -313,9 +322,7 @@ def build_mermaid(tasks: list[Task], waves: dict[int, list[Task]]) -> str:
     lines.append("    %% ════════════════════════════════════")
     lines.append("")
     for phase, (fill, stroke) in PHASE_COLOURS.items():
-        lines.append(
-            f"    classDef phase{phase} fill:{fill},stroke:{stroke},color:#ffffff"
-        )
+        lines.append(f"    classDef phase{phase} fill:{fill},stroke:{stroke},color:#ffffff")
     lines.append("")
     for phase in sorted(phase_to_tasks):
         ids = ",".join(task.task_id for task in phase_to_tasks[phase])
@@ -363,7 +370,9 @@ def build_wave_sections(waves: dict[int, list[Task]]) -> tuple[str, str]:
 def build_markdown(tasks: list[Task]) -> str:
     waves = compute_waves(tasks)
     critical_path, critical_score = compute_longest_paths(tasks)
-    non_cloud_waves = [wave for wave in waves if all(task.task_id != "FAITH-052" for task in waves[wave])]
+    non_cloud_waves = [
+        wave for wave in waves if all(task.task_id != "FAITH-052" for task in waves[wave])
+    ]
     max_parallelism_wave = max(waves, key=lambda wave: len(waves[wave]))
     wave_sections, summary_table = build_wave_sections(waves)
 
