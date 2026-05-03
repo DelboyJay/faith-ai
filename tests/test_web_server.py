@@ -286,7 +286,7 @@ def test_index_renders_visible_web_ui_version(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert 'class="faith-toolbar__version"' in response.text
-    assert "v0.8.2" in response.text
+    assert "v0.8.5" in response.text
 
 
 def test_index_route_uses_non_deprecated_template_signature(client: TestClient) -> None:
@@ -401,6 +401,29 @@ def test_dockview_bundle_assets_are_served(client: TestClient) -> None:
     js_response = client.get("/static/dist/faith-ui.js")
     assert css_response.status_code == 200
     assert js_response.status_code == 200
+
+
+def test_dockview_bundle_closes_add_panel_menu_on_outside_interaction(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the bundled Dockview frontend includes outside-dismiss logic for the add-panel dropdown.
+
+    Requirements:
+        - This test is needed to prove the toolbar panel-picker closes when the user clicks elsewhere in the page.
+        - Verify the shipped bundle listens for outside pointer and focus interactions around the add-panel wrapper.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    project_root = Path(__file__).resolve().parents[1]
+    source = (project_root / "web" / "src" / "main.jsx").read_text(encoding="utf-8")
+
+    del client
+    assert "open={menuOpen}" in source
+    assert 'window.addEventListener("pointerdown"' in source
+    assert 'window.addEventListener("focusin"' in source
+    assert "setMenuOpen(false)" in source
 
 
 def test_workspace_config_asset_is_served(client: TestClient) -> None:
@@ -1425,6 +1448,10 @@ async def test_user_settings_proxy_returns_saved_settings(app) -> None:
             "timezone": "Europe/London",
             "country_options": [{"value": "GB", "label": "United Kingdom"}],
             "locale_options": [{"value": "en-GB", "label": "English (United Kingdom)"}],
+            "locale_options_by_country": {
+                "GB": [{"value": "en-GB", "label": "English (United Kingdom)"}],
+                "US": [{"value": "en-US", "label": "English (United States)"}],
+            },
             "timezone_options": [{"value": "Europe/London", "label": "Europe/London"}],
             "timezone_options_by_country": {
                 "GB": [{"value": "Europe/London", "label": "Europe/London"}],
@@ -1442,6 +1469,7 @@ async def test_user_settings_proxy_returns_saved_settings(app) -> None:
     assert response.json()["timezone"] == "Europe/London"
     assert response.json()["country_code"] == "GB"
     assert response.json()["display_name"] == "Del"
+    assert response.json()["locale_options_by_country"]["GB"][0]["value"] == "en-GB"
 
 
 @pytest.mark.asyncio
@@ -1484,6 +1512,10 @@ async def test_user_settings_proxy_forwards_updates(app) -> None:
             "timezone": "Europe/London",
             "country_options": [{"value": "GB", "label": "United Kingdom"}],
             "locale_options": [{"value": "en-GB", "label": "English (United Kingdom)"}],
+            "locale_options_by_country": {
+                "GB": [{"value": "en-GB", "label": "English (United Kingdom)"}],
+                "US": [{"value": "en-US", "label": "English (United States)"}],
+            },
             "timezone_options": [{"value": "Europe/London", "label": "Europe/London"}],
             "timezone_options_by_country": {
                 "GB": [{"value": "Europe/London", "label": "Europe/London"}],

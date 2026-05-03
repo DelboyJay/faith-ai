@@ -24,7 +24,7 @@ from faith_pa.agent.cag import CAGManager, CAGValidationResult
 from faith_pa.agent.llm_client import LLMClient
 from faith_pa.agent.summariser import ContextSummariser
 from faith_pa.config.models import AgentConfig, SystemConfig
-from faith_pa.runtime_time_context import RuntimeTimeContextProvider
+from faith_pa.runtime_time_context import RuntimeTimeContextProvider, RuntimeUserContextProvider
 from faith_pa.utils.tokens import (
     context_threshold,
     count_message_tokens,
@@ -145,6 +145,7 @@ class BaseAgent:
     :param redis_client: Optional Redis client used for channel subscriptions and event publishing.
     :param llm_client: Optional LLM client override used for chat completions.
     :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
+    :param user_context_provider: Optional runtime user-context provider used for prompt assembly.
     """
 
     def __init__(
@@ -160,6 +161,7 @@ class BaseAgent:
         redis_client: Any | None = None,
         llm_client: Any | None = None,
         time_context_provider: RuntimeTimeContextProvider | None = None,
+        user_context_provider: RuntimeUserContextProvider | None = None,
     ) -> None:
         """Description:
             Initialise the base agent runtime.
@@ -178,6 +180,7 @@ class BaseAgent:
         :param redis_client: Optional Redis client used for channel subscriptions and event publishing.
         :param llm_client: Optional LLM client override used for chat completions.
         :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
+        :param user_context_provider: Optional runtime user-context provider used for prompt assembly.
         """
 
         self.agent_id = agent_id
@@ -200,6 +203,11 @@ class BaseAgent:
         self.context_summary = context_summary.strip() or self.summariser.load_summary()
         self.time_context_provider = time_context_provider or RuntimeTimeContextProvider(
             configured_timezone=self.system_config.timezone,
+        )
+        self.user_context_provider = user_context_provider or RuntimeUserContextProvider(
+            display_name=self.system_config.display_name,
+            country_code=self.system_config.country_code,
+            preferred_locale=self.system_config.preferred_locale,
         )
         self.llm_client = llm_client or LLMClient(
             model=self.model_name,
@@ -429,6 +437,10 @@ class BaseAgent:
         """
 
         parts: list[str] = [self.prompt_text]
+
+        runtime_user_context = self.user_context_provider.build_prompt_block().strip()
+        if runtime_user_context:
+            parts.append(runtime_user_context)
 
         runtime_time_context = self.time_context_provider.build_prompt_block().strip()
         if runtime_time_context:

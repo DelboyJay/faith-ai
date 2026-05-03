@@ -196,8 +196,11 @@ vm.runInThisContext(panelSource, { filename: "user-settings-panel.js" });
       ],
       locale_options: [
         { value: "en-GB", label: "English (United Kingdom)" },
-        { value: "en-US", label: "English (United States)" },
       ],
+      locale_options_by_country: {
+        GB: [{ value: "en-GB", label: "English (United Kingdom)" }],
+        US: [{ value: "en-US", label: "English (United States)" }],
+      },
       timezone_options: [
         { value: "Europe/London", label: "Europe/London" },
       ],
@@ -259,13 +262,17 @@ vm.runInThisContext(panelSource, { filename: "user-settings-panel.js" });
   countrySelect.value = "US";
   countrySelect.dispatch("change");
   assert(
+    localeSelect.value === "en-US",
+    "Expected changing country to switch locale to the first supported locale for that country.",
+  );
+  assert(
     timezoneSelect.children.some((child) => child.value === "America/New_York"),
     "Expected changing country to repopulate timezone choices for that country.",
   );
-  localeSelect.value = "en-US";
-  localeSelect.dispatch("change");
-  timezoneSelect.value = "America/New_York";
-  timezoneSelect.dispatch("change");
+  assert(
+    timezoneSelect.value === "America/New_York",
+    "Expected changing country to switch timezone to the first supported timezone for that country.",
+  );
 
   queuedResponses.push({
     ok: true,
@@ -280,9 +287,12 @@ vm.runInThisContext(panelSource, { filename: "user-settings-panel.js" });
         { value: "US", label: "United States" },
       ],
       locale_options: [
-        { value: "en-GB", label: "English (United Kingdom)" },
         { value: "en-US", label: "English (United States)" },
       ],
+      locale_options_by_country: {
+        GB: [{ value: "en-GB", label: "English (United Kingdom)" }],
+        US: [{ value: "en-US", label: "English (United States)" }],
+      },
       timezone_options: [
         { value: "America/New_York", label: "America/New_York" },
         { value: "America/Chicago", label: "America/Chicago" },
@@ -321,6 +331,8 @@ vm.runInThisContext(panelSource, { filename: "user-settings-panel.js" });
     "Expected successful settings changes to publish a UI notification event.",
   );
 
+  localeSelect.value = "en-US";
+  localeSelect.dispatch("change");
   timezoneSelect.value = "America/Chicago";
   timezoneSelect.dispatch("change");
   confirmResponses.push(false);
@@ -343,8 +355,11 @@ vm.runInThisContext(panelSource, { filename: "user-settings-panel.js" });
       ],
       locale_options: [
         { value: "en-GB", label: "English (United Kingdom)" },
-        { value: "en-US", label: "English (United States)" },
       ],
+      locale_options_by_country: {
+        GB: [{ value: "en-GB", label: "English (United Kingdom)" }],
+        US: [{ value: "en-US", label: "English (United States)" }],
+      },
       timezone_options: [
         { value: "Europe/London", label: "Europe/London" },
       ],
@@ -364,6 +379,7 @@ vm.runInThisContext(panelSource, { filename: "user-settings-panel.js" });
   await flushAsyncTasks();
   assert(timezoneSelect.value === "Europe/London", "Expected confirmed reload to restore persisted settings.");
   assert(countrySelect.value === "GB", "Expected confirmed reload to restore the persisted country.");
+  assert(localeSelect.value === "en-GB", "Expected confirmed reload to restore the persisted locale.");
 
   panel.destroy();
 

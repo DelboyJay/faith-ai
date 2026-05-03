@@ -18,6 +18,47 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 @dataclass(frozen=True, slots=True)
+class RuntimeUserContext:
+    """Description:
+        Represent the resolved per-turn user-profile context for one model call.
+
+    Requirements:
+        - Preserve the saved user display name, country code, and preferred locale when available.
+        - Render nothing when no user-profile context has been configured.
+
+    :param display_name: Saved user display name used for direct address.
+    :param country_code: Saved two-letter country code.
+    :param preferred_locale: Saved preferred locale identifier.
+    """
+
+    display_name: str | None = None
+    country_code: str | None = None
+    preferred_locale: str | None = None
+
+    def to_prompt_block(self) -> str:
+        """Description:
+            Render the runtime user-profile context as a system-prompt block.
+
+        Requirements:
+            - Instruct the model how to address the user when a display name is available.
+            - Omit empty fields so the prompt stays concise.
+
+        :returns: Runtime user-context block ready for prompt assembly.
+        """
+
+        lines: list[str] = []
+        if self.display_name:
+            lines.append(f"Address the user as: {self.display_name}")
+        if self.country_code:
+            lines.append(f"User country: {self.country_code}")
+        if self.preferred_locale:
+            lines.append(f"Preferred locale: {self.preferred_locale}")
+        if not lines:
+            return ""
+        return "[Runtime User Context]\n" + "\n".join(lines)
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeTimeContext:
     """Description:
         Represent the resolved per-turn local time context for one model call.
@@ -201,3 +242,84 @@ class RuntimeTimeContextProvider:
             return ZoneInfo(name)
         except ZoneInfoNotFoundError:
             return timezone.utc
+
+
+class RuntimeUserContextProvider:
+    """Description:
+        Resolve and render runtime-managed user-profile context for FAITH prompts.
+
+    Requirements:
+        - Reuse the latest saved user settings when available.
+        - Omit the block entirely when no user-profile fields are set.
+
+    :param display_name: Saved user display name used for direct address.
+    :param country_code: Saved two-letter country code.
+    :param preferred_locale: Saved preferred locale identifier.
+    """
+
+    def __init__(
+        self,
+        *,
+        display_name: str | None = None,
+        country_code: str | None = None,
+        preferred_locale: str | None = None,
+    ) -> None:
+        """Description:
+            Initialise the runtime user-context provider.
+
+        Requirements:
+            - Preserve the configured user-profile fields for prompt assembly.
+
+        :param display_name: Saved user display name used for direct address.
+        :param country_code: Saved two-letter country code.
+        :param preferred_locale: Saved preferred locale identifier.
+        """
+
+        self.display_name = display_name
+        self.country_code = country_code
+        self.preferred_locale = preferred_locale
+
+    def build_context(self) -> RuntimeUserContext:
+        """Description:
+            Resolve the current user-profile prompt context for one agent turn.
+
+        Requirements:
+            - Strip empty strings so the rendered prompt remains concise.
+
+        :returns: Resolved runtime user-context payload.
+        """
+
+        return RuntimeUserContext(
+            display_name=self._normalise_value(self.display_name),
+            country_code=self._normalise_value(self.country_code),
+            preferred_locale=self._normalise_value(self.preferred_locale),
+        )
+
+    def build_prompt_block(self) -> str:
+        """Description:
+            Return the current runtime user-profile context as prompt text.
+
+        Requirements:
+            - Recompute the block on every call so refreshed settings are reflected immediately.
+
+        :returns: Runtime user-context prompt block or an empty string.
+        """
+
+        return self.build_context().to_prompt_block()
+
+    @staticmethod
+    def _normalise_value(value: str | None) -> str | None:
+        """Description:
+            Normalise one optional user-profile value for prompt assembly.
+
+        Requirements:
+            - Collapse blank strings to ``None``.
+
+        :param value: Raw configured user-profile value.
+        :returns: Stripped value or ``None`` when blank.
+        """
+
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None

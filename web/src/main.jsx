@@ -501,6 +501,8 @@ function WorkspaceWatermark() {
 function ToolbarControls(props) {
   const host = document.getElementById("faith-toolbar-controls");
   const isReady = Boolean(props.api);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const addMenuRef = React.useRef(null);
   const panelOptions = [
     { label: "Project Agent", componentType: COMPONENT_TYPES.AGENT, state: { agentId: "project-agent", displayName: "Project Agent", model: "ollama/llama3:8b" }, title: "Project Agent", id: "project-agent" },
     { label: "System Status", componentType: COMPONENT_TYPES.STATUS, state: {}, title: "System Status", id: "system-status" },
@@ -544,6 +546,7 @@ function ToolbarControls(props) {
           model: "unknown",
         },
       });
+      setMenuOpen(false);
       return;
     }
 
@@ -561,6 +564,7 @@ function ToolbarControls(props) {
           displayName: toolId,
         },
       });
+      setMenuOpen(false);
       return;
     }
 
@@ -570,6 +574,7 @@ function ToolbarControls(props) {
       title: option.title,
       componentState: option.state,
     });
+    setMenuOpen(false);
   }
 
   /**
@@ -599,14 +604,68 @@ function ToolbarControls(props) {
     saveLayout(props.api);
   }
 
+  /**
+   * Description:
+   *   Close the add-panel menu when focus or pointer interaction moves outside it.
+   *
+   * Requirements:
+   *   - Ignore outside-dismiss handling when the menu is already closed.
+   *   - Keep interactions inside the menu wrapper from closing it.
+   *
+   * @returns {void}
+   */
+  React.useEffect(
+    function subscribeOutsideDismiss() {
+      if (!menuOpen) {
+        return undefined;
+      }
+
+      /**
+       * Description:
+       *   Close the add-panel menu when one event target is outside the menu wrapper.
+       *
+       * Requirements:
+       *   - Ignore events without a concrete event target.
+       *   - Preserve the menu while interacting with its trigger or options.
+       *
+       * @param {Event} event Pointer or focus event raised by the browser.
+       * @returns {void}
+       */
+      function handleOutsideInteraction(event) {
+        if (!addMenuRef.current || !(event.target instanceof Node)) {
+          return;
+        }
+        if (!addMenuRef.current.contains(event.target)) {
+          setMenuOpen(false);
+        }
+      }
+
+      window.addEventListener("pointerdown", handleOutsideInteraction);
+      window.addEventListener("focusin", handleOutsideInteraction);
+      return function cleanupOutsideDismiss() {
+        window.removeEventListener("pointerdown", handleOutsideInteraction);
+        window.removeEventListener("focusin", handleOutsideInteraction);
+      };
+    },
+    [menuOpen],
+  );
+
   if (!host) {
     return null;
   }
 
   return createPortal(
     <div className="faith-toolbar__controls">
-      <details className="faith-toolbar__add-wrapper">
-        <summary className="faith-toolbar__button faith-toolbar__button--add" aria-label="Add panel">
+      <details className="faith-toolbar__add-wrapper" ref={addMenuRef} open={menuOpen}>
+        <summary
+          className="faith-toolbar__button faith-toolbar__button--add"
+          aria-label="Add panel"
+          aria-expanded={menuOpen}
+          onClick={function onToggleAddMenu(event) {
+            event.preventDefault();
+            setMenuOpen(!menuOpen);
+          }}
+        >
           +
         </summary>
         <div className="faith-toolbar__menu">

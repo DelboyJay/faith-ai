@@ -388,7 +388,12 @@ def test_base_agent_assembles_context_in_expected_order(tmp_path):
     doc.write_text("FRS content", encoding="utf-8")
 
     config = build_agent_config(cag_documents=["docs/frs.md"])
-    system_config = build_system_config(timezone="Asia/Tokyo")
+    system_config = build_system_config(
+        timezone="Asia/Tokyo",
+        display_name="Delboy",
+        country_code="GB",
+        preferred_locale="en-GB",
+    )
     agent = BaseAgent(
         agent_id="agent-1",
         config=config,
@@ -405,6 +410,9 @@ def test_base_agent_assembles_context_in_expected_order(tmp_path):
 
     assembly = agent.assemble_context("Implement the feature")
     assert assembly.system_prompt.index("System prompt") < assembly.system_prompt.index(
+        "[Runtime User Context]"
+    )
+    assert assembly.system_prompt.index("[Runtime User Context]") < assembly.system_prompt.index(
         "[Runtime Time Context]"
     )
     assert assembly.system_prompt.index("[Runtime Time Context]") < assembly.system_prompt.index(
@@ -418,6 +426,9 @@ def test_base_agent_assembles_context_in_expected_order(tmp_path):
     )
     assert "Current local date: 2026-01-15" in assembly.system_prompt
     assert "Current local time: 19:30:00" in assembly.system_prompt
+    assert "Address the user as: Delboy" in assembly.system_prompt
+    assert "User country: GB" in assembly.system_prompt
+    assert "Preferred locale: en-GB" in assembly.system_prompt
     assert "User timezone: Asia/Tokyo" in assembly.system_prompt
     assert assembly.recent_messages[0].content == "Previous reply"
     assert assembly.current_task == "Implement the feature"

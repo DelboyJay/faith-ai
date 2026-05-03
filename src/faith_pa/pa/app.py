@@ -45,7 +45,7 @@ from faith_pa.pa.chat_tool_loop import (
 )
 from faith_pa.pa.container_manager import ContainerManager
 from faith_pa.pa.session import SessionManager
-from faith_pa.runtime_time_context import RuntimeTimeContextProvider
+from faith_pa.runtime_time_context import RuntimeTimeContextProvider, RuntimeUserContextProvider
 from faith_pa.utils import (
     SYSTEM_EVENTS_CHANNEL,
     USER_INPUT_CHANNEL,
@@ -200,6 +200,7 @@ class UserSettingsPayload(BaseModel):
     timezone: str | None = None
     country_options: list[SelectionOption] = Field(default_factory=list)
     locale_options: list[SelectionOption] = Field(default_factory=list)
+    locale_options_by_country: dict[str, list[SelectionOption]] = Field(default_factory=dict)
     timezone_options: list[SelectionOption] = Field(default_factory=list)
     timezone_options_by_country: dict[str, list[SelectionOption]] = Field(default_factory=dict)
     path: str
@@ -243,6 +244,28 @@ LOCALE_OPTIONS: tuple[SelectionOption, ...] = (
     SelectionOption(value="ja-JP", label="Japanese (Japan)"),
     SelectionOption(value="nl-NL", label="Dutch (Netherlands)"),
 )
+COUNTRY_LOCALE_OPTIONS: dict[str, tuple[SelectionOption, ...]] = {
+    "AU": (SelectionOption(value="en-AU", label="English (Australia)"),),
+    "CA": (
+        SelectionOption(value="en-CA", label="English (Canada)"),
+        SelectionOption(value="fr-CA", label="French (Canada)"),
+    ),
+    "DE": (SelectionOption(value="de-DE", label="German (Germany)"),),
+    "ES": (SelectionOption(value="es-ES", label="Spanish (Spain)"),),
+    "FR": (SelectionOption(value="fr-FR", label="French (France)"),),
+    "GB": (SelectionOption(value="en-GB", label="English (United Kingdom)"),),
+    "IE": (SelectionOption(value="en-IE", label="English (Ireland)"),),
+    "IN": (
+        SelectionOption(value="en-IN", label="English (India)"),
+        SelectionOption(value="hi-IN", label="Hindi (India)"),
+    ),
+    "IT": (SelectionOption(value="it-IT", label="Italian (Italy)"),),
+    "JP": (SelectionOption(value="ja-JP", label="Japanese (Japan)"),),
+    "NL": (SelectionOption(value="nl-NL", label="Dutch (Netherlands)"),),
+    "NZ": (SelectionOption(value="en-NZ", label="English (New Zealand)"),),
+    "SG": (SelectionOption(value="en-SG", label="English (Singapore)"),),
+    "US": (SelectionOption(value="en-US", label="English (United States)"),),
+}
 COUNTRY_TIMEZONE_OPTIONS: dict[str, tuple[SelectionOption, ...]] = {
     "AU": (
         SelectionOption(value="Australia/Brisbane", label="Australia/Brisbane"),
@@ -298,17 +321,37 @@ def _build_country_options() -> list[SelectionOption]:
     return list(COUNTRY_OPTIONS)
 
 
-def _build_locale_options() -> list[SelectionOption]:
+def _build_locale_options(country_code: str | None = None) -> list[SelectionOption]:
     """Description:
         Return the fixed locale options exposed by the user-settings API.
 
     Requirements:
-        - Preserve the configured option order for stable UI rendering.
+        - Return the configured country-specific locale list when the country is known.
+        - Fall back to the default-country list when the supplied country is missing or unknown.
 
-    :returns: Ordered locale options for the settings panel.
+    :param country_code: Selected two-letter country code.
+    :returns: Ordered locale options for the resolved country.
     """
 
-    return list(LOCALE_OPTIONS)
+    resolved_country_code = (country_code or DEFAULT_USER_COUNTRY_CODE).upper()
+    return list(
+        COUNTRY_LOCALE_OPTIONS.get(
+            resolved_country_code, COUNTRY_LOCALE_OPTIONS[DEFAULT_USER_COUNTRY_CODE]
+        )
+    )
+
+
+def _build_locale_options_by_country() -> dict[str, list[SelectionOption]]:
+    """Description:
+        Return the full curated locale-option map keyed by country code.
+
+    Requirements:
+        - Preserve the configured option order for each country.
+
+    :returns: Mapping of country code to ordered locale options.
+    """
+
+    return {country_code: list(options) for country_code, options in COUNTRY_LOCALE_OPTIONS.items()}
 
 
 def _build_timezone_options(country_code: str | None) -> list[SelectionOption]:
@@ -365,6 +408,25 @@ def _find_country_for_timezone(timezone_name: str | None) -> str | None:
     return None
 
 
+def _find_country_for_locale(locale_name: str | None) -> str | None:
+    """Description:
+        Return the first configured country containing one locale option.
+
+    Requirements:
+        - Return `None` when the locale is unknown to the curated settings registry.
+
+    :param locale_name: Locale name to look up.
+    :returns: Matching country code when the locale is known.
+    """
+
+    if not locale_name:
+        return None
+    for country_code, options in COUNTRY_LOCALE_OPTIONS.items():
+        if any(option.value == locale_name for option in options):
+            return country_code
+    return None
+
+
 def _resolve_user_country_code(country_code: str | None, timezone_name: str | None) -> str:
     """Description:
         Resolve one stable country code for the user-settings payload.
@@ -387,6 +449,25 @@ def _resolve_user_country_code(country_code: str | None, timezone_name: str | No
             return saved_country_code
     inferred_country_code = _find_country_for_timezone(timezone_name)
     return inferred_country_code or DEFAULT_USER_COUNTRY_CODE
+
+
+def _resolve_user_locale(country_code: str, preferred_locale: str | None) -> str:
+    """Description:
+        Resolve one stable locale value for the user-settings payload.
+
+    Requirements:
+        - Prefer the explicitly saved locale when it belongs to the resolved country.
+        - Fall back to the first curated locale for the resolved country when needed.
+
+    :param country_code: Resolved two-letter country code.
+    :param preferred_locale: Saved or submitted locale value.
+    :returns: Resolved locale value for the settings payload.
+    """
+
+    country_locales = _build_locale_options(country_code)
+    if preferred_locale and any(option.value == preferred_locale for option in country_locales):
+        return preferred_locale
+    return country_locales[0].value if country_locales else DEFAULT_USER_LOCALE
 
 
 class UserSettingsStore:
@@ -454,9 +535,9 @@ class UserSettingsStore:
             persisted_payload.get("country_code", default_country_code),
             resolved_timezone,
         )
-        resolved_preferred_locale = (
-            persisted_payload.get("preferred_locale", default_preferred_locale)
-            or DEFAULT_USER_LOCALE
+        resolved_preferred_locale = _resolve_user_locale(
+            resolved_country_code,
+            persisted_payload.get("preferred_locale", default_preferred_locale),
         )
         updated_at = None
         metadata_path = (
@@ -474,7 +555,8 @@ class UserSettingsStore:
             preferred_locale=resolved_preferred_locale,
             timezone=resolved_timezone,
             country_options=_build_country_options(),
-            locale_options=_build_locale_options(),
+            locale_options=_build_locale_options(resolved_country_code),
+            locale_options_by_country=_build_locale_options_by_country(),
             timezone_options=_build_timezone_options(resolved_country_code),
             timezone_options_by_country=_build_timezone_options_by_country(),
             path=self.system_path.as_posix(),
@@ -514,23 +596,44 @@ class UserSettingsStore:
         selected_country_code = (
             settings.country_code.upper()
             if settings.country_code
-            else _resolve_user_country_code(None, settings.timezone)
+            else _find_country_for_locale(settings.preferred_locale)
+            or _resolve_user_country_code(None, settings.timezone)
         )
-        if settings.timezone and not any(
-            option.value == settings.timezone
-            for option in _build_timezone_options(selected_country_code)
+        resolved_country_code = _resolve_user_country_code(
+            selected_country_code,
+            settings.timezone,
+        )
+        resolved_preferred_locale = _resolve_user_locale(
+            resolved_country_code,
+            settings.preferred_locale,
+        )
+        if settings.preferred_locale and not any(
+            option.value == settings.preferred_locale
+            for option in _build_locale_options(resolved_country_code)
+        ):
+            raise ValueError(
+                "Preferred locale must belong to the selected country from the available dropdown options."
+            )
+        resolved_timezone = settings.timezone
+        if resolved_timezone and not any(
+            option.value == resolved_timezone
+            for option in _build_timezone_options(resolved_country_code)
         ):
             raise ValueError(
                 "Timezone must belong to the selected country from the available dropdown options."
             )
-        resolved_country_code = _resolve_user_country_code(selected_country_code, settings.timezone)
+        if not resolved_timezone:
+            timezone_options = _build_timezone_options(resolved_country_code)
+            resolved_timezone = (
+                timezone_options[0].value if timezone_options else DEFAULT_USER_TIMEZONE
+            )
         if self.system_path == self.default_system_path:
             update_system_config_fields(
                 {
                     "display_name": settings.display_name,
                     "country_code": resolved_country_code,
-                    "preferred_locale": settings.preferred_locale,
-                    "timezone": settings.timezone,
+                    "preferred_locale": resolved_preferred_locale,
+                    "timezone": resolved_timezone,
                 },
                 root=self.project_root,
             )
@@ -541,8 +644,8 @@ class UserSettingsStore:
                 {
                     "display_name": settings.display_name,
                     "country_code": resolved_country_code,
-                    "preferred_locale": settings.preferred_locale,
-                    "timezone": settings.timezone,
+                    "preferred_locale": resolved_preferred_locale,
+                    "timezone": resolved_timezone,
                 },
                 indent=2,
             ),
@@ -758,6 +861,8 @@ class ProjectAgentChatRuntime:
     :param tool_executor: Optional PA MCP tool executor used for chat-time tool calls.
     :param prompt_store: Prompt store used to load the active PA system prompt.
     :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
+    :param user_context_provider: Optional runtime user-context provider used for prompt assembly.
+    :param user_settings_store: Shared user-settings store used to load runtime user profile context.
     :param session_manager: Shared session manager used for transcript persistence and recovery.
     :param output_channel: Redis output channel used by the Project Agent panel.
     """
@@ -771,6 +876,8 @@ class ProjectAgentChatRuntime:
         tool_executor: Any | None = None,
         prompt_store: ProjectAgentPromptStore | None = None,
         time_context_provider: RuntimeTimeContextProvider | None = None,
+        user_context_provider: RuntimeUserContextProvider | None = None,
+        user_settings_store: UserSettingsStore | None = None,
         session_manager: SessionManager | None = None,
         output_channel: str = PROJECT_AGENT_OUTPUT_CHANNEL,
     ) -> None:
@@ -787,6 +894,8 @@ class ProjectAgentChatRuntime:
         :param tool_executor: Optional PA MCP tool executor used for chat-time tool calls.
         :param prompt_store: Prompt store used to load the active PA system prompt.
         :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
+        :param user_context_provider: Optional runtime user-context provider used for prompt assembly.
+        :param user_settings_store: Shared user-settings store used to load runtime user profile context.
         :param session_manager: Shared session manager used for transcript persistence and recovery.
         :param output_channel: Redis output channel used by the Project Agent panel.
         """
@@ -796,9 +905,13 @@ class ProjectAgentChatRuntime:
         self.model_name = model_name
         self.tool_executor = tool_executor or ProjectAgentMCPToolExecutor()
         self.prompt_store = prompt_store or ProjectAgentPromptStore()
+        self.user_settings_store = user_settings_store or UserSettingsStore(
+            project_root=Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
+        )
         self.time_context_provider = time_context_provider or RuntimeTimeContextProvider(
             configured_timezone=self._load_configured_timezone(),
         )
+        self.user_context_provider = user_context_provider or self._load_configured_user_context()
         self.session_manager = session_manager or SessionManager(
             project_root=_project_agent_session_root()
         )
@@ -995,6 +1108,7 @@ class ProjectAgentChatRuntime:
                 "role": "system",
                 "content": (
                     f"{self.prompt_store.get_active_prompt()}\n\n"
+                    f"{self.user_context_provider.build_prompt_block()}\n\n"
                     f"{self.time_context_provider.build_prompt_block()}\n\n"
                     f"{build_tool_manifest_prompt()}"
                 ),
@@ -1027,6 +1141,36 @@ class ProjectAgentChatRuntime:
                 return load_system_config().timezone
             except ConfigLoadError:
                 return None
+
+    def _load_configured_user_context(self) -> RuntimeUserContextProvider:
+        """Description:
+            Load the configured user-profile context for PA browser-chat prompt assembly.
+
+        Requirements:
+            - Prefer the persisted host-backed user-settings override when available.
+            - Reuse the project system configuration as a fallback when no saved override exists.
+            - Fall back cleanly to an empty user-profile context when config is not ready yet.
+
+        :returns: Runtime user-context provider seeded with saved user-profile fields.
+        """
+
+        try:
+            settings = self.user_settings_store.read()
+            return RuntimeUserContextProvider(
+                display_name=settings.display_name,
+                country_code=settings.country_code,
+                preferred_locale=settings.preferred_locale,
+            )
+        except ConfigLoadError:
+            try:
+                system_config = load_system_config()
+            except ConfigLoadError:
+                return RuntimeUserContextProvider()
+            return RuntimeUserContextProvider(
+                display_name=system_config.display_name,
+                country_code=system_config.country_code,
+                preferred_locale=system_config.preferred_locale,
+            )
 
     async def _generate_reply_with_tools(self, messages: list[dict[str, str]]) -> str:
         """Description:
@@ -1099,13 +1243,16 @@ class ProjectAgentChatRuntime:
             Apply updated user settings to the live Project Agent runtime.
 
         Requirements:
-            - Refresh the runtime timezone provider immediately so future turns use the saved timezone.
+            - Refresh the runtime timezone and user-profile providers immediately so future turns use the saved settings.
             - Leave transcript and chat history intact when only user-profile fields change.
 
         :param settings: Persisted user-settings payload returned by the store.
         """
 
         self.time_context_provider.configured_timezone = settings.timezone
+        self.user_context_provider.display_name = settings.display_name
+        self.user_context_provider.country_code = settings.country_code
+        self.user_context_provider.preferred_locale = settings.preferred_locale
 
     async def _ensure_active_session(self) -> None:
         """Description:

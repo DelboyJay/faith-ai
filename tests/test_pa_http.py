@@ -651,10 +651,58 @@ def test_user_settings_endpoint_returns_project_settings(
     assert payload["preferred_locale"] == "en-GB"
     assert payload["timezone"] == "Europe/London"
     assert payload["locale_options"]
+    assert payload["locale_options_by_country"]["GB"][0]["value"] == "en-GB"
     assert payload["country_options"]
     assert payload["timezone_options"]
     assert payload["timezone_options"][0]["value"] == "Europe/London"
     assert payload["path"].endswith(".faith/system.yaml")
+
+
+def test_user_settings_endpoint_normalises_locale_to_selected_country(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify the PA user-settings endpoint normalises stale locale values to the selected country.
+
+    Requirements:
+    - This test is needed to prove saved country, locale, and timezone values cannot drift into a confusing mismatch.
+    - Verify the endpoint falls back to the first supported locale for the resolved country when the saved locale belongs elsewhere.
+
+    :param client: Test client for the PA application.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary project root used to hold the persisted user-settings overlay.
+    """
+
+    session_root = tmp_path / "pa-runtime"
+    overlay_path = session_root / "user-settings" / "system.yaml"
+    overlay_path.parent.mkdir(parents=True, exist_ok=True)
+    overlay_path.write_text(
+        json.dumps(
+            {
+                "display_name": "Del",
+                "country_code": "GB",
+                "preferred_locale": "en-CA",
+                "timezone": "Europe/London",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FAITH_PA_SESSION_ROOT", str(session_root))
+    monkeypatch.delenv("FAITH_DATA_DIR", raising=False)
+    monkeypatch.delenv("FAITH_PROJECT_ROOT", raising=False)
+    pa_app_module.app.state.user_settings_store = pa_app_module.UserSettingsStore(
+        project_root=tmp_path / "workspace"
+    )
+
+    response = client.get("/api/user-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["country_code"] == "GB"
+    assert payload["preferred_locale"] == "en-GB"
+    assert payload["locale_options"] == [{"value": "en-GB", "label": "English (United Kingdom)"}]
 
 
 def test_user_settings_update_persists_timezone_and_refreshes_runtime(
@@ -769,6 +817,53 @@ def test_user_settings_update_rejects_timezone_outside_selected_country(
 
     assert response.status_code == 400
     assert "country" in response.json()["detail"].lower()
+
+
+def test_user_settings_update_rejects_locale_outside_selected_country(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify the PA user-settings update endpoint rejects locale choices that do not belong to the selected country.
+
+    Requirements:
+    - This test is needed to prove crafted requests cannot persist a mismatched country and locale pair.
+    - Verify the endpoint returns HTTP 400 when the locale is not valid for the submitted country.
+
+    :param client: Test client for the PA application.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary project root used to hold the test system config.
+    """
+
+    project_root = tmp_path / "workspace"
+    faith_dir = project_root / ".faith"
+    faith_dir.mkdir(parents=True)
+    (faith_dir / "system.yaml").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "privacy_profile": "internal",
+                "pa": {"model": "ollama/llama3:8b"},
+                "default_agent_model": "ollama/llama3:8b",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FAITH_PROJECT_ROOT", str(project_root))
+
+    response = client.put(
+        "/api/user-settings",
+        json={
+            "display_name": "Del",
+            "country_code": "GB",
+            "preferred_locale": "en-CA",
+            "timezone": "Europe/London",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "preferred locale must belong" in response.json()["detail"].lower()
 
 
 def test_user_settings_update_rejects_invalid_timezone(
@@ -1186,6 +1281,125 @@ def test_pa_chat_messages_include_runtime_time_context_and_refresh_each_turn(tmp
     assert "User timezone: Europe/London" in first_system_message
     assert "Current local time: 10:45:00" in second_system_message
     assert first_system_message != second_system_message
+
+
+def test_pa_chat_messages_include_saved_user_settings_context(tmp_path: Path) -> None:
+    """Description:
+    Verify the Project Agent system message includes persisted user-profile context.
+
+    Requirements:
+    - This test is needed to prove the saved nickname and other user settings reach the LLM prompt on every turn.
+    - Verify the system message tells the model what to call the user and includes the saved country and locale.
+
+    :param tmp_path: Temporary project root used by the prompt and settings stores.
+    """
+
+    faith_dir = tmp_path / ".faith"
+    faith_dir.mkdir(parents=True, exist_ok=True)
+    (faith_dir / "system.yaml").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "privacy_profile": "internal",
+                "pa": {"model": "ollama/llama3:8b"},
+                "default_agent_model": "ollama/llama3:8b",
+                "timezone": "Europe/London",
+            }
+        ),
+        encoding="utf-8",
+    )
+    prompt_store = pa_app_module.ProjectAgentPromptStore(project_root=tmp_path)
+    settings_store = pa_app_module.UserSettingsStore(project_root=tmp_path)
+    settings_store.update(
+        pa_app_module.UserSettingsUpdate(
+            display_name="Delboy",
+            country_code="GB",
+            preferred_locale="en-GB",
+            timezone="Europe/London",
+        )
+    )
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=FakeLLMClient(),
+        model_name="ollama/llama3:8b",
+        prompt_store=prompt_store,
+        time_context_provider=RuntimeTimeContextProvider(
+            configured_timezone="Europe/London",
+            now_provider=SequencedClock(datetime(2026, 1, 15, 10, 30, tzinfo=timezone.utc)),
+        ),
+        user_settings_store=settings_store,
+    )
+
+    system_message = runtime._build_chat_messages("hello")[0]["content"]
+
+    assert "[Runtime User Context]" in system_message
+    assert "Address the user as: Delboy" in system_message
+    assert "User country: GB" in system_message
+    assert "Preferred locale: en-GB" in system_message
+
+
+def test_user_settings_update_refreshes_project_agent_user_prompt_context(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify saving user settings refreshes the live Project Agent user-context prompt block.
+
+    Requirements:
+    - This test is needed to prove changing the saved nickname updates future Project Agent turns immediately.
+    - Verify the active runtime prompt starts addressing the user by the saved display name after a settings update.
+
+    :param client: Test client for the PA application.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary project root used to hold the test system config.
+    """
+
+    project_root = tmp_path / "workspace"
+    faith_dir = project_root / ".faith"
+    faith_dir.mkdir(parents=True)
+    (faith_dir / "system.yaml").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "privacy_profile": "internal",
+                "pa": {"model": "ollama/llama3:8b"},
+                "default_agent_model": "ollama/llama3:8b",
+                "timezone": "UTC",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FAITH_PROJECT_ROOT", str(project_root))
+
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=FakeLLMClient(),
+        model_name="ollama/llama3:8b",
+        prompt_store=pa_app_module.ProjectAgentPromptStore(project_root=project_root),
+        session_manager=pa_app_module.SessionManager(project_root=project_root),
+        time_context_provider=RuntimeTimeContextProvider(
+            configured_timezone="UTC",
+            now_provider=SequencedClock(datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc)),
+        ),
+    )
+    pa_app_module.app.state.project_agent_chat_runtime = runtime
+
+    response = client.put(
+        "/api/user-settings",
+        json={
+            "display_name": "Delboy",
+            "country_code": "GB",
+            "preferred_locale": "en-GB",
+            "timezone": "Europe/London",
+        },
+    )
+
+    assert response.status_code == 200
+    system_message = runtime._build_chat_messages("hello")[0]["content"]
+    assert "Address the user as: Delboy" in system_message
+    assert "User country: GB" in system_message
+    assert "Preferred locale: en-GB" in system_message
 
 
 def test_pa_chat_bridge_streams_project_agent_frames(

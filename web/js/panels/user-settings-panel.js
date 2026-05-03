@@ -203,6 +203,7 @@
     detectTimezoneButton.hidden = !browserTimezone;
 
     let destroyed = false;
+    let localeOptionsByCountry = {};
     let timezoneOptionsByCountry = {};
     let lastSavedState = {
       display_name: "",
@@ -314,9 +315,44 @@
      *
      * @param {object} payload User-settings payload returned by the server.
      */
+    function repopulateLocaleOptions(selectedCountryCode, selectedLocale) {
+      const localeOptions = localeOptionsByCountry[selectedCountryCode] || payloadLocaleOptionsFallback();
+      return applySelectOptions(localeField.select, localeOptions, selectedLocale);
+    }
+
+    /**
+     * Description:
+     *   Replace the timezone options for the currently selected country.
+     *
+     * Requirements:
+     *   - Preserve the selected timezone when it is valid for the selected country.
+     *   - Fall back to the first available timezone option when the current value is no longer valid.
+     *
+     * @param {string} selectedCountryCode Selected two-letter country code.
+     * @param {string} selectedTimezone Preferred selected timezone value.
+     * @returns {string} Final selected timezone value after the options are applied.
+     */
     function repopulateTimezoneOptions(selectedCountryCode, selectedTimezone) {
       const timezoneOptions = timezoneOptionsByCountry[selectedCountryCode] || payloadTimezoneOptionsFallback();
       return applySelectOptions(timezoneField.select, timezoneOptions, selectedTimezone);
+    }
+
+    /**
+     * Description:
+     *   Return the current fallback locale options from the locale select itself.
+     *
+     * Requirements:
+     *   - Preserve already-rendered options when a country has no explicit locale mapping.
+     *
+     * @returns {Array<object>} Fallback option payloads based on the current select content.
+     */
+    function payloadLocaleOptionsFallback() {
+      return (localeField.select.children || []).map(function mapOption(optionNode) {
+        return {
+          value: optionNode.value,
+          label: optionNode.textContent,
+        };
+      });
     }
 
     /**
@@ -354,10 +390,11 @@
         preferred_locale: payload.preferred_locale || "",
         timezone: payload.timezone || "",
       };
+      localeOptionsByCountry = payload.locale_options_by_country || {};
       timezoneOptionsByCountry = payload.timezone_options_by_country || {};
       displayNameField.input.value = lastSavedState.display_name;
       applySelectOptions(countryField.select, payload.country_options || [], lastSavedState.country_code);
-      applySelectOptions(localeField.select, payload.locale_options || [], lastSavedState.preferred_locale);
+      repopulateLocaleOptions(countryField.select.value, lastSavedState.preferred_locale);
       repopulateTimezoneOptions(countryField.select.value, lastSavedState.timezone);
       renderMetadata(payload);
       refreshDirtyState();
@@ -482,15 +519,34 @@
       });
       if (matchingCountryCode) {
         countryField.select.value = matchingCountryCode;
+        repopulateLocaleOptions(matchingCountryCode, localeField.select.value);
         repopulateTimezoneOptions(matchingCountryCode, browserTimezone);
       }
       refreshDirtyState();
     });
     countryField.select.addEventListener("change", function onCountryChange() {
-      repopulateTimezoneOptions(countryField.select.value, timezoneField.select.value);
+      const selectedCountryCode = countryField.select.value;
+      repopulateLocaleOptions(selectedCountryCode, localeField.select.value);
+      repopulateTimezoneOptions(selectedCountryCode, timezoneField.select.value);
+      if (localeField.select.value !== lastSavedState.preferred_locale) {
+        localeField.select.dispatch("change");
+        return;
+      }
       refreshDirtyState();
     });
-    localeField.select.addEventListener("change", refreshDirtyState);
+    localeField.select.addEventListener("change", function onLocaleChange() {
+      const matchingCountryCode = Object.keys(localeOptionsByCountry).find(function findCountryCode(countryCode) {
+        return (localeOptionsByCountry[countryCode] || []).some(function hasLocale(option) {
+          return option.value === localeField.select.value;
+        });
+      });
+      if (matchingCountryCode && countryField.select.value !== matchingCountryCode) {
+        countryField.select.value = matchingCountryCode;
+        repopulateLocaleOptions(matchingCountryCode, localeField.select.value);
+        repopulateTimezoneOptions(matchingCountryCode, timezoneField.select.value);
+      }
+      refreshDirtyState();
+    });
     timezoneField.select.addEventListener("change", refreshDirtyState);
     globalScope.addEventListener("beforeunload", handleBeforeUnload);
 
