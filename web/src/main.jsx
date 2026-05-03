@@ -5,7 +5,7 @@
  * Requirements:
  *   - Reuse the existing browser panel runtimes while replacing the workspace engine.
  *   - Persist and restore Dockview layouts with a versioned localStorage key.
- *   - Preserve the current default Project Agent, System Status, Input, and Approvals view.
+ *   - Preserve the current default Project Agent, System Status, Input, User Settings, and Approvals view.
  */
 
 import React from "react";
@@ -31,6 +31,7 @@ const COMPONENT_TYPES = Object.freeze({
   STATUS: "status-panel",
   DOCKER_RUNTIME: "docker-runtime-panel",
   PA_SYSTEM_PROMPT: "pa-system-prompt-panel",
+  USER_SETTINGS: "user-settings-panel",
 });
 
 const mountedPanelHandles = new Map();
@@ -158,12 +159,20 @@ function getDefaultWorkspaceDescriptor() {
     },
     lowerGroup: {
       panels: [
-        {
-          id: "input",
-          componentType: COMPONENT_TYPES.INPUT,
-          title: "Input",
-          componentState: {},
-        },
+          {
+            id: "input",
+            componentType: COMPONENT_TYPES.INPUT,
+            title: "Input",
+            stackedPanels: [
+              {
+                id: "user-settings",
+                componentType: COMPONENT_TYPES.USER_SETTINGS,
+                title: "User Settings",
+                componentState: {},
+              },
+            ],
+            componentState: {},
+          },
         {
           id: "approvals",
           componentType: COMPONENT_TYPES.APPROVAL,
@@ -243,7 +252,8 @@ function ensurePanel(api, panelDescriptor, position, inactive = false) {
  *
  * Requirements:
  *   - Keep Project Agent and System Status in one tab group.
- *   - Keep Input and Approvals in the lower split beneath the upper group.
+ *   - Keep Input and User Settings in one lower-left tab group.
+ *   - Keep Approvals in the lower-right split beneath the upper group.
  *
  * @param {object} api Dockview API instance.
  */
@@ -276,6 +286,20 @@ function applyDefaultWorkspace(api) {
     const lowerPrimaryPanel = ensurePanel(api, lowerPanels[0], {
       referencePanel: primaryUpperPanel.id,
       direction: "below",
+    });
+    const stackedLowerPanels = Array.isArray(lowerPanels[0].stackedPanels)
+      ? lowerPanels[0].stackedPanels
+      : [];
+    stackedLowerPanels.forEach(function addLowerTab(panelDescriptor) {
+      ensurePanel(
+        api,
+        panelDescriptor,
+        {
+          referencePanel: lowerPrimaryPanel.id,
+          direction: "within",
+        },
+        true,
+      );
     });
     lowerPanels.slice(1).forEach(function addLowerSplit(panelDescriptor, index) {
       ensurePanel(api, panelDescriptor, {
@@ -484,6 +508,7 @@ function ToolbarControls(props) {
     { label: "Approvals", componentType: COMPONENT_TYPES.APPROVAL, state: {}, title: "Approvals", id: "approvals" },
     { label: "Docker Runtime", componentType: COMPONENT_TYPES.DOCKER_RUNTIME, state: {}, title: "Docker Runtime", id: "docker-runtime" },
     { label: "PA System Prompt", componentType: COMPONENT_TYPES.PA_SYSTEM_PROMPT, state: {}, title: "PA System Prompt", id: "pa-system-prompt" },
+    { label: "User Settings", componentType: COMPONENT_TYPES.USER_SETTINGS, state: {}, title: "User Settings", id: "user-settings" },
     { label: "Agent Panel", componentType: COMPONENT_TYPES.AGENT, dynamic: "agent" },
     { label: "Tool Panel", componentType: COMPONENT_TYPES.TOOL, dynamic: "tool" },
   ];
@@ -703,6 +728,15 @@ function FaithWorkspaceApp() {
               <LegacyPanelBridge
                 namespace="faithPaSystemPromptPanel"
                 panelId="pa-system-prompt"
+                params={{}}
+              />
+            );
+          },
+          [COMPONENT_TYPES.USER_SETTINGS]: function UserSettingsPanelComponent() {
+            return (
+              <LegacyPanelBridge
+                namespace="faithUserSettingsPanel"
+                panelId="user-settings"
                 params={{}}
               />
             );

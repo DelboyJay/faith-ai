@@ -3,7 +3,7 @@
 **Phase:** 10 — First-Run Wizard & Setup
 **Complexity:** S
 **Model:** Sonnet / GPT-5.4
-**Status:** TODO
+**Status:** IN PROGRESS
 **Dependencies:** FAITH-003, FAITH-049, FAITH-073
 **FRS Reference:** Section 3.5.1, 7.2, 9.3
 
@@ -27,4 +27,6 @@ Make the timezone used by runtime date/time prompt injection explicit, user-cont
 ## Notes
 
 - This task complements `FAITH-073`; it does not replace runtime per-turn injection.
+- The Web UI settings panel now persists explicit timezone overrides and offers a browser-timezone helper.
+- The remaining gap is first-run wizard/default setup-time defaulting so the initial timezone can be proposed and confirmed during onboarding.
 - The remaining product decision is where this preference should live if FAITH later supports one user working across multiple projects in different timezones.

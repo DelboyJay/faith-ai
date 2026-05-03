@@ -17,8 +17,8 @@
    *
    * Requirements:
    *   - Keep the Project Agent and System Status in the upper tab group.
-   *   - Keep Input and Approvals in the lower split so the current baseline
-   *     workspace remains stable during migration.
+   *   - Keep Input and User Settings in one lower-left tab group.
+   *   - Keep Approvals to the right of that lower-left tab group.
    *   - Preserve the Project Agent model metadata used by the current panel.
    *
    * @returns {object} Shared default workspace descriptor.
@@ -53,6 +53,14 @@
             componentType: "input-panel",
             title: "Input",
             size: 34,
+            stackedPanels: [
+              {
+                id: "user-settings",
+                componentType: "user-settings-panel",
+                title: "User Settings",
+                componentState: {},
+              },
+            ],
             componentState: {},
           },
           {

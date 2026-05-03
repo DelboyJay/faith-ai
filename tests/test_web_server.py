@@ -286,7 +286,7 @@ def test_index_renders_visible_web_ui_version(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert 'class="faith-toolbar__version"' in response.text
-    assert "v0.6.5" in response.text
+    assert "v0.8.2" in response.text
 
 
 def test_index_route_uses_non_deprecated_template_signature(client: TestClient) -> None:
@@ -528,17 +528,38 @@ def test_layout_asset_places_input_and_approvals_side_by_side(
 
     Requirements:
         - This test is needed to prove approvals are beside input rather than stacked under it.
-        - Verify the default layout row contains both Input and Approvals panels.
+        - Verify the shared workspace descriptor contains both the lower-left input area and the adjacent approvals panel.
 
     :param client: FastAPI test client bound to the FAITH web app.
     """
 
-    response = client.get("/static/js/layout.js")
+    response = client.get("/static/js/workspace-config.js")
     assert response.status_code == 200
-    row_start = response.text.index('type: "row"')
-    row_text = response.text[row_start:]
-    assert 'title: "Input"' in row_text
-    assert 'title: "Approvals"' in row_text
+    assert "stackedPanels" in response.text
+    assert 'title: "Input"' in response.text
+    assert 'title: "Approvals"' in response.text
+
+
+def test_layout_asset_stacks_user_settings_with_input(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the default layout tabs User Settings with the Input panel.
+
+    Requirements:
+        - This test is needed to prove User Settings is available by default without taking a separate lower column.
+        - Verify the shared workspace descriptor places User Settings in the Input tab stack by default.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/js/workspace-config.js")
+    assert response.status_code == 200
+    stacked_section_start = response.text.index("stackedPanels")
+    stacked_section_end = response.text.index('title: "Approvals"')
+    stacked_text = response.text[stacked_section_start:stacked_section_end]
+    assert 'title: "Input"' in response.text
+    assert 'title: "User Settings"' in stacked_text
 
 
 def test_system_status_panel_uses_runtime_cards_instead_of_json_placeholder(
@@ -640,6 +661,23 @@ def test_pa_system_prompt_panel_asset_supports_edit_save_reload_and_reset(
     assert "Reload" in response.text
     assert "Reset" in response.text
     assert "unsaved" in response.text.lower()
+
+
+def test_index_includes_user_settings_panel_asset(client: TestClient) -> None:
+    """Description:
+        Verify the main Web UI page includes the user-settings panel JavaScript asset.
+
+    Requirements:
+        - This test is needed to prove the browser shell can load the dedicated user-settings implementation.
+        - Verify the root page references the expected asset path.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "/static/js/panels/user-settings-panel.js" in response.text
 
 
 def test_layout_asset_uses_title_bar_as_primary_panel_label(client: TestClient) -> None:
@@ -1351,3 +1389,121 @@ async def test_pa_transcript_proxy_returns_saved_transcript(app) -> None:
         {"role": "user", "content": "Recovered user message."},
         {"role": "assistant", "content": "Recovered assistant reply."},
     ]
+
+
+@pytest.mark.asyncio
+async def test_user_settings_proxy_returns_saved_settings(app) -> None:
+    """Description:
+        Verify the Web UI exposes persisted user settings through a same-origin proxy route.
+
+    Requirements:
+        - This test is needed to prove the browser settings panel can preload values without calling the PA service cross-origin.
+        - Verify the proxied response preserves display name, locale, and timezone fields.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    async def _fake_pa_prompt_fetcher(method: str, path: str, *, json_body=None):
+        """Description:
+            Return one deterministic user-settings payload for the Web UI proxy test.
+
+        Requirements:
+            - Preserve the proxied route path for assertion.
+
+        :param method: Proxied HTTP method.
+        :param path: Proxied upstream PA path.
+        :param json_body: Optional proxied request body.
+        :returns: Deterministic user-settings payload.
+        """
+
+        del method, json_body
+        assert path == "/api/user-settings"
+        return {
+            "display_name": "Del",
+            "country_code": "GB",
+            "preferred_locale": "en-GB",
+            "timezone": "Europe/London",
+            "country_options": [{"value": "GB", "label": "United Kingdom"}],
+            "locale_options": [{"value": "en-GB", "label": "English (United Kingdom)"}],
+            "timezone_options": [{"value": "Europe/London", "label": "Europe/London"}],
+            "timezone_options_by_country": {
+                "GB": [{"value": "Europe/London", "label": "Europe/London"}],
+            },
+            "path": ".faith/system.yaml",
+            "updated_at": "2026-05-02T10:15:00+00:00",
+        }
+
+    app.state.pa_prompt_request_proxy = _fake_pa_prompt_fetcher
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        response = await async_client.get("/api/user-settings")
+
+    assert response.status_code == 200
+    assert response.json()["timezone"] == "Europe/London"
+    assert response.json()["country_code"] == "GB"
+    assert response.json()["display_name"] == "Del"
+
+
+@pytest.mark.asyncio
+async def test_user_settings_proxy_forwards_updates(app) -> None:
+    """Description:
+        Verify the Web UI forwards user-settings updates through the same-origin proxy route.
+
+    Requirements:
+        - This test is needed to prove the browser settings panel can persist edits without direct PA-origin calls.
+        - Verify the proxied request preserves the edited payload.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    async def _fake_pa_prompt_fetcher(method: str, path: str, *, json_body=None):
+        """Description:
+            Echo one deterministic saved user-settings payload for the Web UI proxy update test.
+
+        Requirements:
+            - Preserve the proxied method, path, and submitted body for assertion.
+
+        :param method: Proxied HTTP method.
+        :param path: Proxied upstream PA path.
+        :param json_body: Optional proxied request body.
+        :returns: Deterministic saved user-settings payload.
+        """
+
+        assert method == "PUT"
+        assert path == "/api/user-settings"
+        assert json_body == {
+            "display_name": "Del",
+            "country_code": "GB",
+            "preferred_locale": "en-GB",
+            "timezone": "Europe/London",
+        }
+        return {
+            "display_name": "Del",
+            "country_code": "GB",
+            "preferred_locale": "en-GB",
+            "timezone": "Europe/London",
+            "country_options": [{"value": "GB", "label": "United Kingdom"}],
+            "locale_options": [{"value": "en-GB", "label": "English (United Kingdom)"}],
+            "timezone_options": [{"value": "Europe/London", "label": "Europe/London"}],
+            "timezone_options_by_country": {
+                "GB": [{"value": "Europe/London", "label": "Europe/London"}],
+            },
+            "path": ".faith/system.yaml",
+            "updated_at": "2026-05-02T10:15:00+00:00",
+        }
+
+    app.state.pa_prompt_request_proxy = _fake_pa_prompt_fetcher
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        response = await async_client.put(
+            "/api/user-settings",
+            json={
+                "display_name": "Del",
+                "country_code": "GB",
+                "preferred_locale": "en-GB",
+                "timezone": "Europe/London",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["preferred_locale"] == "en-GB"

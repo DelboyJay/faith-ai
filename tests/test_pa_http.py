@@ -605,6 +605,297 @@ def test_pa_config_returns_redacted_summary(client: TestClient) -> None:
     assert "config_dir" in payload
 
 
+def test_user_settings_endpoint_returns_project_settings(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify the PA user-settings endpoint returns persisted project user settings.
+
+    Requirements:
+    - This test is needed to prove the settings panel can preload saved values instead of showing an empty form every time.
+    - Verify the endpoint returns display name, preferred locale, timezone, and config metadata over HTTP.
+
+    :param client: Test client for the PA application.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary project root used to hold the test system config.
+    """
+
+    project_root = tmp_path / "workspace"
+    faith_dir = project_root / ".faith"
+    faith_dir.mkdir(parents=True)
+    (faith_dir / "system.yaml").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "privacy_profile": "internal",
+                "pa": {"model": "ollama/llama3:8b"},
+                "default_agent_model": "ollama/llama3:8b",
+                "country_code": "GB",
+                "timezone": "Europe/London",
+                "display_name": "Del",
+                "preferred_locale": "en-GB",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FAITH_PROJECT_ROOT", str(project_root))
+
+    response = client.get("/api/user-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["display_name"] == "Del"
+    assert payload["country_code"] == "GB"
+    assert payload["preferred_locale"] == "en-GB"
+    assert payload["timezone"] == "Europe/London"
+    assert payload["locale_options"]
+    assert payload["country_options"]
+    assert payload["timezone_options"]
+    assert payload["timezone_options"][0]["value"] == "Europe/London"
+    assert payload["path"].endswith(".faith/system.yaml")
+
+
+def test_user_settings_update_persists_timezone_and_refreshes_runtime(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify updating user settings persists the new timezone and refreshes the live PA runtime.
+
+    Requirements:
+    - This test is needed to prove accepted settings changes affect future agent turns without a restart.
+    - Verify the project system config is rewritten and the existing PA chat runtime starts using the new timezone immediately.
+
+    :param client: Test client for the PA application.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary project root used to hold the test system config.
+    """
+
+    project_root = tmp_path / "workspace"
+    faith_dir = project_root / ".faith"
+    faith_dir.mkdir(parents=True)
+    system_path = faith_dir / "system.yaml"
+    system_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "privacy_profile": "internal",
+                "pa": {"model": "ollama/llama3:8b"},
+                "default_agent_model": "ollama/llama3:8b",
+                "timezone": "UTC",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FAITH_PROJECT_ROOT", str(project_root))
+
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=FakeLLMClient(),
+        model_name="ollama/llama3:8b",
+        prompt_store=pa_app_module.ProjectAgentPromptStore(project_root=project_root),
+        session_manager=pa_app_module.SessionManager(project_root=project_root),
+        time_context_provider=RuntimeTimeContextProvider(
+            configured_timezone="UTC",
+            now_provider=SequencedClock(datetime(2026, 5, 2, 10, 0, tzinfo=timezone.utc)),
+        ),
+    )
+    pa_app_module.app.state.project_agent_chat_runtime = runtime
+
+    response = client.put(
+        "/api/user-settings",
+        json={
+            "display_name": "Del",
+            "country_code": "GB",
+            "preferred_locale": "en-GB",
+            "timezone": "Europe/London",
+        },
+    )
+
+    assert response.status_code == 200
+    updated = json.loads(system_path.read_text(encoding="utf-8"))
+    assert updated["display_name"] == "Del"
+    assert updated["country_code"] == "GB"
+    assert updated["preferred_locale"] == "en-GB"
+    assert updated["timezone"] == "Europe/London"
+    assert runtime.time_context_provider.configured_timezone == "Europe/London"
+
+
+def test_user_settings_update_rejects_timezone_outside_selected_country(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify the PA user-settings update endpoint rejects timezone choices that do not belong to the selected country.
+
+    Requirements:
+    - This test is needed to prove country-filtered timezone selection remains correct even if a crafted request bypasses the browser UI.
+    - Verify the endpoint returns HTTP 400 when the timezone is not valid for the submitted country.
+
+    :param client: Test client for the PA application.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary project root used to hold the test system config.
+    """
+
+    project_root = tmp_path / "workspace"
+    faith_dir = project_root / ".faith"
+    faith_dir.mkdir(parents=True)
+    (faith_dir / "system.yaml").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "privacy_profile": "internal",
+                "pa": {"model": "ollama/llama3:8b"},
+                "default_agent_model": "ollama/llama3:8b",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FAITH_PROJECT_ROOT", str(project_root))
+
+    response = client.put(
+        "/api/user-settings",
+        json={
+            "display_name": "Del",
+            "country_code": "GB",
+            "preferred_locale": "en-GB",
+            "timezone": "America/New_York",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "country" in response.json()["detail"].lower()
+
+
+def test_user_settings_update_rejects_invalid_timezone(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify the PA user-settings update endpoint rejects invalid timezone identifiers.
+
+    Requirements:
+    - This test is needed to prove invalid timezone values fail with HTTP 400 instead of corrupting the config.
+    - Verify the endpoint returns a plain-English validation message.
+
+    :param client: Test client for the PA application.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary project root used to hold the test system config.
+    """
+
+    project_root = tmp_path / "workspace"
+    faith_dir = project_root / ".faith"
+    faith_dir.mkdir(parents=True)
+    (faith_dir / "system.yaml").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "privacy_profile": "internal",
+                "pa": {"model": "ollama/llama3:8b"},
+                "default_agent_model": "ollama/llama3:8b",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FAITH_PROJECT_ROOT", str(project_root))
+
+    response = client.put(
+        "/api/user-settings",
+        json={"display_name": "Del", "preferred_locale": "en-GB", "timezone": "Mars/Olympus"},
+    )
+
+    assert response.status_code == 400
+    assert "timezone" in response.json()["detail"].lower()
+
+
+def test_pa_system_prompt_store_uses_host_backed_runtime_volume_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify the Project Agent prompt store persists edited prompts under the host-backed runtime volume.
+
+    Requirements:
+    - This test is needed to prove PA prompt edits survive container rebuilds when FAITH runs with a mounted data volume.
+    - Verify the prompt path resolves under `FAITH_DATA_DIR/pa-runtime` and accepted updates are written there.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary directory used to simulate the host-backed data volume.
+    """
+
+    data_root = tmp_path / "data"
+    monkeypatch.setenv("FAITH_DATA_DIR", str(data_root))
+    store = pa_app_module.ProjectAgentPromptStore(project_root=tmp_path / "workspace")
+
+    payload = store.update("Persist this custom PA prompt on the host-backed volume.")
+
+    assert store.prompt_path == data_root / "pa-runtime" / "agents" / "project-agent" / "prompt.md"
+    assert store.prompt_path.read_text(encoding="utf-8") == payload["prompt"]
+    assert payload["path"].endswith("pa-runtime/agents/project-agent/prompt.md")
+
+
+def test_user_settings_store_uses_host_backed_runtime_volume_when_configured(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify user-settings updates persist under the host-backed runtime volume when configured.
+
+    Requirements:
+    - This test is needed to prove browser-saved user settings survive container rebuilds.
+    - Verify the API reads defaults from project config but writes persisted overrides to `FAITH_DATA_DIR/pa-runtime`.
+
+    :param client: Test client for the PA application.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary directory used for project config and host-backed runtime data.
+    """
+
+    project_root = tmp_path / "workspace"
+    faith_dir = project_root / ".faith"
+    faith_dir.mkdir(parents=True)
+    (faith_dir / "system.yaml").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "privacy_profile": "internal",
+                "pa": {"model": "ollama/llama3:8b"},
+                "default_agent_model": "ollama/llama3:8b",
+                "timezone": "UTC",
+            }
+        ),
+        encoding="utf-8",
+    )
+    data_root = tmp_path / "data"
+    monkeypatch.setenv("FAITH_PROJECT_ROOT", str(project_root))
+    monkeypatch.setenv("FAITH_DATA_DIR", str(data_root))
+
+    response = client.put(
+        "/api/user-settings",
+        json={
+            "display_name": "Del",
+            "preferred_locale": "en-GB",
+            "timezone": "Europe/London",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    overlay_path = data_root / "pa-runtime" / "user-settings" / "system.yaml"
+    assert overlay_path.exists()
+    stored = json.loads(overlay_path.read_text(encoding="utf-8"))
+    assert stored["display_name"] == "Del"
+    assert stored["preferred_locale"] == "en-GB"
+    assert stored["timezone"] == "Europe/London"
+    assert payload["path"].endswith("pa-runtime/user-settings/system.yaml")
+    assert json.loads((faith_dir / "system.yaml").read_text(encoding="utf-8"))["timezone"] == "UTC"
+
+
 def test_publish_test_event_returns_payload_and_publishes(
     client: TestClient, fake_redis: FakeRedis
 ) -> None:

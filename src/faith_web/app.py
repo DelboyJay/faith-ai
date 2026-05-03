@@ -212,9 +212,25 @@ def _build_route_manifest() -> ServiceRouteManifest:
             RouteManifestEntry(
                 service="faith-web-ui",
                 protocol="http",
+                method="GET",
+                path="/api/user-settings",
+                summary="Proxy persisted user settings from the PA service.",
+                expected_status_codes=[200, 503],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
                 method="PUT",
                 path="/api/pa/system-prompt",
                 summary="Proxy an edited Project Agent system prompt to the PA service.",
+                expected_status_codes=[200, 400, 503],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="PUT",
+                path="/api/user-settings",
+                summary="Proxy a user-settings update to the PA service.",
                 expected_status_codes=[200, 400, 503],
             ),
             RouteManifestEntry(

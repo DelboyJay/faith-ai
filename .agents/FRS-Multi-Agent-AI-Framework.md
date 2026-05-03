@@ -202,6 +202,7 @@ All containers share a named Docker network (`maf-network`). The PA attaches all
 - The FAITH installation's `config/` directory is mounted read-only into the PA container only (for `secrets.yaml` access). It is **never** mounted into agent or tool containers.
 - The project workspace (e.g. `~/my-project/`) is mounted into the PA and the project-scoped tool runtimes that require it. The PA mounts the project's `.faith/` directory to read agent configs, tool configs, and project settings. FAITH-owned tool containers and the project-scoped `mcp-runtime` container receive only the specific paths required by the enabled tools and permitted by the project's `.faith/tools/*.yaml`.
 - Agent containers receive only their own agent directory (`.faith/agents/{id}/`) and the workspace paths assigned to them.
+- Any state that the user can save through the FAITH Web UI must be written to a host-backed mounted runtime volume, not to container-local filesystem paths. This includes PA prompt edits, user settings, and any future browser-saved runtime state that must survive container rebuilds or recreation.
 
 The PA holds the Docker socket mount and manages the full container lifecycle. This requires root-equivalent access and is disclosed to the user during installation. See Section 4.6 for full orchestration details.
 
@@ -2347,6 +2348,8 @@ The workspace layout manager should be implemented with **Dockview** so panels c
 - Runtime time-context requirements derive the implementation task for injecting the current date/time plus explicit user timezone into every agent's system-level prompt context on every turn.
 - User timezone source-resolution requirements derive the implementation task for capturing, persisting, defaulting, and overriding the timezone used by runtime time-context injection.
 - User settings window requirements derive the implementation task for a dedicated Web UI settings surface where user-scoped information and preferences can be viewed and edited after first-run setup.
+- Locale/timezone dropdown requirements derive the implementation task for replacing free-text locale/timezone entry with validated fixed-option selectors and safe defaults.
+- Host-backed Web UI persistence requirements derive the implementation task for storing all user-saved Web UI state on the FAITH runtime volume so those values survive container rebuilds and restart cycles.
 - Speech-to-text input requirements derive the implementation task for microphone-driven dictation in the Input panel backed by a local transcription service.
 - Input composer keyboard-shortcut requirements derive the implementation task for Enter-to-send behaviour, Alt+Enter newline insertion, and visible shortcut help text in the Input panel.
 - Frontend build-pipeline requirements derive the implementation task for introducing the bundled React toolchain and compiled browser assets consumed by the Web UI service.
@@ -2405,6 +2408,7 @@ For the Project Agent's interactive chat view, the transcript must be rendered a
 - The `Jump to latest` control should only be prominent when the transcript is not already at the bottom, so it helps without adding noise.
 - When the Web UI reloads or the PA/Web UI services restart, the Project Agent panel must rehydrate the most recent persisted Project Agent transcript from the latest available session log so the visible conversation matches the retained backend context.
 - The restored transcript must be presented before new live WebSocket output resumes, and it must not require the user to resend messages just to make retained context visible.
+- Any value that the user can save from the Web UI must persist to the FAITH host-backed runtime volume rather than container-local storage so rebuilds and container replacement do not silently discard user changes.
 
 **PA System Prompt Panel**
 
@@ -2413,7 +2417,7 @@ A dedicated panel must allow the user to inspect and update the Project Agent sy
 - The panel loads the active PA system prompt from the server, including metadata such as source path, last modified time, and whether the prompt differs from the default.
 - The user can edit the prompt in-browser and submit it back to the server.
 - Prompt updates are validated before being applied. Invalid updates leave the previous prompt active and return a plain-English error.
-- Accepted updates are persisted through the approved configuration path for the PA prompt and take effect on future PA model calls.
+- Accepted updates are persisted through the approved configuration path for the PA prompt on the host-backed FAITH runtime volume and take effect on future PA model calls.
 - On every agent turn, FAITH must inject runtime-managed time context into the effective system prompt or equivalent system-level instruction block: the current local date, current local time, and the user's timezone identifier. These values are regenerated per turn and must not require rewriting persisted prompt files.
 - The injected timezone must be explicit so every agent can reason correctly about relative dates such as `today`, `tomorrow`, and `next week`.
 - FAITH should support a setup-time defaulting path that can propose a timezone from the browser or host environment, but once the user has confirmed or overridden that value, the persisted user-selected timezone becomes the authoritative source for future turns.
@@ -2428,9 +2432,12 @@ A dedicated settings panel or window must allow the user to inspect and update u
 
 - The settings UI must preload existing saved values rather than showing an empty form when settings already exist.
 - The settings UI must expose the persisted timezone used for runtime date/time context and allow the user to update it explicitly.
+- Locale and timezone should be presented as fixed-option dropdowns rather than free-text fields. Defaults should start at `en-GB` and `Europe/London` until the user explicitly changes them or a setup-time suggestion is confirmed.
+- Timezone must remain an explicit persisted setting. Country may be used only as a suggestion signal or filter because a country does not map reliably to a single timezone in all cases.
 - The settings UI should be designed to accommodate additional user-scoped fields over time, such as display name, preferred locale, or other user metadata needed by future agent context features.
 - Changes must be validated before they are persisted, and invalid updates must leave the previous values active while returning a plain-English error.
 - Accepted updates must flow through the approved configuration pipeline rather than bypassing config validation and hot-reload behaviour.
+- Accepted settings changes must persist on the host-backed FAITH runtime volume rather than container-local files so rebuilds and container replacement retain the saved values.
 - The settings UI should align with the first-run wizard so values established during setup can be reviewed and changed later without reopening raw config files.
 - Saving settings that affect runtime context, such as timezone, must make those values available to future agent turns without requiring the user to restart FAITH manually.
 

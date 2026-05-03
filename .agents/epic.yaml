@@ -431,7 +431,7 @@ phases:
     title: 'Web UI'
     status: 'TODO'
     summary: ''
-    task_count: 21
+    task_count: 23
     tasks:
       - id: 'FAITH-036'
         name: 'FastAPI Server Setup & WebSocket Endpoints'
@@ -567,7 +567,7 @@ phases:
         task_doc: 'tasks/FAITH-071-pa-system-prompt-editor-panel.md'
         dependencies: ['FAITH-036', 'FAITH-038', 'FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.3, 6.4.2, 7.3'
-        summary: 'Add a dedicated Web UI panel for viewing and editing the Project Agent system prompt at runtime. The panel must load the active prompt from the server, allow edits, validate and submit updates back to the PA, persist the prompt through the approved configuration path, and make changes affect future PA turns without mutating historical messages.'
+        summary: 'Add a dedicated Web UI panel for viewing and editing the Project Agent system prompt at runtime. The panel must load the active prompt from the server, allow edits, validate and submit updates back to the PA, persist the prompt through the approved configuration path on the host-backed FAITH runtime volume, and make changes affect future PA turns without mutating historical messages.'
       - id: 'FAITH-072'
         name: 'PA Transcript Scroll Containment'
         complexity: 'S'
@@ -608,11 +608,11 @@ phases:
         name: 'User Settings Window & Profile Preferences'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-084-user-settings-window-profile-preferences.md'
         dependencies: ['FAITH-003', 'FAITH-004', 'FAITH-049', 'FAITH-074', 'FAITH-078', 'FAITH-083']
         frs_reference: 'Section 6.4.2, 7.2, 9.3'
-        summary: 'Add a dedicated Web UI settings window/panel for user-scoped information and preferences. The UI must expose editable user metadata such as timezone and future profile fields, preload values established during the first-run wizard, validate and persist updates through the approved config pipeline, and make those saved settings available to runtime agent context and other user-facing features without requiring manual file edits.'
+        summary: 'Add a dedicated Web UI settings window/panel for user-scoped information and preferences. The UI must expose editable user metadata such as timezone and future profile fields, preload values established during the first-run wizard, validate and persist updates through the approved config pipeline on the host-backed FAITH runtime volume, and make those saved settings available to runtime agent context and other user-facing features without requiring manual file edits.'
       - id: 'FAITH-085'
         name: 'Input Panel Enter-to-Send & Newline Hint'
         complexity: 'S'
@@ -622,6 +622,24 @@ phases:
         dependencies: ['FAITH-041', 'FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.2'
         summary: 'Improve the chat composer ergonomics in the Input panel. Pressing `Enter` in the message box should submit the message as if the Send button were clicked, while `Alt+Enter` should insert a newline into the current draft. The panel must also show small helper text beneath the text box and above the action buttons explaining the keyboard shortcuts.'
+      - id: 'FAITH-087'
+        name: 'Locale & Timezone Fixed-Option Selectors'
+        complexity: 'S'
+        model: 'Sonnet / GPT-5.4'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-087-locale-timezone-fixed-option-selectors.md'
+        dependencies: ['FAITH-083', 'FAITH-084']
+        frs_reference: 'Section 6.4.2, 7.2, 9.3'
+        summary: 'Replace free-text locale and timezone entry in the user settings experience with validated fixed-option dropdown selectors. Default to `en-GB` and `Europe/London`, add a country selector that filters the available timezone list, allow setup-time suggestion support, and keep timezone as an explicit persisted value rather than deriving it blindly from country.'
+      - id: 'FAITH-086'
+        name: 'Host-Backed Web UI Saved State Persistence'
+        complexity: 'S'
+        model: 'Sonnet / GPT-5.4'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-086-host-backed-web-ui-saved-state-persistence.md'
+        dependencies: ['FAITH-015', 'FAITH-071', 'FAITH-084']
+        frs_reference: 'Section 2.3, 6.4.2, 8.4'
+        summary: 'Enforce the rule that any value saved through the FAITH Web UI must persist on the host-backed FAITH runtime volume rather than container-local filesystem paths. Migrate PA prompt edits and user-settings persistence onto that runtime volume, preserve existing runtime reload behaviour, and add regression coverage proving those values survive container rebuild boundaries.'
       - id: 'FAITH-082'
         name: 'Project Agent Transcript Rehydration on Restart'
         complexity: 'S'
@@ -737,7 +755,7 @@ phases:
         name: 'User Timezone Preference Resolution & Persistence'
         complexity: 'S'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-083-user-timezone-preference-resolution-persistence.md'
         dependencies: ['FAITH-003', 'FAITH-049', 'FAITH-073']
         frs_reference: 'Section 3.5.1, 7.2, 9.3'

@@ -20,7 +20,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 from faith_pa import __version__
 from faith_pa.agent.llm_client import LLMClient
@@ -33,6 +33,7 @@ from faith_pa.config import (
     ServiceStatus,
     build_config_summary,
     load_system_config,
+    update_system_config_fields,
 )
 from faith_pa.pa.chat_tool_loop import (
     ProjectAgentMCPToolExecutor,
@@ -118,6 +119,462 @@ class ProjectAgentPromptUpdate(BaseModel):
     prompt: str
 
 
+class UserSettingsUpdate(BaseModel):
+    """Description:
+        Validate one user-settings update submitted through the PA API.
+
+    Requirements:
+        - Accept optional display name, country, preferred locale, and timezone values.
+        - Treat blank strings as unset values instead of persisting whitespace.
+        - Keep the payload narrow so unrelated system settings cannot be changed here.
+    """
+
+    display_name: str | None = Field(default=None, max_length=120)
+    country_code: str | None = Field(default=None, min_length=2, max_length=2)
+    preferred_locale: str | None = Field(default=None, max_length=35)
+    timezone: str | None = Field(default=None, max_length=120)
+
+    @field_validator("display_name", "preferred_locale", "timezone", mode="before")
+    @classmethod
+    def normalise_optional_text(cls, value: Any) -> Any:
+        """Description:
+            Strip whitespace from optional text fields and collapse blanks to `None`.
+
+        Requirements:
+            - Keep persisted settings free from accidental leading or trailing whitespace.
+            - Let users clear a field by submitting an empty string.
+
+        :param value: Raw field value received from the request payload.
+        :returns: Normalised field value ready for model validation.
+        """
+
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+    @field_validator("country_code", mode="before")
+    @classmethod
+    def normalise_country_code(cls, value: Any) -> Any:
+        """Description:
+            Normalise the optional country code to uppercase ISO-style text.
+
+        Requirements:
+            - Collapse blank strings to `None`.
+            - Preserve non-string values for later validation failure.
+
+        :param value: Raw country-code field value received from the request payload.
+        :returns: Normalised uppercase country code when available.
+        """
+
+        if isinstance(value, str):
+            stripped = value.strip().upper()
+            return stripped or None
+        return value
+
+
+class SelectionOption(BaseModel):
+    """Description:
+        Represent one fixed-option entry returned to the Web UI settings panel.
+
+    Requirements:
+        - Preserve a stable machine value plus a user-visible label.
+    """
+
+    value: str
+    label: str
+
+
+class UserSettingsPayload(BaseModel):
+    """Description:
+        Represent the persisted user-settings payload returned to browser clients.
+
+    Requirements:
+        - Expose the current display name, country, preferred locale, timezone, config path, update metadata, and fixed-option lists.
+        - Keep the response stable for the user-settings panel preload and save flows.
+    """
+
+    display_name: str | None = None
+    country_code: str | None = None
+    preferred_locale: str | None = None
+    timezone: str | None = None
+    country_options: list[SelectionOption] = Field(default_factory=list)
+    locale_options: list[SelectionOption] = Field(default_factory=list)
+    timezone_options: list[SelectionOption] = Field(default_factory=list)
+    timezone_options_by_country: dict[str, list[SelectionOption]] = Field(default_factory=dict)
+    path: str
+    updated_at: str | None = None
+
+
+DEFAULT_USER_COUNTRY_CODE = "GB"
+DEFAULT_USER_LOCALE = "en-GB"
+DEFAULT_USER_TIMEZONE = "Europe/London"
+COUNTRY_OPTIONS: tuple[SelectionOption, ...] = (
+    SelectionOption(value="AU", label="Australia"),
+    SelectionOption(value="CA", label="Canada"),
+    SelectionOption(value="DE", label="Germany"),
+    SelectionOption(value="ES", label="Spain"),
+    SelectionOption(value="FR", label="France"),
+    SelectionOption(value="GB", label="United Kingdom"),
+    SelectionOption(value="IE", label="Ireland"),
+    SelectionOption(value="IN", label="India"),
+    SelectionOption(value="IT", label="Italy"),
+    SelectionOption(value="JP", label="Japan"),
+    SelectionOption(value="NL", label="Netherlands"),
+    SelectionOption(value="NZ", label="New Zealand"),
+    SelectionOption(value="SG", label="Singapore"),
+    SelectionOption(value="US", label="United States"),
+)
+LOCALE_OPTIONS: tuple[SelectionOption, ...] = (
+    SelectionOption(value="de-DE", label="German (Germany)"),
+    SelectionOption(value="en-AU", label="English (Australia)"),
+    SelectionOption(value="en-CA", label="English (Canada)"),
+    SelectionOption(value="en-GB", label="English (United Kingdom)"),
+    SelectionOption(value="en-IE", label="English (Ireland)"),
+    SelectionOption(value="en-IN", label="English (India)"),
+    SelectionOption(value="en-NZ", label="English (New Zealand)"),
+    SelectionOption(value="en-SG", label="English (Singapore)"),
+    SelectionOption(value="en-US", label="English (United States)"),
+    SelectionOption(value="es-ES", label="Spanish (Spain)"),
+    SelectionOption(value="fr-CA", label="French (Canada)"),
+    SelectionOption(value="fr-FR", label="French (France)"),
+    SelectionOption(value="hi-IN", label="Hindi (India)"),
+    SelectionOption(value="it-IT", label="Italian (Italy)"),
+    SelectionOption(value="ja-JP", label="Japanese (Japan)"),
+    SelectionOption(value="nl-NL", label="Dutch (Netherlands)"),
+)
+COUNTRY_TIMEZONE_OPTIONS: dict[str, tuple[SelectionOption, ...]] = {
+    "AU": (
+        SelectionOption(value="Australia/Brisbane", label="Australia/Brisbane"),
+        SelectionOption(value="Australia/Sydney", label="Australia/Sydney"),
+        SelectionOption(value="Australia/Hobart", label="Australia/Hobart"),
+        SelectionOption(value="Australia/Adelaide", label="Australia/Adelaide"),
+        SelectionOption(value="Australia/Darwin", label="Australia/Darwin"),
+        SelectionOption(value="Australia/Perth", label="Australia/Perth"),
+    ),
+    "CA": (
+        SelectionOption(value="America/St_Johns", label="America/St_Johns"),
+        SelectionOption(value="America/Halifax", label="America/Halifax"),
+        SelectionOption(value="America/Toronto", label="America/Toronto"),
+        SelectionOption(value="America/Winnipeg", label="America/Winnipeg"),
+        SelectionOption(value="America/Edmonton", label="America/Edmonton"),
+        SelectionOption(value="America/Vancouver", label="America/Vancouver"),
+    ),
+    "DE": (SelectionOption(value="Europe/Berlin", label="Europe/Berlin"),),
+    "ES": (SelectionOption(value="Europe/Madrid", label="Europe/Madrid"),),
+    "FR": (SelectionOption(value="Europe/Paris", label="Europe/Paris"),),
+    "GB": (SelectionOption(value="Europe/London", label="Europe/London"),),
+    "IE": (SelectionOption(value="Europe/Dublin", label="Europe/Dublin"),),
+    "IN": (SelectionOption(value="Asia/Kolkata", label="Asia/Kolkata"),),
+    "IT": (SelectionOption(value="Europe/Rome", label="Europe/Rome"),),
+    "JP": (SelectionOption(value="Asia/Tokyo", label="Asia/Tokyo"),),
+    "NL": (SelectionOption(value="Europe/Amsterdam", label="Europe/Amsterdam"),),
+    "NZ": (
+        SelectionOption(value="Pacific/Auckland", label="Pacific/Auckland"),
+        SelectionOption(value="Pacific/Chatham", label="Pacific/Chatham"),
+    ),
+    "SG": (SelectionOption(value="Asia/Singapore", label="Asia/Singapore"),),
+    "US": (
+        SelectionOption(value="America/New_York", label="America/New_York"),
+        SelectionOption(value="America/Chicago", label="America/Chicago"),
+        SelectionOption(value="America/Denver", label="America/Denver"),
+        SelectionOption(value="America/Los_Angeles", label="America/Los_Angeles"),
+        SelectionOption(value="America/Anchorage", label="America/Anchorage"),
+        SelectionOption(value="Pacific/Honolulu", label="Pacific/Honolulu"),
+    ),
+}
+
+
+def _build_country_options() -> list[SelectionOption]:
+    """Description:
+        Return the fixed country options exposed by the user-settings API.
+
+    Requirements:
+        - Preserve the configured option order for stable UI rendering.
+
+    :returns: Ordered country options for the settings panel.
+    """
+
+    return list(COUNTRY_OPTIONS)
+
+
+def _build_locale_options() -> list[SelectionOption]:
+    """Description:
+        Return the fixed locale options exposed by the user-settings API.
+
+    Requirements:
+        - Preserve the configured option order for stable UI rendering.
+
+    :returns: Ordered locale options for the settings panel.
+    """
+
+    return list(LOCALE_OPTIONS)
+
+
+def _build_timezone_options(country_code: str | None) -> list[SelectionOption]:
+    """Description:
+        Return timezone options filtered by one selected country code.
+
+    Requirements:
+        - Return the configured country-specific list when the country is known.
+        - Fall back to the default-country list when the supplied country is missing or unknown.
+
+    :param country_code: Selected two-letter country code.
+    :returns: Ordered timezone options for the resolved country.
+    """
+
+    resolved_country_code = (country_code or DEFAULT_USER_COUNTRY_CODE).upper()
+    return list(
+        COUNTRY_TIMEZONE_OPTIONS.get(
+            resolved_country_code, COUNTRY_TIMEZONE_OPTIONS[DEFAULT_USER_COUNTRY_CODE]
+        )
+    )
+
+
+def _build_timezone_options_by_country() -> dict[str, list[SelectionOption]]:
+    """Description:
+        Return the full curated timezone-option map keyed by country code.
+
+    Requirements:
+        - Preserve the configured option order for each country.
+
+    :returns: Mapping of country code to ordered timezone options.
+    """
+
+    return {
+        country_code: list(options) for country_code, options in COUNTRY_TIMEZONE_OPTIONS.items()
+    }
+
+
+def _find_country_for_timezone(timezone_name: str | None) -> str | None:
+    """Description:
+        Return the first configured country containing one timezone option.
+
+    Requirements:
+        - Return `None` when the timezone is unknown to the curated settings registry.
+
+    :param timezone_name: IANA timezone name to look up.
+    :returns: Matching country code when the timezone is known.
+    """
+
+    if not timezone_name:
+        return None
+    for country_code, options in COUNTRY_TIMEZONE_OPTIONS.items():
+        if any(option.value == timezone_name for option in options):
+            return country_code
+    return None
+
+
+def _resolve_user_country_code(country_code: str | None, timezone_name: str | None) -> str:
+    """Description:
+        Resolve one stable country code for the user-settings payload.
+
+    Requirements:
+        - Prefer the explicitly saved country code when it is valid for the saved timezone.
+        - Fall back to the country implied by the saved timezone when needed.
+        - Use the configured FAITH default when no better signal exists.
+
+    :param country_code: Saved or submitted country code.
+    :param timezone_name: Saved or submitted timezone name.
+    :returns: Resolved two-letter country code for the settings payload.
+    """
+
+    saved_country_code = (country_code or "").upper()
+    if saved_country_code and saved_country_code in COUNTRY_TIMEZONE_OPTIONS:
+        if not timezone_name or any(
+            option.value == timezone_name for option in COUNTRY_TIMEZONE_OPTIONS[saved_country_code]
+        ):
+            return saved_country_code
+    inferred_country_code = _find_country_for_timezone(timezone_name)
+    return inferred_country_code or DEFAULT_USER_COUNTRY_CODE
+
+
+class UserSettingsStore:
+    """Description:
+        Load and persist user-scoped settings from the project system configuration.
+
+    Requirements:
+        - Persist browser-saved user settings under the host-backed PA runtime volume when available.
+        - Fall back to project `.faith/system.yaml` only for initial default values and local development.
+        - Limit writes to the user-profile fields owned by the settings panel and return stable metadata.
+
+    :param project_root: Project root that contains the `.faith` configuration directory.
+    """
+
+    def __init__(self, *, project_root: Path | None = None) -> None:
+        """Description:
+            Initialise the user-settings store for one project root.
+
+        Requirements:
+            - Resolve the backing `system.yaml` path relative to the supplied project root.
+
+        :param project_root: Project root that contains the `.faith` configuration directory.
+        """
+
+        self.project_root = Path(project_root or PROJECT_ROOT)
+        self.default_system_path = self.project_root / ".faith" / "system.yaml"
+        runtime_root = _project_agent_session_root()
+        if (
+            runtime_root == PROJECT_ROOT
+            and "FAITH_DATA_DIR" not in os.environ
+            and "FAITH_PA_SESSION_ROOT" not in os.environ
+        ):
+            self.system_path = self.default_system_path
+        else:
+            self.system_path = runtime_root / "user-settings" / "system.yaml"
+
+    def read(self) -> UserSettingsPayload:
+        """Description:
+            Load the current persisted user settings from the system config.
+
+        Requirements:
+            - Surface saved display name, country, locale, and timezone values.
+            - Return fixed-option lists for country, locale, and timezone selectors.
+            - Report update metadata when the config file exists on disk.
+
+        :returns: Current persisted user-settings payload.
+        """
+
+        try:
+            config = load_system_config(root=self.project_root)
+            default_display_name = config.display_name
+            default_country_code = config.country_code
+            default_preferred_locale = config.preferred_locale
+            default_timezone = config.timezone
+        except ConfigLoadError:
+            default_display_name = None
+            default_country_code = None
+            default_preferred_locale = None
+            default_timezone = None
+        persisted_payload = self._load_persisted_payload()
+        resolved_timezone = (
+            persisted_payload.get("timezone", default_timezone) or DEFAULT_USER_TIMEZONE
+        )
+        resolved_country_code = _resolve_user_country_code(
+            persisted_payload.get("country_code", default_country_code),
+            resolved_timezone,
+        )
+        resolved_preferred_locale = (
+            persisted_payload.get("preferred_locale", default_preferred_locale)
+            or DEFAULT_USER_LOCALE
+        )
+        updated_at = None
+        metadata_path = (
+            self.default_system_path if self.default_system_path.exists() else self.system_path
+        )
+        if self.system_path.exists():
+            metadata_path = self.system_path
+        if metadata_path.exists():
+            updated_at = datetime.fromtimestamp(
+                metadata_path.stat().st_mtime, tz=timezone.utc
+            ).isoformat()
+        return UserSettingsPayload(
+            display_name=persisted_payload.get("display_name", default_display_name),
+            country_code=resolved_country_code,
+            preferred_locale=resolved_preferred_locale,
+            timezone=resolved_timezone,
+            country_options=_build_country_options(),
+            locale_options=_build_locale_options(),
+            timezone_options=_build_timezone_options(resolved_country_code),
+            timezone_options_by_country=_build_timezone_options_by_country(),
+            path=self.system_path.as_posix(),
+            updated_at=updated_at,
+        )
+
+    def update(self, settings: UserSettingsUpdate) -> UserSettingsPayload:
+        """Description:
+            Persist one validated user-settings update to the system config.
+
+        Requirements:
+            - Reject unknown country codes before mutating config on disk.
+            - Reject unknown locale values before mutating config on disk.
+            - Reject invalid timezone identifiers before mutating config on disk.
+            - Reject timezone choices that do not belong to the selected country.
+            - Rewrite only the supported user-settings fields.
+
+        :param settings: Validated browser-submitted user-settings update.
+        :raises ValueError: If the timezone value is invalid.
+        :returns: Updated persisted user-settings payload.
+        """
+
+        if settings.country_code and settings.country_code not in COUNTRY_TIMEZONE_OPTIONS:
+            raise ValueError("Country must be one of the supported FAITH settings options.")
+        if settings.preferred_locale and not any(
+            option.value == settings.preferred_locale for option in LOCALE_OPTIONS
+        ):
+            raise ValueError(
+                "Preferred locale must be one of the supported FAITH settings options."
+            )
+        if settings.timezone and not RuntimeTimeContextProvider._is_valid_timezone(
+            settings.timezone
+        ):
+            raise ValueError(
+                "Timezone must be a valid IANA timezone identifier such as Europe/London."
+            )
+        selected_country_code = (
+            settings.country_code.upper()
+            if settings.country_code
+            else _resolve_user_country_code(None, settings.timezone)
+        )
+        if settings.timezone and not any(
+            option.value == settings.timezone
+            for option in _build_timezone_options(selected_country_code)
+        ):
+            raise ValueError(
+                "Timezone must belong to the selected country from the available dropdown options."
+            )
+        resolved_country_code = _resolve_user_country_code(selected_country_code, settings.timezone)
+        if self.system_path == self.default_system_path:
+            update_system_config_fields(
+                {
+                    "display_name": settings.display_name,
+                    "country_code": resolved_country_code,
+                    "preferred_locale": settings.preferred_locale,
+                    "timezone": settings.timezone,
+                },
+                root=self.project_root,
+            )
+            return self.read()
+        self.system_path.parent.mkdir(parents=True, exist_ok=True)
+        self.system_path.write_text(
+            json.dumps(
+                {
+                    "display_name": settings.display_name,
+                    "country_code": resolved_country_code,
+                    "preferred_locale": settings.preferred_locale,
+                    "timezone": settings.timezone,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        return self.read()
+
+    def _load_persisted_payload(self) -> dict[str, Any]:
+        """Description:
+            Load the persisted user-settings overlay payload from the runtime volume.
+
+        Requirements:
+            - Return an empty mapping when no overlay has been saved yet.
+            - Accept either JSON or YAML-compatible content for future migration safety.
+
+        :returns: Persisted overlay payload for user-scoped settings.
+        :raises ConfigLoadError: If the saved overlay cannot be parsed as a mapping.
+        """
+
+        if not self.system_path.exists():
+            return {}
+        try:
+            payload = json.loads(self.system_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ConfigLoadError(f"Invalid user settings in {self.system_path}: {exc}") from exc
+        if not isinstance(payload, dict):
+            raise ConfigLoadError(
+                f"Invalid user settings root in {self.system_path}: expected a mapping"
+            )
+        return payload
+
+
 def _project_agent_session_root() -> Path:
     """Description:
         Resolve the persistent Project Agent session root directory.
@@ -146,7 +603,8 @@ class ProjectAgentPromptStore:
         Read, validate, persist, and reset the Project Agent system prompt.
 
     Requirements:
-        - Use `.faith/agents/project-agent/prompt.md` as the approved prompt path.
+        - Persist the edited prompt under the host-backed PA runtime volume when available.
+        - Fall back to `.faith/agents/project-agent/prompt.md` only for local development paths without runtime-volume configuration.
         - Fall back to the built-in prompt when no custom prompt file exists.
         - Reject invalid prompt updates before mutating the active prompt file.
 
@@ -172,7 +630,17 @@ class ProjectAgentPromptStore:
 
         self.project_root = Path(project_root or PROJECT_ROOT)
         self.default_prompt = default_prompt
-        self.prompt_path = self.project_root / ".faith" / "agents" / PROJECT_AGENT_ID / "prompt.md"
+        runtime_root = _project_agent_session_root()
+        if (
+            runtime_root == PROJECT_ROOT
+            and "FAITH_DATA_DIR" not in os.environ
+            and "FAITH_PA_SESSION_ROOT" not in os.environ
+        ):
+            self.prompt_path = (
+                self.project_root / ".faith" / "agents" / PROJECT_AGENT_ID / "prompt.md"
+            )
+        else:
+            self.prompt_path = runtime_root / "agents" / PROJECT_AGENT_ID / "prompt.md"
 
     def read(self) -> dict[str, Any]:
         """Description:
@@ -542,16 +1010,23 @@ class ProjectAgentChatRuntime:
             Load the configured project timezone for PA browser-chat prompt assembly.
 
         Requirements:
-            - Reuse the project system configuration when it is available.
+            - Prefer the persisted host-backed user-settings override when available.
+            - Reuse the project system configuration as a fallback when no saved override exists.
             - Fall back cleanly when project config is not ready yet.
 
         :returns: Configured timezone identifier when available.
         """
 
         try:
-            return load_system_config().timezone
+            settings_store = UserSettingsStore(
+                project_root=Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
+            )
+            return settings_store.read().timezone
         except ConfigLoadError:
-            return None
+            try:
+                return load_system_config().timezone
+            except ConfigLoadError:
+                return None
 
     async def _generate_reply_with_tools(self, messages: list[dict[str, str]]) -> str:
         """Description:
@@ -618,6 +1093,19 @@ class ProjectAgentChatRuntime:
         self.session_manager.resume_latest_session()
         self.transcript_messages = self.session_manager.load_latest_project_agent_transcript()
         self.history = self.transcript_messages[-MAX_PROJECT_AGENT_HISTORY:]
+
+    def update_user_settings(self, settings: UserSettingsPayload) -> None:
+        """Description:
+            Apply updated user settings to the live Project Agent runtime.
+
+        Requirements:
+            - Refresh the runtime timezone provider immediately so future turns use the saved timezone.
+            - Leave transcript and chat history intact when only user-profile fields change.
+
+        :param settings: Persisted user-settings payload returned by the store.
+        """
+
+        self.time_context_provider.configured_timezone = settings.timezone
 
     async def _ensure_active_session(self) -> None:
         """Description:
@@ -1100,9 +1588,25 @@ def _build_route_manifest() -> ServiceRouteManifest:
             RouteManifestEntry(
                 service="faith-project-agent",
                 protocol="http",
+                method="GET",
+                path="/api/user-settings",
+                summary="Return persisted user settings for the Web UI settings panel.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
                 method="PUT",
                 path="/api/pa/system-prompt",
                 summary="Validate and persist an edited Project Agent system prompt.",
+                expected_status_codes=[200, 400],
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
+                method="PUT",
+                path="/api/user-settings",
+                summary="Validate and persist user settings and refresh the live Project Agent runtime.",
                 expected_status_codes=[200, 400],
             ),
             RouteManifestEntry(
@@ -1188,6 +1692,56 @@ def _get_project_agent_session_manager(app: FastAPI) -> SessionManager:
     return session_manager
 
 
+def _get_user_settings_store(app: FastAPI) -> UserSettingsStore:
+    """Description:
+        Return the shared user-settings store for the PA application.
+
+    Requirements:
+        - Reuse the lifespan-created store when present.
+        - Lazily create a store for tests or direct module usage.
+
+    :param app: FastAPI application holding shared runtime state.
+    :returns: Shared user-settings store.
+    """
+
+    desired_root = Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
+    runtime_root = _project_agent_session_root()
+    if (
+        runtime_root == PROJECT_ROOT
+        and "FAITH_DATA_DIR" not in os.environ
+        and "FAITH_PA_SESSION_ROOT" not in os.environ
+    ):
+        desired_path = desired_root / ".faith" / "system.yaml"
+    else:
+        desired_path = runtime_root / "user-settings" / "system.yaml"
+    settings_store = getattr(app.state, "user_settings_store", None)
+    if (
+        settings_store is None
+        or settings_store.project_root != desired_root
+        or settings_store.system_path != desired_path
+    ):
+        settings_store = UserSettingsStore(project_root=desired_root)
+        app.state.user_settings_store = settings_store
+    return settings_store
+
+
+def _apply_updated_user_settings(app: FastAPI, settings: UserSettingsPayload) -> None:
+    """Description:
+        Apply persisted user-settings changes to any live PA browser-chat runtime.
+
+    Requirements:
+        - Refresh the running Project Agent time-context provider immediately when present.
+        - Remain a no-op when the browser-chat runtime is not active.
+
+    :param app: FastAPI application holding shared runtime state.
+    :param settings: Persisted user-settings payload returned by the store.
+    """
+
+    chat_runtime = getattr(app.state, "project_agent_chat_runtime", None)
+    if chat_runtime is not None:
+        chat_runtime.update_user_settings(settings)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Description:
@@ -1206,6 +1760,9 @@ async def lifespan(app: FastAPI):
     app.state.project_agent_prompt_store = ProjectAgentPromptStore()
     app.state.project_agent_session_manager = SessionManager(
         project_root=_project_agent_session_root()
+    )
+    app.state.user_settings_store = UserSettingsStore(
+        project_root=Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
     )
     app.state.redis = await get_async_client()
     chat_runtime = None
@@ -1313,6 +1870,21 @@ async def api_get_project_agent_transcript() -> dict[str, Any]:
     }
 
 
+@app.get("/api/user-settings", response_model=UserSettingsPayload)
+async def api_get_user_settings() -> UserSettingsPayload:
+    """Description:
+        Return the persisted user settings used by the browser settings panel.
+
+    Requirements:
+        - Load the settings from the shared project-backed store.
+        - Remain available without depending on Redis health.
+
+    :returns: Persisted user-settings payload.
+    """
+
+    return _get_user_settings_store(app).read()
+
+
 @app.put("/api/pa/system-prompt")
 async def api_update_project_agent_system_prompt(
     body: ProjectAgentPromptUpdate,
@@ -1333,6 +1905,28 @@ async def api_update_project_agent_system_prompt(
         return _get_project_agent_prompt_store(app).update(body.prompt)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.put("/api/user-settings", response_model=UserSettingsPayload)
+async def api_update_user_settings(body: UserSettingsUpdate) -> UserSettingsPayload:
+    """Description:
+        Validate and persist one user-settings update.
+
+    Requirements:
+        - Reject invalid timezone identifiers with a plain-English HTTP 400 error.
+        - Refresh the live Project Agent runtime immediately after accepted updates.
+
+    :param body: User-submitted settings update payload.
+    :raises HTTPException: If validation fails.
+    :returns: Updated persisted user-settings payload.
+    """
+
+    try:
+        payload = _get_user_settings_store(app).update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _apply_updated_user_settings(app, payload)
+    return payload
 
 
 @app.post("/api/pa/system-prompt/reset")

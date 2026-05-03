@@ -3,7 +3,7 @@
 **Phase:** 8 — Web UI
 **Complexity:** M
 **Model:** Sonnet / GPT-5.4
-**Status:** TODO
+**Status:** DONE
 **Dependencies:** FAITH-003, FAITH-004, FAITH-049, FAITH-074, FAITH-078, FAITH-083
 **FRS Reference:** Section 6.4.2, 7.2, 9.3
 
@@ -21,7 +21,7 @@ Add a dedicated Web UI settings window/panel where the user can review and updat
 - Preload persisted user-scoped values instead of presenting an empty state when settings already exist.
 - Expose the timezone used by runtime time-context injection and allow the user to update it explicitly.
 - Provide room for future user profile fields such as display name, preferred locale, or other user-scoped metadata.
-- Validate and persist updates through the approved configuration pipeline rather than bypassing it.
+- Validate and persist updates through the approved configuration pipeline on the host-backed FAITH runtime volume rather than bypassing it.
 - Make accepted changes available to future agent turns without requiring manual file edits or a full FAITH restart.
 
 ---

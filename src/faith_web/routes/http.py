@@ -130,6 +130,20 @@ class ProjectAgentPromptUpdate(BaseModel):
     prompt: str
 
 
+class UserSettingsUpdate(BaseModel):
+    """Description:
+        Validate one user-settings update submitted through the Web UI proxy.
+
+    Requirements:
+        - Preserve the display name, country, preferred locale, and timezone values before forwarding.
+    """
+
+    display_name: str | None = None
+    country_code: str | None = None
+    preferred_locale: str | None = None
+    timezone: str | None = None
+
+
 def _utc_now() -> str:
     """Description:
         Return the current UTC timestamp in ISO 8601 format.
@@ -355,6 +369,21 @@ async def get_project_agent_transcript(request: Request) -> dict[str, object]:
     return await _proxy_pa_request(request, "GET", "/api/pa/transcript")
 
 
+@router.get("/api/user-settings")
+async def get_user_settings(request: Request) -> dict[str, object]:
+    """Description:
+        Return persisted user settings through the Web UI same-origin API.
+
+    Requirements:
+        - Proxy the request to the PA user-settings endpoint.
+
+    :param request: Incoming Web UI request object.
+    :returns: Persisted user-settings payload.
+    """
+
+    return await _proxy_pa_request(request, "GET", "/api/user-settings")
+
+
 @router.put("/api/pa/system-prompt")
 async def update_project_agent_system_prompt(
     request: Request,
@@ -374,6 +403,30 @@ async def update_project_agent_system_prompt(
         request,
         "PUT",
         "/api/pa/system-prompt",
+        json_body=body.model_dump(),
+    )
+
+
+@router.put("/api/user-settings")
+async def update_user_settings(
+    request: Request,
+    body: UserSettingsUpdate,
+) -> dict[str, object]:
+    """Description:
+        Forward a user-settings update through the Web UI same-origin API.
+
+    Requirements:
+        - Preserve PA-side validation and persistence behaviour for settings updates.
+
+    :param request: Incoming Web UI request object.
+    :param body: User-settings update payload submitted by the browser.
+    :returns: Updated persisted user-settings payload.
+    """
+
+    return await _proxy_pa_request(
+        request,
+        "PUT",
+        "/api/user-settings",
         json_body=body.model_dump(),
     )
 

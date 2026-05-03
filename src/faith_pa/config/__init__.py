@@ -28,6 +28,7 @@ from faith_pa.config.loader import (
     project_config_dir,
     project_root,
     resolve_secret_ref,
+    update_system_config_fields,
     validate_startup_config,
 )
 from faith_pa.config.migration import MigrationEngine, MigrationNeeded, MigrationResult
@@ -87,5 +88,6 @@ __all__ = [
     "project_config_dir",
     "project_root",
     "resolve_secret_ref",
+    "update_system_config_fields",
     "validate_startup_config",
 ]

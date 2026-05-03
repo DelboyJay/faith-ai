@@ -325,6 +325,7 @@
       handleTranscriptContentChanged,
       isNearBottom,
     );
+    let savedTranscriptMessageCount = 0;
     const queuedMessages = [];
     let isPaused = false;
     let isPinned = false;
@@ -413,13 +414,14 @@
 
     /**
      * Description:
-     *   Restore the latest saved Project Agent transcript before opening the live stream.
+     *   Reconcile the saved Project Agent transcript with the currently rendered panel.
      *
      * Requirements:
      *   - Use the same-origin transcript endpoint when `fetch` is available.
+     *   - Append only transcript entries that have not already been rendered locally.
      *   - Degrade silently when the transcript endpoint is unavailable.
      */
-    async function loadSavedTranscript() {
+    async function reconcileSavedTranscript() {
       if (typeof globalScope.fetch !== "function") {
         return;
       }
@@ -432,7 +434,12 @@
         if (!payload || !Array.isArray(payload.messages)) {
           return;
         }
-        payload.messages.forEach(processSavedTranscriptMessage);
+        const nextMessages = payload.messages.slice(savedTranscriptMessageCount);
+        if (nextMessages.length === 0) {
+          return;
+        }
+        nextMessages.forEach(processSavedTranscriptMessage);
+        savedTranscriptMessageCount = payload.messages.length;
         scrollTranscriptToLatest();
       } catch (error) {
         return;
@@ -521,6 +528,9 @@
       nextSocket.addEventListener("open", function onOpen() {
         reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
         reconnectScheduledForSocket = null;
+        if (panelState.agentId === "project-agent") {
+          void reconcileSavedTranscript();
+        }
         setHeaderState("connected", panelState.model);
       });
       nextSocket.addEventListener("message", function onMessage(event) {
@@ -569,7 +579,11 @@
       scrollTranscriptToLatest();
     });
 
-    void loadSavedTranscript().finally(connect);
+    if (panelState.agentId === "project-agent") {
+      void reconcileSavedTranscript().finally(connect);
+    } else {
+      connect();
+    }
 
     const stopWatchingRemoval = watchPanelRemoval(target, cleanup);
 

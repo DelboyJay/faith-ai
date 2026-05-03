@@ -37,6 +37,7 @@
     STATUS: "status-panel",
     DOCKER_RUNTIME: "docker-runtime-panel",
     PA_SYSTEM_PROMPT: "pa-system-prompt-panel",
+    USER_SETTINGS: "user-settings-panel",
   });
 
   /**
@@ -56,7 +57,8 @@
       componentType === COMPONENT_TYPES.INPUT ||
       componentType === COMPONENT_TYPES.APPROVAL ||
       componentType === COMPONENT_TYPES.STATUS ||
-      componentType === COMPONENT_TYPES.PA_SYSTEM_PROMPT
+      componentType === COMPONENT_TYPES.PA_SYSTEM_PROMPT ||
+      componentType === COMPONENT_TYPES.USER_SETTINGS
     ) {
       return componentType;
     }
@@ -117,6 +119,7 @@
        * Requirements:
        *   - Mirror the baseline first-load workspace so the browser remains functional.
        *   - Preserve stable panel identities expected by later helpers.
+       *   - Keep Input and User Settings stacked together in the lower-left group.
        *
        * @returns {object} Fallback workspace descriptor.
        */
@@ -150,6 +153,14 @@
                 componentType: COMPONENT_TYPES.INPUT,
                 title: "Input",
                 size: 34,
+                stackedPanels: [
+                  {
+                    id: "user-settings",
+                    componentType: COMPONENT_TYPES.USER_SETTINGS,
+                    title: "User Settings",
+                    componentState: {},
+                  },
+                ],
                 componentState: {},
               },
               {
@@ -174,7 +185,8 @@
    *   - Read the panel arrangement from the shared workspace config global.
    *   - Translate the shared descriptor into the currently mounted layout runtime.
    *   - Keep the browser-visible first-load workspace stable while the Dockview
-   *     shell is introduced incrementally.
+     *     shell is introduced incrementally.
+   *   - Keep Input and User Settings stacked together in the lower-left group.
    *
    * @returns {object} GoldenLayout configuration for the default workspace.
    */
@@ -206,9 +218,22 @@
           {
             type: "row",
             size: 42,
-            // title: "Input"
-            // title: "Approvals"
             content: lowerPanels.map(function mapLowerPanel(panel) {
+              const stackedPanels = Array.isArray(panel.stackedPanels) ? panel.stackedPanels : [];
+              if (stackedPanels.length > 0) {
+                return {
+                  type: "stack",
+                  size: panel.size,
+                  content: [panel].concat(stackedPanels).map(function mapStackedLowerPanel(stackedPanel) {
+                    return {
+                      type: "component",
+                      componentType: stackedPanel.componentType,
+                      title: stackedPanel.title,
+                      componentState: stackedPanel.componentState || {},
+                    };
+                  }),
+                };
+              }
               return {
                 type: "component",
                 componentType: panel.componentType,
@@ -318,6 +343,23 @@
         return;
       }
       target.replaceChildren(buildPlaceholderPanel("input", "Input"));
+    });
+
+    layout.registerComponentFactoryFunction(COMPONENT_TYPES.USER_SETTINGS, function mountUserSettingsPanel(container) {
+      const target = resolveContainerElement(container);
+      target.dataset.faithPanelKey = buildPanelIdentityKey(COMPONENT_TYPES.USER_SETTINGS, {});
+      if (typeof target.__faithCleanup === "function") {
+        target.__faithCleanup();
+        target.__faithCleanup = null;
+      }
+      if (
+        globalScope.faithUserSettingsPanel &&
+        typeof globalScope.faithUserSettingsPanel.mountPanel === "function"
+      ) {
+        target.__faithCleanup = globalScope.faithUserSettingsPanel.mountPanel(target);
+        return;
+      }
+      target.replaceChildren(buildPlaceholderPanel("tool", "User Settings"));
     });
 
     layout.registerComponentFactoryFunction(COMPONENT_TYPES.APPROVAL, function mountApprovalPanel(container) {

@@ -544,7 +544,8 @@ pre {
 .faith-agent-panel__actions button,
 .faith-input-panel__controls button,
 .faith-input-panel__attachment button,
-.faith-pa-prompt-panel__controls button {
+.faith-pa-prompt-panel__controls button,
+.faith-user-settings-panel__controls button {
   min-height: 32px;
   padding: 0 12px;
   border: 1px solid var(--line);
@@ -557,7 +558,8 @@ pre {
 .faith-agent-panel__actions button:hover,
 .faith-input-panel__controls button:hover,
 .faith-input-panel__attachment button:hover,
-.faith-pa-prompt-panel__controls button:hover {
+.faith-pa-prompt-panel__controls button:hover,
+.faith-user-settings-panel__controls button:hover {
   background: #30363d;
 }
 
@@ -615,6 +617,78 @@ pre {
 }
 
 .faith-pa-prompt-panel--dirty {
+  box-shadow: inset 0 0 0 1px rgba(212, 137, 54, 0.4);
+}
+
+.faith-user-settings-panel__metadata {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 10px;
+  margin: 0;
+}
+
+.faith-user-settings-panel__metadata dt {
+  color: var(--muted);
+}
+
+.faith-user-settings-panel__metadata dd {
+  margin: 0;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.faith-user-settings-panel__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.faith-user-settings-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.faith-user-settings-panel__field-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.faith-user-settings-panel__input {
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0d1117;
+  color: var(--text);
+  font: inherit;
+}
+
+.faith-user-settings-panel__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.faith-user-settings-panel__status {
+  margin: 0;
+  color: var(--muted);
+}
+
+.faith-user-settings-panel__status--dirty {
+  color: #d48936;
+}
+
+.faith-user-settings-panel__status--error {
+  color: #f85149;
+}
+
+.faith-user-settings-panel__status--saved {
+  color: #3fb950;
+}
+
+.faith-user-settings-panel--dirty {
   box-shadow: inset 0 0 0 1px rgba(212, 137, 54, 0.4);
 }
 

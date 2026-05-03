@@ -222,6 +222,23 @@ function assert(condition, message) {
 }
 
 const defaultLayout = window.faithLayout.buildDefaultLayoutConfig();
+const lowerRow = defaultLayout.root.content[1];
+const lowerLeftGroup = lowerRow.content[0];
+
+assert(lowerRow.type === "row", "Expected the default lower workspace area to remain a row.");
+assert(lowerLeftGroup.type === "stack", "Expected Input and User Settings to share a lower-left tab stack.");
+assert(
+  lowerLeftGroup.content.some((panel) => panel.title === "Input"),
+  "Expected the lower-left stack to include the Input panel.",
+);
+assert(
+  lowerLeftGroup.content.some((panel) => panel.title === "User Settings"),
+  "Expected the lower-left stack to include the User Settings panel.",
+);
+assert(
+  lowerRow.content.some((panel) => panel.title === "Approvals"),
+  "Expected the lower row to keep the Approvals panel beside the lower-left stack.",
+);
 
 assert(
   window.faithLayout.hasExistingPanel(

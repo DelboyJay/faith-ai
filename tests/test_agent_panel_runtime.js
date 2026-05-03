@@ -141,16 +141,18 @@ global.navigator = {
     },
   },
 };
+let transcriptMessages = [
+  { role: "user", content: "Recovered user message." },
+  { role: "assistant", content: "Recovered assistant reply." },
+];
+
 global.fetch = async function fetch(url) {
   return {
     ok: true,
     async json() {
       return {
         session_id: "sess-0001-20260502120000",
-        messages: [
-          { role: "user", content: "Recovered user message." },
-          { role: "assistant", content: "Recovered assistant reply." },
-        ],
+        messages: transcriptMessages,
       };
     },
     url,
@@ -330,6 +332,11 @@ async function main() {
   await Promise.resolve();
   assert(FakeWebSocket.instances.length >= 2, "Expected disconnects to trigger a reconnect attempt.");
 
+  transcriptMessages = transcriptMessages.concat([
+    { role: "user", content: "Question sent while websocket was down." },
+    { role: "assistant", content: "Answer generated while websocket was down." },
+  ]);
+
   const reconnectingSocket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
   reconnectingSocket.emit("error", {});
   await Promise.resolve();
@@ -339,6 +346,16 @@ async function main() {
   );
   const recoveredSocket = FakeWebSocket.instances[FakeWebSocket.instances.length - 1];
   recoveredSocket.emit("open", {});
+  await Promise.resolve();
+  await Promise.resolve();
+  assert(
+    terminal.textContent.includes("Question sent while websocket was down."),
+    "Expected reconnect to rehydrate user transcript entries created while the websocket was disconnected.",
+  );
+  assert(
+    terminal.textContent.includes("Answer generated while websocket was down."),
+    "Expected reconnect to rehydrate assistant transcript entries created while the websocket was disconnected.",
+  );
   recoveredSocket.emit("message", { data: JSON.stringify({ type: "output", text: "after reconnect" }) });
   assert(
     terminal.textContent.includes("after reconnect"),

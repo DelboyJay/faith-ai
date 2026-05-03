@@ -10,6 +10,7 @@ Requirements:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from pathlib import Path
@@ -497,6 +498,66 @@ def load_system_config(root: Path | None = None) -> SystemConfig:
 
     path = project_config_dir(root) / "system.yaml"
     return load_config(path, SystemConfig)
+
+
+def update_system_config_fields(
+    updates: dict[str, Any],
+    root: Path | None = None,
+) -> SystemConfig:
+    """Description:
+        Validate and persist a partial update to the project ``system.yaml`` file.
+
+    Requirements:
+        - Preserve unrelated existing keys in the stored YAML mapping.
+        - Validate the merged payload against the shared system-config schema before writing.
+        - Write the accepted merged mapping back to disk in YAML form.
+
+    :param updates: Partial system-config field updates to persist.
+    :param root: Optional project root override.
+    :returns: Validated updated system configuration.
+    :raises ConfigLoadError: If the existing config cannot be read or is not a mapping.
+    """
+
+    path = project_config_dir(root) / "system.yaml"
+    original_text = path.read_text(encoding="utf-8")
+    current = _read_yaml(path)
+    if not isinstance(current, dict):
+        raise ConfigLoadError(f"Invalid system config root in {path}: expected a mapping")
+
+    merged = dict(current)
+    merged.update(updates)
+    validated = _validate_model(merged, SystemConfig, path)
+    validated_payload = validated.model_dump(mode="json", exclude_none=True)
+    stored_payload = dict(current)
+    stored_payload.update(validated_payload)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        _serialise_system_config_payload(stored_payload, original_text), encoding="utf-8"
+    )
+    return validated
+
+
+def _serialise_system_config_payload(payload: dict[str, Any], original_text: str) -> str:
+    """Description:
+        Serialise one rewritten system-config payload using the original file style.
+
+    Requirements:
+        - Preserve JSON formatting when the existing file is valid JSON text.
+        - Fall back to YAML for normal `.faith/system.yaml` files.
+
+    :param payload: Validated system-config payload to write back to disk.
+    :param original_text: Original file contents before the rewrite.
+    :returns: Serialised config text ready to be written to disk.
+    """
+
+    if original_text.lstrip().startswith("{"):
+        try:
+            json.loads(original_text)
+        except json.JSONDecodeError:
+            pass
+        else:
+            return json.dumps(payload, indent=2)
+    return yaml.safe_dump(payload, sort_keys=False, default_flow_style=False)
 
 
 def load_security_config(root: Path | None = None) -> SecurityConfig:
