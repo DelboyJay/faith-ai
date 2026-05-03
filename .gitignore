@@ -39,3 +39,7 @@ config/*.bak-*
 
 # Agent/tooling caches
 .agents/__pycache__/
+
+# temporary folders
+/temp/
+/tmp/
