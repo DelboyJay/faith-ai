@@ -123,6 +123,8 @@ If the runtime does not reveal the exact model, say that explicitly.
 - Repeat route discovery and reopen the current source files each time.
 - Recheck any prior finding before referencing it.
 - Use the FRS as the expected contract, while still verifying the registered route and permission stack from code.
+- If a report already exists for the same endpoint, update that report instead of creating a disconnected duplicate.
+- When updating an existing report, preserve the old finding context that is still useful, revalidate it against current code, and make fixed items obvious to the reader.
 
 ## Detailed Check Areas
 ### Endpoint Resolution
@@ -316,6 +318,8 @@ Use:
 - `endpoint_security_report_<route_name>.md` when the target was supplied as a route name
 - `endpoint_security_report_<sanitized_endpoint>.md` when the target was supplied only as a URL or path
 
+If the normalized filename already exists, treat it as the current report for that endpoint and update it in place.
+
 Filename normalization:
 - use lowercase
 - replace `/`, `.`, `:`, `?`, `&`, `=`, `<`, `>`, `{`, `}`, and whitespace with `_`
@@ -373,10 +377,15 @@ Use this table format:
 
 Legend:
 - `pass` means the check was performed and no problem was found
+- `pass (fixed)` means a prior failed check or finding was re-tested and is now resolved
+- `pass (by design)` means the reviewed behavior is intentionally safe because of an explicit documented or code-enforced design choice
+- `pass (not relevant)` means the risk class was considered and does not apply to this endpoint
 - `fail` means the check was performed and a problem was confirmed
 - `skipped` means the check did not apply or could not be performed
 
 Do not remove the required summary rows. The `Notes` cell must always explain why the check passed, failed, or was skipped.
+
+When using `pass (fixed)`, the `Notes` cell must identify the previous issue and the current evidence proving it is fixed.
 
 ## Findings Section
 List findings before supporting sections, ordered from highest to lowest severity. Use one continuous numbering sequence.
@@ -393,14 +402,25 @@ Format:
 After the findings, include:
 - `Assumptions`
 - `Reviewed Auth Paths`
+- `Previously Reported Issues`
 - `Checks Performed`
 - `FRS Drift`
 - `Detailed Check Results`
 - `Residual Risks`
 
-Under `Detailed Check Results`, use the same numbered format for every pass, fail, and skipped item:
+In `Previously Reported Issues`, list each issue from the earlier report as:
 
-1. `pass|fail|skipped` - short check title
+1. `fixed|still failing|not reproducible|superseded|not rechecked` - previous title
+- Previous result:
+- Current result:
+- Evidence:
+- Notes:
+
+Do not silently remove earlier failures. If they are fixed, mark them fixed and point to the code or test evidence. If they remain valid, keep them in the findings list with updated evidence and severity.
+
+Under `Detailed Check Results`, use the same numbered format for every pass, fail, and skipped item. Use expanded pass labels such as `pass (fixed)`, `pass (by design)`, or `pass (not relevant)` when they describe the result more accurately than plain `pass`:
+
+1. `pass|pass (fixed)|pass (by design)|pass (not relevant)|fail|skipped` - short check title
 - Check:
 - Result:
 - Evidence:
