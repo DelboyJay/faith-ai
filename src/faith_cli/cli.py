@@ -274,7 +274,7 @@ def _render_route_manifest(base_url: str, manifest: dict[str, Any]) -> None:
 
     Requirements:
         - Show the owning service header before its routes.
-        - Include method, expected HTTP codes, URL, and summary for each route.
+        - Include method, expected HTTP codes, URL, summary, and implementation for each route.
 
     :param base_url: HTTP base URL for the service.
     :param manifest: Parsed route manifest payload.
@@ -298,8 +298,10 @@ def _render_route_manifest(base_url: str, manifest: dict[str, Any]) -> None:
         code_text = ",".join(str(code) for code in codes) if codes else "-"
         url = _format_route_url(base_url, route)
         summary = str(route.get("summary", ""))
+        implementation = str(route.get("implementation", "unknown"))
         click.echo(f"  [{method:<9}] [{code_text:<11}] {url}")
         click.echo(f"      {summary}")
+        click.echo(f"      -> {implementation}")
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]}, invoke_without_command=True)

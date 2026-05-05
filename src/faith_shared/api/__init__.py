@@ -6,6 +6,10 @@ Requirements:
     - Avoid embedding runtime behaviour in the package export module.
 """
 
-from faith_shared.api.routes import RouteManifestEntry, ServiceRouteManifest
+from faith_shared.api.routes import (
+    RouteManifestEntry,
+    ServiceRouteManifest,
+    describe_route_implementation,
+)
 
-__all__ = ["RouteManifestEntry", "ServiceRouteManifest"]
+__all__ = ["RouteManifestEntry", "ServiceRouteManifest", "describe_route_implementation"]

@@ -1087,6 +1087,11 @@ def test_pa_routes_returns_manifest(client: TestClient) -> None:
     assert any(route["path"] == "/api/routes" for route in payload["routes"])
     assert any(route["path"] == "/ws/status" for route in payload["routes"])
     assert any(route["path"] == "/api/pa/system-prompt" for route in payload["routes"])
+    assert any(
+        route["path"] == "/api/routes"
+        and route["implementation"].endswith("src/faith_pa/pa/app.py::api_routes")
+        for route in payload["routes"]
+    )
 
 
 def test_pa_system_prompt_endpoint_returns_default_prompt(

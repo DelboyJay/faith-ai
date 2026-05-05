@@ -958,6 +958,7 @@ def test_show_urls_renders_service_manifests(monkeypatch) -> None:
                         "path": "/api/routes",
                         "summary": "Return the PA route manifest.",
                         "expected_status_codes": [200],
+                        "implementation": "src/faith_pa/pa/app.py::api_routes",
                     },
                     {
                         "protocol": "websocket",
@@ -965,6 +966,7 @@ def test_show_urls_renders_service_manifests(monkeypatch) -> None:
                         "path": "/ws/status",
                         "summary": "Stream PA status.",
                         "expected_status_codes": [],
+                        "implementation": "src/faith_pa/pa/app.py::websocket_status",
                     },
                 ],
             },
@@ -981,6 +983,7 @@ def test_show_urls_renders_service_manifests(monkeypatch) -> None:
                         "path": "/",
                         "summary": "Serve the main UI.",
                         "expected_status_codes": [200],
+                        "implementation": "src/faith_web/app.py::index",
                     }
                 ],
             },
@@ -995,6 +998,8 @@ def test_show_urls_renders_service_manifests(monkeypatch) -> None:
     assert "http://localhost:8000/api/routes" in result.output
     assert "ws://localhost:8000/ws/status" in result.output
     assert "http://localhost:8080/" in result.output
+    assert "src/faith_pa/pa/app.py::api_routes" in result.output
+    assert "src/faith_web/app.py::index" in result.output
 
 
 def test_show_urls_reports_when_no_services_are_reachable(monkeypatch) -> None:

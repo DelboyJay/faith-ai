@@ -286,7 +286,7 @@ def test_index_renders_visible_web_ui_version(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert 'class="faith-toolbar__version"' in response.text
-    assert "v0.10.1" in response.text
+    assert "v0.11.0" in response.text
 
 
 def test_index_route_uses_non_deprecated_template_signature(client: TestClient) -> None:
@@ -1365,6 +1365,11 @@ def test_api_routes_returns_manifest(client: TestClient) -> None:
     assert any(route["path"] == "/ws/status" for route in payload["routes"])
     assert any(route["path"] == "/api/docker-runtime" for route in payload["routes"])
     assert any(route["path"] == "/ws/docker" for route in payload["routes"])
+    assert any(
+        route["path"] == "/api/routes"
+        and route["implementation"].endswith("src/faith_web/app.py::api_routes")
+        for route in payload["routes"]
+    )
 
 
 @pytest.mark.asyncio

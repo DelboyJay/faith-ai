@@ -788,7 +788,7 @@ phases:
         name: 'Service Route Discovery & `faith show-urls`'
         complexity: 'S'
         model: 'Sonnet / GPT-5.4'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-059-service-route-discovery-show-urls.md'
         dependencies: ['FAITH-005', 'FAITH-036']
         frs_reference: 'Section 9.2.2, 9.6.1'

@@ -58,7 +58,11 @@ from faith_pa.utils import (
     get_async_client,
     get_redis_url,
 )
-from faith_shared.api import RouteManifestEntry, ServiceRouteManifest
+from faith_shared.api import (
+    RouteManifestEntry,
+    ServiceRouteManifest,
+    describe_route_implementation,
+)
 
 try:
     import docker
@@ -1796,6 +1800,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/health",
                 summary="Return PA liveness and dependency health.",
                 expected_status_codes=[200, 503],
+                implementation=describe_route_implementation(health),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -1804,6 +1809,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/status",
                 summary="Return the current PA runtime status snapshot.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(api_status),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -1812,6 +1818,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/docker-runtime",
                 summary="Return the current PA Docker runtime snapshot.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(api_docker_runtime),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -1820,6 +1827,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/config",
                 summary="Return the redacted PA config summary.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(api_config),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -1828,6 +1836,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/events/test",
                 summary="Publish a test event into the PA system-events channel.",
                 expected_status_codes=[200, 503],
+                implementation=describe_route_implementation(publish_test_event),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -1836,6 +1845,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/pa/system-prompt",
                 summary="Return the active Project Agent system prompt and metadata.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(api_get_project_agent_system_prompt),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -1844,6 +1854,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/pa/transcript",
                 summary="Return the latest persisted Project Agent transcript for Web UI rehydration.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(api_get_project_agent_transcript),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -1852,6 +1863,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/user-settings",
                 summary="Return persisted user settings for the Web UI settings panel.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(api_get_user_settings),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -1860,6 +1872,9 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/pa/system-prompt",
                 summary="Validate and persist an edited Project Agent system prompt.",
                 expected_status_codes=[200, 400],
+                implementation=describe_route_implementation(
+                    api_update_project_agent_system_prompt
+                ),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -1868,6 +1883,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/user-settings",
                 summary="Validate and persist user settings and refresh the live Project Agent runtime.",
                 expected_status_codes=[200, 400],
+                implementation=describe_route_implementation(api_update_user_settings),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -1876,6 +1892,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/pa/system-prompt/reset",
                 summary="Reset the Project Agent system prompt to the built-in default.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(api_reset_project_agent_system_prompt),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -1884,18 +1901,21 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/routes",
                 summary="Return the structured PA route manifest for CLI discovery.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(api_routes),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
                 protocol="websocket",
                 path="/ws/status",
                 summary="Stream PA status snapshots over WebSocket.",
+                implementation=describe_route_implementation(websocket_status),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
                 protocol="websocket",
                 path="/ws/docker",
                 summary="Stream PA Docker runtime snapshots over WebSocket.",
+                implementation=describe_route_implementation(websocket_docker),
             ),
         ],
     )

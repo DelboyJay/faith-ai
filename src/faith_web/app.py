@@ -16,7 +16,11 @@ from fastapi.templating import Jinja2Templates
 from httpx import AsyncClient
 
 from faith_pa.utils.redis_client import check_connection, get_redis_url
-from faith_shared.api import RouteManifestEntry, ServiceRouteManifest
+from faith_shared.api import (
+    RouteManifestEntry,
+    ServiceRouteManifest,
+    describe_route_implementation,
+)
 from faith_shared.config import DockerRuntimeSnapshot
 from faith_web.version import __version__
 
@@ -125,6 +129,11 @@ def _build_route_manifest() -> ServiceRouteManifest:
     :returns: Route manifest payload for the Web UI service.
     """
 
+    from faith_web.routes import docker_runtime as docker_runtime_routes
+    from faith_web.routes import http as http_routes
+    from faith_web.routes import logs as log_routes
+    from faith_web.routes import websocket as websocket_routes
+
     return ServiceRouteManifest(
         service="faith-web-ui",
         version=__version__,
@@ -136,6 +145,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/",
                 summary="Serve the main FAITH Web UI page.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(http_routes.index),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -144,6 +154,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/health",
                 summary="Return Web UI liveness and Redis health.",
                 expected_status_codes=[200, 503],
+                implementation=describe_route_implementation(health),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -152,6 +163,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/status",
                 summary="Return the current Web UI status payload.",
                 expected_status_codes=[200, 503],
+                implementation=describe_route_implementation(api_status),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -160,6 +172,9 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/docker-runtime",
                 summary="Return the current Docker runtime snapshot for the Web UI panels.",
                 expected_status_codes=[200, 503],
+                implementation=describe_route_implementation(
+                    docker_runtime_routes.api_docker_runtime
+                ),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -168,6 +183,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/routes",
                 summary="Return the structured Web UI route manifest for CLI discovery.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(api_routes),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -176,6 +192,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/input",
                 summary="Submit a user text message to the PA input channel.",
                 expected_status_codes=[200, 422, 503],
+                implementation=describe_route_implementation(http_routes.submit_input),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -184,6 +201,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/upload",
                 summary="Upload a file and publish it to the PA input channel.",
                 expected_status_codes=[200, 413, 415, 422, 503],
+                implementation=describe_route_implementation(http_routes.upload_file),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -192,6 +210,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/approve/{request_id}",
                 summary="Submit an approval decision back to the PA.",
                 expected_status_codes=[200, 404, 422, 503],
+                implementation=describe_route_implementation(http_routes.submit_approval),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -200,6 +219,9 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/pa/system-prompt",
                 summary="Proxy the active Project Agent system prompt from the PA service.",
                 expected_status_codes=[200, 503],
+                implementation=describe_route_implementation(
+                    http_routes.get_project_agent_system_prompt
+                ),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -208,6 +230,9 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/pa/transcript",
                 summary="Proxy the latest persisted Project Agent transcript from the PA service.",
                 expected_status_codes=[200, 503],
+                implementation=describe_route_implementation(
+                    http_routes.get_project_agent_transcript
+                ),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -216,6 +241,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/user-settings",
                 summary="Proxy persisted user settings from the PA service.",
                 expected_status_codes=[200, 503],
+                implementation=describe_route_implementation(http_routes.get_user_settings),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -224,6 +250,9 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/pa/system-prompt",
                 summary="Proxy an edited Project Agent system prompt to the PA service.",
                 expected_status_codes=[200, 400, 503],
+                implementation=describe_route_implementation(
+                    http_routes.update_project_agent_system_prompt
+                ),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -232,6 +261,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/user-settings",
                 summary="Proxy a user-settings update to the PA service.",
                 expected_status_codes=[200, 400, 503],
+                implementation=describe_route_implementation(http_routes.update_user_settings),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -240,6 +270,9 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/pa/system-prompt/reset",
                 summary="Proxy a Project Agent system prompt reset to the PA service.",
                 expected_status_codes=[200, 503],
+                implementation=describe_route_implementation(
+                    http_routes.reset_project_agent_system_prompt
+                ),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -248,6 +281,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/logs/audit",
                 summary="Return the paginated read-only audit-trail view payload.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(log_routes.audit_trail),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -256,6 +290,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/logs/events",
                 summary="Return the paginated read-only event-timeline view payload.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(log_routes.event_timeline),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -264,6 +299,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/logs/tokens",
                 summary="Return the paginated read-only token-usage view payload.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(log_routes.token_usage),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -272,6 +308,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/logs/approvals",
                 summary="Return the paginated read-only approval-history view payload.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(log_routes.approval_history),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -280,6 +317,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/logs/sessions",
                 summary="Return the paginated session-history summary payload.",
                 expected_status_codes=[200],
+                implementation=describe_route_implementation(log_routes.session_history),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -288,6 +326,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/logs/sessions/{session_id}",
                 summary="Return the detailed session-history payload for one session.",
                 expected_status_codes=[200, 400, 404],
+                implementation=describe_route_implementation(log_routes.session_detail),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -296,6 +335,7 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/api/logs/sessions/{session_id}/channels/{channel_name}",
                 summary="Return one read-only persisted task channel log.",
                 expected_status_codes=[200, 400, 404],
+                implementation=describe_route_implementation(log_routes.session_channel_log),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
@@ -304,36 +344,44 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 path="/static/{path:path}",
                 summary="Serve bundled frontend assets.",
                 expected_status_codes=[200],
+                implementation="src/faith_web/app.py::create_app",
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
                 protocol="websocket",
                 path="/ws/agent/{agent_id}",
                 summary="Stream one agent output feed.",
+                implementation=describe_route_implementation(websocket_routes.agent_output),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
                 protocol="websocket",
                 path="/ws/tool/{tool_id}",
                 summary="Stream one tool output feed.",
+                implementation=describe_route_implementation(websocket_routes.tool_output),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
                 protocol="websocket",
                 path="/ws/approvals",
                 summary="Stream approval requests and updates.",
+                implementation=describe_route_implementation(websocket_routes.approvals),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
                 protocol="websocket",
                 path="/ws/status",
                 summary="Stream shared system status events.",
+                implementation=describe_route_implementation(websocket_routes.status),
             ),
             RouteManifestEntry(
                 service="faith-web-ui",
                 protocol="websocket",
                 path="/ws/docker",
                 summary="Stream Docker runtime snapshots for operational panels.",
+                implementation=describe_route_implementation(
+                    docker_runtime_routes.websocket_docker
+                ),
             ),
         ],
     )

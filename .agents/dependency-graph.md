@@ -65,7 +65,7 @@
 | FAITH-056 | Built-in Skill Scheduler | 11 (CLI & Skills) | TODO | FAITH-055, FAITH-004 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-057 | Disposable Sandbox Lifecycle & Scheduling | 4 (PA Core) | DONE | FAITH-014 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-058 | Docker Runtime & Image Panel | 8 (Web UI) | TODO | FAITH-014, FAITH-036, FAITH-074, FAITH-078 | M | Sonnet / GPT-5.4 |
-| FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | IN PROGRESS | FAITH-005, FAITH-036 | S | Sonnet / GPT-5.4 |
+| FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | DONE | FAITH-005, FAITH-036 | S | Sonnet / GPT-5.4 |
 | FAITH-061 | Runtime Status Cards | 8 (Web UI) | TODO | FAITH-040, FAITH-058, FAITH-074 | M | Sonnet / GPT-5.4 |
 | FAITH-062 | Panel Lifecycle & Deduping | 8 (Web UI) | TODO | FAITH-074, FAITH-061 | S | Haiku / GPT-5.4-mini |
 | FAITH-063 | Snap-Grid Panel Layout Refinement | 8 (Web UI) | TODO | FAITH-062, FAITH-074, FAITH-075 | M | Sonnet / GPT-5.4 |
@@ -198,7 +198,7 @@ flowchart TD
     FAITH-054["FAITH-054<br/>`faith run` Command & Task API<br/>Phase 11 | TODO | M"]
     FAITH-055["FAITH-055<br/>Skill Definitions & Unattended Execution<br/>Phase 11 | TODO | M"]
     FAITH-056["FAITH-056<br/>Built-in Skill Scheduler<br/>Phase 11 | TODO | M"]
-    FAITH-059["FAITH-059<br/>Service Route Discovery & `faith show-urls`<br/>Phase 11 | IN PROGRESS | S"]
+    FAITH-059["FAITH-059<br/>Service Route Discovery & `faith show-urls`<br/>Phase 11 | DONE | S"]
 
     %% ── Phase 12: Cloud ──
     FAITH-052["FAITH-052<br/>Cloud Deployment Architecture<br/>Phase 12 | TODO | XL"]
@@ -572,7 +572,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-013 | LLM API Client (Ollama + OpenRouter) | 3 (Agent Runtime) | DONE | M |
 | FAITH-014 | PA Container Setup & Docker SDK Integration | 4 (PA Core) | DONE | M |
 | FAITH-045 | Event Log Writer | 9 (Logging) | TODO | S |
-| FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | IN PROGRESS | S |
+| FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | DONE | S |
 | FAITH-078 | Frontend Build Pipeline & Bundled Asset Integration | 13 (Web UI Workspace Migration) | IN PROGRESS | M |
 
 ### Wave 6
