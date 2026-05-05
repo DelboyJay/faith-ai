@@ -33,8 +33,10 @@ from faith_pa.config import (
     ServiceStatus,
     build_config_summary,
     load_system_config,
+    logs_dir,
     update_system_config_fields,
 )
+from faith_pa.logging import TokenLogger
 from faith_pa.pa.chat_tool_loop import (
     ProjectAgentMCPToolExecutor,
     build_mcp_inventory_answer,
@@ -45,7 +47,10 @@ from faith_pa.pa.chat_tool_loop import (
 )
 from faith_pa.pa.container_manager import ContainerManager
 from faith_pa.pa.session import SessionManager
-from faith_pa.runtime_time_context import RuntimeTimeContextProvider, RuntimeUserContextProvider
+from faith_pa.runtime_time_context import (
+    RuntimeTimeContextProvider,
+    RuntimeUserContextProvider,
+)
 from faith_pa.utils import (
     SYSTEM_EVENTS_CHANNEL,
     USER_INPUT_CHANNEL,
@@ -864,6 +869,7 @@ class ProjectAgentChatRuntime:
     :param user_context_provider: Optional runtime user-context provider used for prompt assembly.
     :param user_settings_store: Shared user-settings store used to load runtime user profile context.
     :param session_manager: Shared session manager used for transcript persistence and recovery.
+    :param token_logger: Shared token logger used for model-usage and cost accounting.
     :param output_channel: Redis output channel used by the Project Agent panel.
     """
 
@@ -879,6 +885,7 @@ class ProjectAgentChatRuntime:
         user_context_provider: RuntimeUserContextProvider | None = None,
         user_settings_store: UserSettingsStore | None = None,
         session_manager: SessionManager | None = None,
+        token_logger: TokenLogger | None = None,
         output_channel: str = PROJECT_AGENT_OUTPUT_CHANNEL,
     ) -> None:
         """Description:
@@ -897,6 +904,7 @@ class ProjectAgentChatRuntime:
         :param user_context_provider: Optional runtime user-context provider used for prompt assembly.
         :param user_settings_store: Shared user-settings store used to load runtime user profile context.
         :param session_manager: Shared session manager used for transcript persistence and recovery.
+        :param token_logger: Shared token logger used for model-usage and cost accounting.
         :param output_channel: Redis output channel used by the Project Agent panel.
         """
 
@@ -915,6 +923,7 @@ class ProjectAgentChatRuntime:
         self.session_manager = session_manager or SessionManager(
             project_root=_project_agent_session_root()
         )
+        self.token_logger = token_logger or _build_token_logger()
         self.output_channel = output_channel
         self.history: list[dict[str, str]] = []
         self.transcript_messages: list[dict[str, str]] = []
@@ -1028,6 +1037,7 @@ class ProjectAgentChatRuntime:
             return
 
         await self._ensure_active_session()
+        active_task = self._ensure_active_task()
         await self._publish_status("active")
         self._record_transcript_message("user", user_text)
         await self._publish_output(f"User: {user_text}\n")
@@ -1044,7 +1054,9 @@ class ProjectAgentChatRuntime:
                 await self._publish_status("idle")
                 return
             messages = self._build_chat_messages(user_text)
-            reply_text = await self._generate_reply_with_tools(messages)
+            reply_text = await self._generate_reply_with_tools(
+                messages, task_id=active_task.task_id
+            )
             if not reply_text:
                 reply_text = "I did not generate a reply for that message."
             self._append_history("user", user_text)
@@ -1172,7 +1184,12 @@ class ProjectAgentChatRuntime:
                 preferred_locale=system_config.preferred_locale,
             )
 
-    async def _generate_reply_with_tools(self, messages: list[dict[str, str]]) -> str:
+    async def _generate_reply_with_tools(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        task_id: str,
+    ) -> str:
         """Description:
             Generate one Project Agent reply with bounded MCP tool-call support.
 
@@ -1183,6 +1200,7 @@ class ProjectAgentChatRuntime:
               assistant answer or after the safe iteration limit.
 
         :param messages: Initial chat payload for the LLM.
+        :param task_id: Active task identifier used for token and cost accounting.
         :returns: Final assistant reply text.
         """
 
@@ -1193,6 +1211,7 @@ class ProjectAgentChatRuntime:
                 model=self.model_name,
                 temperature=0.2,
             )
+            await self._record_token_usage(task_id=task_id, response=response)
             reply_text = str(getattr(response, "content", "")).strip()
             tool_call = parse_chat_tool_call(reply_text)
             if tool_call is None:
@@ -1208,6 +1227,43 @@ class ProjectAgentChatRuntime:
                 }
             )
         return "I stopped because the tool-use loop reached its safety limit."
+
+    async def _record_token_usage(self, *, task_id: str, response: Any) -> None:
+        """Description:
+            Record token and estimated-cost usage for one Project Agent model call.
+
+        Requirements:
+            - Ignore responses that do not expose token counts.
+            - Update both the per-call token log and the session/task aggregate metadata.
+
+        :param task_id: Active task identifier receiving the token usage.
+        :param response: Raw LLM response object exposing token counts when available.
+        """
+
+        input_tokens = int(getattr(response, "input_tokens", 0) or 0)
+        output_tokens = int(getattr(response, "output_tokens", 0) or 0)
+        if input_tokens <= 0 and output_tokens <= 0:
+            return
+        if self.session_manager.session_id is None:
+            return
+        token_entry = self.token_logger.log_api_call(
+            session_id=self.session_manager.session_id,
+            task_id=task_id,
+            agent=PROJECT_AGENT_ID,
+            model=self.model_name,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+        self.session_manager.record_token_usage(
+            task_id=task_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated_cost=token_entry.estimated_cost,
+        )
+        if self.token_logger.consume_threshold_warning():
+            await self._publish_warning(
+                "Project Agent session cost warning: the configured model-usage threshold has been reached."
+            )
 
     def _append_history(self, role: str, content: str) -> None:
         """Description:
@@ -1266,6 +1322,23 @@ class ProjectAgentChatRuntime:
         if self.session_manager.current_session is not None:
             return
         await self.session_manager.start_session(trigger="web-ui")
+        self.token_logger.reset_session_total()
+
+    def _ensure_active_task(self) -> Any:
+        """Description:
+            Ensure direct Project Agent chat work is attached to one persisted task.
+
+        Requirements:
+            - Reuse the current active task when one already exists.
+            - Create a lightweight Project Agent chat task lazily on first message.
+
+        :returns: Active task record used for PA chat logging.
+        """
+
+        active_task = self.session_manager.get_active_task()
+        if active_task is not None:
+            return active_task
+        return self.session_manager.create_task("Project Agent chat", channels=["pa-user"])
 
     def _record_transcript_message(self, role: str, content: str) -> None:
         """Description:
@@ -1379,6 +1452,25 @@ class ProjectAgentChatRuntime:
             }
         )
         await self._publish_status("idle")
+
+    async def _publish_warning(self, message: str) -> None:
+        """Description:
+            Publish one warning frame for the Project Agent browser panel.
+
+        Requirements:
+            - Surface non-fatal runtime warnings without changing the idle/error status state.
+
+        :param message: Human-readable warning message.
+        """
+
+        await self._publish_frame(
+            {
+                "type": "warning",
+                "agent": PROJECT_AGENT_ID,
+                "message": message,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
     async def _publish_frame(self, payload: dict[str, Any]) -> None:
         """Description:
@@ -1631,6 +1723,27 @@ def _build_project_agent_llm_client() -> LLMClient:
         model=system_config.pa.model or DEFAULT_PROJECT_AGENT_MODEL,
         fallback_model=system_config.pa.fallback_model,
         ollama_host=system_config.ollama.endpoint if system_config.ollama.enabled else None,
+    )
+
+
+def _build_token_logger() -> TokenLogger:
+    """Description:
+        Build the shared token logger used by the Project Agent browser-chat runtime.
+
+    Requirements:
+        - Use configured cost-warning thresholds when the project config is available.
+        - Fall back to the default logger threshold when config is not ready yet.
+
+    :returns: Configured token logger for PA runtime API-call accounting.
+    """
+
+    try:
+        system_config = load_system_config()
+    except Exception:
+        return TokenLogger(logs_dir=logs_dir())
+    return TokenLogger(
+        logs_dir=logs_dir(),
+        cost_threshold_usd=system_config.cost_warning.threshold_usd,
     )
 
 
@@ -1911,6 +2024,7 @@ async def lifespan(app: FastAPI):
     app.state.user_settings_store = UserSettingsStore(
         project_root=Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
     )
+    app.state.project_agent_token_logger = _build_token_logger()
     app.state.redis = await get_async_client()
     chat_runtime = None
     if app.state.redis is not None:
@@ -1922,6 +2036,7 @@ async def lifespan(app: FastAPI):
             model_name=_build_project_agent_model_name(),
             prompt_store=app.state.project_agent_prompt_store,
             session_manager=app.state.project_agent_session_manager,
+            token_logger=app.state.project_agent_token_logger,
         )
         app.state.project_agent_chat_runtime = chat_runtime
         await chat_runtime.start()

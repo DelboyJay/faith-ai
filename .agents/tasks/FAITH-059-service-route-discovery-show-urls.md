@@ -14,6 +14,8 @@ Implement a structured route-discovery contract for FAITH services and expose it
 
 The CLI must not hard-code the PA or Web UI endpoint inventory. Instead, each relevant HTTP service exposes `GET /api/routes`, returning a machine-readable manifest of its current HTTP and WebSocket endpoints. The CLI aggregates those manifests and renders a readable endpoint listing similar in spirit to Django's `show_urls`, but service-driven rather than framework-introspected.
 
+The route manifest and CLI output must also include the implementation target for each route as `filename::class/function` so developers can jump directly from a listed route to the owning code.
+
 ---
 
 ## Requirements
@@ -28,6 +30,7 @@ The CLI must not hard-code the PA or Web UI endpoint inventory. Instead, each re
    - path
    - brief summary/description
    - expected HTTP status codes for HTTP routes
+   - implementation reference in `filename::class/function` format
 4. `faith show-urls` must call the service manifests rather than embedding route lists in the CLI source.
 5. The CLI output must show absolute URLs, not just paths.
 6. If one service is unavailable, the CLI should still show manifests from reachable services and report the unavailable service clearly.
@@ -35,6 +38,7 @@ The CLI must not hard-code the PA or Web UI endpoint inventory. Instead, each re
 8. Add request-style tests for every new `GET /api/routes` endpoint.
 9. Add CLI tests proving `faith show-urls`:
    - prints discovered HTTP and WebSocket URLs
+   - prints the implementation reference for each discovered route
    - fails cleanly when no services are reachable
 
 ---
@@ -45,6 +49,7 @@ The CLI must not hard-code the PA or Web UI endpoint inventory. Instead, each re
 - Prefer a structured JSON contract over a human-formatted `show-urls` API response.
 - The manifest is a discovery endpoint for tooling and diagnostics, so it should not depend on Redis health.
 - Include WebSocket endpoints in the manifest because they are part of the supported external surface.
+- The implementation reference should resolve from the actual registered FastAPI route callable, not from a hard-coded side table, so the manifest stays accurate when handlers move.
 
 ---
 
@@ -53,7 +58,7 @@ The CLI must not hard-code the PA or Web UI endpoint inventory. Instead, each re
 - `GET /api/routes` exists on the PA and returns HTTP 200 with the structured manifest.
 - `GET /api/routes` exists on the Web UI and returns HTTP 200 with the structured manifest.
 - `faith show-urls` prints currently available service routes without hard-coded endpoint definitions.
-- The CLI output includes method/protocol, absolute URL, and short description for each discovered route.
+- The CLI output includes method/protocol, absolute URL, short description, and implementing `filename::class/function` reference for each discovered route.
 - Reachable services are still shown when another service is unavailable.
 - The command returns a clear actionable error when no manifests are available.
 - High-level tests cover both route endpoints and the CLI command.

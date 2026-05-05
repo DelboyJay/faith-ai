@@ -531,7 +531,6 @@
       };
       socket.onerror = function onSocketError() {
         connectionStatus = "disconnected";
-        setError("Approval stream disconnected.");
         render();
       };
       socket.onclose = function onSocketClose() {

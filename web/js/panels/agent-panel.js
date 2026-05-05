@@ -383,6 +383,10 @@
         setHeaderState("error", panelState.model);
         return;
       }
+      if (message.type === "warning") {
+        terminal.writeLine(`WARNING: ${message.message || message.text || "Runtime warning"}`);
+        return;
+      }
       if (message.stream) {
         terminal.write(message.text || message.message || "");
         return;

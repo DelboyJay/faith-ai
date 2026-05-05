@@ -30,6 +30,11 @@ const COMPONENT_TYPES = Object.freeze({
   APPROVAL: "approval-panel",
   STATUS: "status-panel",
   DOCKER_RUNTIME: "docker-runtime-panel",
+  AUDIT_TRAIL: "audit-trail-panel",
+  EVENT_TIMELINE: "event-timeline-panel",
+  SESSION_HISTORY: "session-history-panel",
+  TOKEN_USAGE: "token-usage-panel",
+  APPROVAL_HISTORY: "approval-history-panel",
   PA_SYSTEM_PROMPT: "pa-system-prompt-panel",
   USER_SETTINGS: "user-settings-panel",
 });
@@ -509,6 +514,11 @@ function ToolbarControls(props) {
     { label: "Input", componentType: COMPONENT_TYPES.INPUT, state: {}, title: "Input", id: "input" },
     { label: "Approvals", componentType: COMPONENT_TYPES.APPROVAL, state: {}, title: "Approvals", id: "approvals" },
     { label: "Docker Runtime", componentType: COMPONENT_TYPES.DOCKER_RUNTIME, state: {}, title: "Docker Runtime", id: "docker-runtime" },
+    { label: "Audit Trail", componentType: COMPONENT_TYPES.AUDIT_TRAIL, state: {}, title: "Audit Trail", id: "audit-trail" },
+    { label: "Event Timeline", componentType: COMPONENT_TYPES.EVENT_TIMELINE, state: {}, title: "Event Timeline", id: "event-timeline" },
+    { label: "Session History", componentType: COMPONENT_TYPES.SESSION_HISTORY, state: {}, title: "Session History", id: "session-history" },
+    { label: "Token Usage", componentType: COMPONENT_TYPES.TOKEN_USAGE, state: {}, title: "Token Usage", id: "token-usage" },
+    { label: "Approval History", componentType: COMPONENT_TYPES.APPROVAL_HISTORY, state: {}, title: "Approval History", id: "approval-history" },
     { label: "PA System Prompt", componentType: COMPONENT_TYPES.PA_SYSTEM_PROMPT, state: {}, title: "PA System Prompt", id: "pa-system-prompt" },
     { label: "User Settings", componentType: COMPONENT_TYPES.USER_SETTINGS, state: {}, title: "User Settings", id: "user-settings" },
     { label: "Agent Panel", componentType: COMPONENT_TYPES.AGENT, dynamic: "agent" },
@@ -778,6 +788,51 @@ function FaithWorkspaceApp() {
               <LegacyPanelBridge
                 namespace="faithDockerRuntimePanel"
                 panelId="docker-runtime"
+                params={{}}
+              />
+            );
+          },
+          [COMPONENT_TYPES.AUDIT_TRAIL]: function AuditTrailPanelComponent() {
+            return (
+              <LegacyPanelBridge
+                namespace="faithAuditTrailPanel"
+                panelId="audit-trail"
+                params={{}}
+              />
+            );
+          },
+          [COMPONENT_TYPES.EVENT_TIMELINE]: function EventTimelinePanelComponent() {
+            return (
+              <LegacyPanelBridge
+                namespace="faithEventTimelinePanel"
+                panelId="event-timeline"
+                params={{}}
+              />
+            );
+          },
+          [COMPONENT_TYPES.SESSION_HISTORY]: function SessionHistoryPanelComponent() {
+            return (
+              <LegacyPanelBridge
+                namespace="faithSessionHistoryPanel"
+                panelId="session-history"
+                params={{}}
+              />
+            );
+          },
+          [COMPONENT_TYPES.TOKEN_USAGE]: function TokenUsagePanelComponent() {
+            return (
+              <LegacyPanelBridge
+                namespace="faithTokenUsagePanel"
+                panelId="token-usage"
+                params={{}}
+              />
+            );
+          },
+          [COMPONENT_TYPES.APPROVAL_HISTORY]: function ApprovalHistoryPanelComponent() {
+            return (
+              <LegacyPanelBridge
+                namespace="faithApprovalHistoryPanel"
+                panelId="approval-history"
                 params={{}}
               />
             );

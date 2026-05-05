@@ -6,6 +6,7 @@
  *   - Prove approval requests render as pending cards and duplicate IDs are ignored.
  *   - Prove persisted decisions show an editable rule preview before posting.
  *   - Prove submitted decisions move cards into in-panel history and expose disconnect state.
+ *   - Prove transport disconnects do not render a redundant error banner when the status badge already shows state.
  */
 
 const fs = require("node:fs");
@@ -209,6 +210,10 @@ vm.runInThisContext(panelSource, { filename: "approval-panel.js" });
   sockets[0].emit("message", { data: JSON.stringify({ ...request, request_id: "apr-102" }) });
   sockets[0].emit("message", { data: JSON.stringify({ type: "approval_resolved", request_id: "apr-102", decision: "allow_once" }) });
   assert(panel.getState().pendingCount === 0, "Expected externally resolved cards to leave the queue.");
+
+  sockets[0].emit("error", {});
+  assert(panel.getState().connectionStatus === "disconnected", "Expected socket errors to mark the panel disconnected.");
+  assert(!findByText(target, "Approval stream disconnected."), "Expected transport disconnects to avoid a duplicate error banner.");
 
   sockets[0].emit("close", {});
   assert(panel.getState().connectionStatus === "reconnecting", "Expected closed socket to show reconnecting state.");

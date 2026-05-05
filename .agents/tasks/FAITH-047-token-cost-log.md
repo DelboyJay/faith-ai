@@ -3,7 +3,7 @@
 **Phase:** 9 — Logging & Observability
 **Complexity:** S
 **Model:** Haiku / GPT-5.4-mini
-**Status:** TODO
+**Status:** IN PROGRESS
 **Dependencies:** FAITH-013, FAITH-030
 **FRS Reference:** Section 8.5
 
@@ -12,6 +12,8 @@
 ## Objective
 
 Implement token and cost logging for all LLM API calls. Every call is recorded to `logs/tokens.log` as a JSON line containing: timestamp, session ID, task ID, agent name, model name, input token count, output token count, estimated cost (via Pricing tool), price source, and price age in days. Implement proactive cost warnings: when the current session's estimated cost crosses a configurable threshold (default $1.00), surface an alert in the Web UI and recommend cost-saving actions.
+
+Current implementation note: the standalone token logger exists and the live Project Agent browser-chat loop now writes token records plus threshold warnings, but the wider runtime/status integration described by the FRS is not yet fully complete.
 
 ---
 

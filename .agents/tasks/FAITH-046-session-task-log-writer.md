@@ -13,7 +13,7 @@
 
 Implement the session and task log writer for FAITH. Session logs capture the full human-readable record of all conversations and tasks in a two-level directory structure under `.faith/sessions/`. The writer creates `session.meta.json` and `task.meta.json` with all fields defined in FRS Section 8.4. Channel logs are written in markdown format with compact protocol rendering. The PA-user conversation is logged to `pa-user.log` at session level. An agent cross-reference index (`agents/*/sessions.index.md`) provides per-agent session history without duplicating log content. The invariant is: one log per channel per task — no content duplication.
 
-Current implementation note: session/task metadata, `pa-user.log`, and the Project Agent session index are now present in the runtime codebase, but the broader per-task channel-log writer and full agent cross-reference coverage remain incomplete.
+Current implementation note: session/task metadata, `pa-user.log`, task channel logs, agent session indices, and task/session token aggregation are now present in the runtime codebase, but the broader specialist-agent task flows described by the FRS are not yet fully complete.
 
 ---
 

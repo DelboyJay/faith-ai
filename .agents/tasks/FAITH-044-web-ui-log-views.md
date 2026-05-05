@@ -3,7 +3,7 @@
 **Phase:** 8 — Web UI
 **Complexity:** M
 **Model:** Opus / GPT-5.4 high reasoning
-**Status:** TODO
+**Status:** IN PROGRESS
 **Dependencies:** FAITH-021, FAITH-074
 **FRS Reference:** Section 8.7
 
@@ -16,6 +16,14 @@ FAITH runtime and audit data through FastAPI GET endpoints and allow the user to
 browse audit history, events, sessions, token usage, and approval history
 without any write access, while remaining compatible with the Dockview
 workspace shell.
+
+Current implementation note: the read-only endpoints and Dockview-openable
+panels now exist with reverse-chronological ordering, pagination, filtering,
+and internal scrolling. Remaining gaps before the task can honestly be marked
+complete are the richer token-usage presentation expected by the FRS
+(`per-agent token chart` and `session comparisons`) and reconciliation of the
+historical `logs/sessions/` wording with the current persisted PA session root
+under the host-backed runtime data volume.
 
 ---
 

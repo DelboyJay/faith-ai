@@ -3085,7 +3085,7 @@ If `~/.faith/` already exists, `faith init` detects this and offers to re-initia
 | `faith run "<prompt>"` | Send an ad-hoc task to the running PA (see Section 9.6) |
 | `faith run --skill <name>` | Execute a skill from `.faith/skills/` (see Section 9.6.2) |
 | `faith status` | Show running state, active project, agent count, container health |
-| `faith show-urls` | Query service route manifests and list currently exposed HTTP/WebSocket endpoints with brief descriptions |
+| `faith show-urls` | Query service route manifests and list currently exposed HTTP/WebSocket endpoints with brief descriptions plus implementing `filename::class/function` references |
 | `faith update` | Pull latest images, validate config compatibility, restart containers |
 | `faith help` | Show help and available commands |
 
@@ -3253,7 +3253,7 @@ FAITH supports headless, non-interactive task execution via a `faith` CLI comman
 
 The `faith` CLI is a lightweight client that connects to the already-running PA via the FastAPI server.
 
-All FAITH HTTP services that expose CLI-relevant or user-facing routes must implement `GET /api/routes`. This endpoint returns a structured machine-readable manifest describing the service's public HTTP and WebSocket endpoints, their purpose, and expected HTTP status codes. The `faith show-urls` command uses these manifests to list available endpoints without hard-coding PA or Web UI routes inside the CLI.
+All FAITH HTTP services that expose CLI-relevant or user-facing routes must implement `GET /api/routes`. This endpoint returns a structured machine-readable manifest describing the service's public HTTP and WebSocket endpoints, their purpose, expected HTTP status codes, and the implementing `filename::class/function` reference for each route. The `faith show-urls` command uses these manifests to list available endpoints without hard-coding PA or Web UI routes inside the CLI.
 
 ```bash
 # Ad-hoc task

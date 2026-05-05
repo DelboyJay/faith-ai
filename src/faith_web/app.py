@@ -245,6 +245,62 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 service="faith-web-ui",
                 protocol="http",
                 method="GET",
+                path="/api/logs/audit",
+                summary="Return the paginated read-only audit-trail view payload.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
+                path="/api/logs/events",
+                summary="Return the paginated read-only event-timeline view payload.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
+                path="/api/logs/tokens",
+                summary="Return the paginated read-only token-usage view payload.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
+                path="/api/logs/approvals",
+                summary="Return the paginated read-only approval-history view payload.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
+                path="/api/logs/sessions",
+                summary="Return the paginated session-history summary payload.",
+                expected_status_codes=[200],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
+                path="/api/logs/sessions/{session_id}",
+                summary="Return the detailed session-history payload for one session.",
+                expected_status_codes=[200, 400, 404],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
+                path="/api/logs/sessions/{session_id}/channels/{channel_name}",
+                summary="Return one read-only persisted task channel log.",
+                expected_status_codes=[200, 400, 404],
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="GET",
                 path="/static/{path:path}",
                 summary="Serve bundled frontend assets.",
                 expected_status_codes=[200],
@@ -374,6 +430,10 @@ def create_app(*, testing: bool = False) -> FastAPI:
     app.state.pa_runtime_fetcher = fetch_pa_docker_runtime
     app.state.pending_approval_ids = set()
     app.state.approval_registry_active = False
+    app.state.logs_dir = Path(os.getenv("FAITH_LOG_DIR", "/logs")).resolve()
+    app.state.pa_session_root = Path(
+        os.getenv("FAITH_PA_SESSION_ROOT", "/data/pa-runtime")
+    ).resolve()
     app.add_api_route("/health", health, methods=["GET"])
     app.add_api_route("/api/status", api_status, methods=["GET"])
     app.add_api_route(
@@ -382,10 +442,12 @@ def create_app(*, testing: bool = False) -> FastAPI:
 
     from faith_web.routes.docker_runtime import router as docker_runtime_router
     from faith_web.routes.http import router as http_router
+    from faith_web.routes.logs import router as logs_router
     from faith_web.routes.websocket import router as websocket_router
 
     app.include_router(docker_runtime_router)
     app.include_router(http_router)
+    app.include_router(logs_router)
     app.include_router(websocket_router)
     return app
 

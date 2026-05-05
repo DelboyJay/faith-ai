@@ -334,3 +334,49 @@ async def test_session_manager_recovers_latest_project_agent_transcript_after_re
         {"role": "user", "content": "Persist me across restarts."},
         {"role": "assistant", "content": "Recovered successfully."},
     ]
+
+
+@pytest.mark.asyncio
+async def test_session_manager_writes_channel_logs_and_agent_index(
+    tmp_path: Path, system_config: SystemConfig
+) -> None:
+    """Description:
+    Verify the session manager writes task channel logs and per-agent session indices.
+
+    Requirements:
+        - This test is needed to prove the live PA session manager now satisfies the broader FRS session-log structure beyond `pa-user.log`.
+        - Verify channel markdown is written under the task directory and participating agents receive a cross-reference index entry.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
+    """
+
+    manager = SessionManager(project_root=tmp_path, system_config=system_config)
+    await manager.start_session(trigger="web-ui")
+    task = manager.create_task(
+        "Review auth flow",
+        channels=["ch-auth-review"],
+        staged_agents={"review": ["security-expert"]},
+    )
+    manager.activate_phase(task.task_id, "review")
+
+    manager.append_channel_message(
+        task_id=task.task_id,
+        channel_name="ch-auth-review",
+        sender="project-agent",
+        recipient="security-expert",
+        msg_type="instruction",
+        summary="Review the auth refresh flow for security issues.",
+        status="in_progress",
+    )
+    manager.complete_task(task.task_id)
+
+    channel_log = (task.path / "ch-auth-review.log").read_text(encoding="utf-8")
+    agent_index = (
+        tmp_path / ".faith" / "agents" / "security-expert" / "sessions.index.md"
+    ).read_text(encoding="utf-8")
+
+    assert "# Channel: ch-auth-review" in channel_log
+    assert "project-agent → security-expert" in channel_log
+    assert task.task_id in agent_index
+    assert manager.current_session is not None

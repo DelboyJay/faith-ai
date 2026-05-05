@@ -21,6 +21,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import faith_pa.pa.app as pa_app_module
+from faith_pa.logging.token_logger import TokenLogger
 from faith_pa.pa.chat_tool_loop import ChatToolCall, list_available_chat_mcp_tools
 from faith_pa.runtime_time_context import RuntimeTimeContextProvider
 from faith_pa.utils.redis_client import USER_INPUT_CHANNEL
@@ -1819,3 +1820,49 @@ def test_pa_chat_bridge_executes_mcp_tool_call_and_returns_final_answer() -> Non
         item.get("text", "") for item in published if item.get("type") == "output"
     )
     assert "The README says FAITH is local-first." in output_text
+
+
+def test_pa_chat_runtime_logs_token_usage_and_cost_warning(tmp_path: Path) -> None:
+    """Description:
+    Verify the Project Agent chat runtime writes token logs and publishes a threshold warning when cost crosses the limit.
+
+    Requirements:
+        - This test is needed to prove FAITH-047 is wired into the live PA chat loop rather than only existing as a standalone helper.
+        - Verify a token log entry is written for the LLM call and a warning frame is published when the session total crosses the configured threshold.
+
+    :param tmp_path: Temporary project root used for session and log persistence.
+    """
+
+    token_logger = TokenLogger(logs_dir=tmp_path / "logs", cost_threshold_usd=0.01)
+    token_logger.set_pricing_data("paid-model", 0.001, "cache", 1)
+    fake_redis = FakeRedis()
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=fake_redis,
+        llm_client=FakeLLMClient("Paid reply."),
+        model_name="paid-model",
+        prompt_store=pa_app_module.ProjectAgentPromptStore(project_root=tmp_path),
+        session_manager=pa_app_module.SessionManager(project_root=tmp_path),
+        token_logger=token_logger,
+    )
+
+    asyncio.run(
+        runtime._handle_payload(
+            {
+                "type": "user_input",
+                "message_id": "msg-cost-001",
+                "message": "Please give me a costly answer.",
+            }
+        )
+    )
+
+    token_entries = token_logger.query_session(runtime.session_manager.session_id or "")
+    published = [
+        json.loads(payload)
+        for channel, payload in fake_redis.published
+        if channel == "agent:project-agent:output"
+    ]
+
+    assert len(token_entries) == 1
+    assert token_entries[0].agent == "project-agent"
+    assert token_entries[0].estimated_cost == 0.02
+    assert any(frame.get("type") == "warning" for frame in published)

@@ -23,6 +23,7 @@ import yaml
 from faith_pa.agent.cag import CAGManager, CAGValidationResult
 from faith_pa.config.loader import load_all_agent_configs
 from faith_pa.config.models import SystemConfig
+from faith_pa.logging import AgentIndexWriter, TaskLogWriter, TaskMeta
 
 PROJECT_AGENT_TRANSCRIPT_HEADER = "# Project Agent Transcript\n\n"
 PROJECT_AGENT_TRANSCRIPT_ENTRY_PATTERN = re.compile(
@@ -209,6 +210,9 @@ class TaskRecord:
     :param sandbox_id: Optional sandbox identifier associated with the task.
     :param started_at: Task start timestamp.
     :param ended_at: Task end timestamp.
+    :param input_tokens: Aggregate input-token count recorded for the task.
+    :param output_tokens: Aggregate output-token count recorded for the task.
+    :param estimated_cost: Aggregate estimated model cost recorded for the task.
     """
 
     task_id: str
@@ -222,6 +226,9 @@ class TaskRecord:
     sandbox_id: str | None = None
     started_at: str = field(default_factory=lambda: _iso(_now()))
     ended_at: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    estimated_cost: float = 0.0
 
     def stage_agents(self, phase: str, agents: list[str]) -> None:
         """Description:
@@ -337,6 +344,8 @@ class SessionManager:
         self._task_counter = 0
         self._session_counter = len([path for path in self.sessions_dir.iterdir() if path.is_dir()])
         self.tasks: dict[str, TaskRecord] = {}
+        self._task_log_writers: dict[str, TaskLogWriter] = {}
+        self._agent_index_writer = AgentIndexWriter(agents_dir=self.faith_dir / "agents")
         self._idle_task: asyncio.Task | None = None
 
     @staticmethod
@@ -415,6 +424,110 @@ class SessionManager:
         if resolved is None:
             raise RuntimeError("project agent transcript log is unavailable without a session")
         return resolved / "pa-user.log"
+
+    def _session_meta_path(self) -> Path:
+        """Description:
+            Return the active session metadata path.
+
+        Requirements:
+            - Raise when no session directory is active yet.
+
+        :returns: Active session metadata path.
+        :raises RuntimeError: If no session is active.
+        """
+
+        if self.session_dir is None:
+            raise RuntimeError("session has not been started")
+        return self.session_dir / "session.meta.json"
+
+    def _sync_session_totals(self) -> None:
+        """Description:
+            Sync aggregated task token and cost totals into the session metadata.
+
+        Requirements:
+            - Keep the FRS-required aggregate counters current after task updates.
+            - Preserve existing session metadata fields while rewriting the file.
+        """
+
+        if self.session_dir is None:
+            return
+        meta_path = self._session_meta_path()
+        data = json.loads(meta_path.read_text(encoding="utf-8"))
+        total_input_tokens = sum(getattr(task, "input_tokens", 0) for task in self.tasks.values())
+        total_output_tokens = sum(getattr(task, "output_tokens", 0) for task in self.tasks.values())
+        total_estimated_cost = sum(
+            getattr(task, "estimated_cost", 0.0) for task in self.tasks.values()
+        )
+        active_agents = self.get_active_agent_ids()
+        data["task_count"] = len(self.tasks)
+        data["agents_active"] = active_agents
+        data["total_input_tokens"] = total_input_tokens
+        data["total_output_tokens"] = total_output_tokens
+        data["total_estimated_cost"] = round(total_estimated_cost, 6)
+        meta_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def _ensure_task_log_writer(self, task: TaskRecord) -> TaskLogWriter:
+        """Description:
+            Return the persisted task log writer for one task.
+
+        Requirements:
+            - Create the writer lazily on first use.
+            - Reuse the same writer for later log and metadata updates.
+
+        :param task: Task record to back with a persisted task writer.
+        :returns: Persisted task log writer.
+        """
+
+        writer = self._task_log_writers.get(task.task_id)
+        if writer is not None:
+            return writer
+        if self.current_session is None:
+            raise RuntimeError("task log writer is unavailable without an active session")
+        writer = TaskLogWriter(
+            task_dir=task.path,
+            meta=TaskMeta(
+                task_id=task.task_id,
+                session_id=self.current_session.session_id,
+                goal=task.goal,
+                started=task.started_at,
+                ended=task.ended_at,
+                status=task.status,
+                agents=sorted(task.agents),
+                channels=list(task.channels.keys()),
+                input_tokens=getattr(task, "input_tokens", 0),
+                output_tokens=getattr(task, "output_tokens", 0),
+                estimated_cost=round(getattr(task, "estimated_cost", 0.0), 6),
+            ),
+        )
+        self._task_log_writers[task.task_id] = writer
+        return writer
+
+    def _update_agent_session_indices(self, task: TaskRecord) -> None:
+        """Description:
+            Update per-agent session indices for one task.
+
+        Requirements:
+            - Skip Project Agent and end-user pseudo-participants.
+            - Point every participating specialist agent back to the persisted session.
+
+        :param task: Task record whose participating agents should be indexed.
+        """
+
+        if self.current_session is None:
+            return
+        session_date = self.current_session.started_at[:10]
+        channels = list(task.channels.keys())
+        for agent_name in sorted(task.agents):
+            if agent_name in {"project-agent", "user"}:
+                continue
+            self._agent_index_writer.update_index(
+                agent_name=agent_name,
+                session_id=self.current_session.session_id,
+                session_date=session_date,
+                task_id=task.task_id,
+                task_goal=task.goal,
+                channels=channels,
+            )
 
     def _write_project_agent_sessions_index(self) -> Path:
         """Description:
@@ -570,6 +683,7 @@ class SessionManager:
         self.current_session = session
         self.session_id = session.session_id
         self.session_dir = latest_session
+        self._task_log_writers = {}
         return session
 
     @property
@@ -675,6 +789,14 @@ class SessionManager:
             "status": "active",
             "trigger": trigger if source is None else source,
             "started_at": _iso(now),
+            "started": _iso(now),
+            "ended": None,
+            "privacy_profile": str(getattr(self.system_config, "privacy_profile", "internal")),
+            "task_count": 0,
+            "agents_active": [],
+            "total_input_tokens": 0,
+            "total_output_tokens": 0,
+            "total_estimated_cost": 0.0,
             "tasks": {},
         }
         cag_validation = self.validate_all_agents_cag()
@@ -706,6 +828,7 @@ class SessionManager:
         self.current_session = session
         self.session_id = session_id
         self.session_dir = session_path
+        self._task_log_writers = {}
         self._write_project_agent_sessions_index()
         if self._idle_task and not self._idle_task.done():
             self._idle_task.cancel()
@@ -780,6 +903,9 @@ class SessionManager:
         task_path = self.session_dir / "tasks" / task_id
         task_path.mkdir(parents=True, exist_ok=True)
         task = TaskRecord(task_id=task_id, goal=goal, path=task_path, sandbox_id=sandbox_id)
+        task.input_tokens = 0
+        task.output_tokens = 0
+        task.estimated_cost = 0.0
         for channel in channels or []:
             task.channels[channel] = {"name": channel, "agents": [], "message_count": 0}
         for phase, agents in (staged_agents or {}).items():
@@ -817,6 +943,7 @@ class SessionManager:
 
         payload = {
             "task_id": task.task_id,
+            "session_id": self.current_session.session_id if self.current_session else None,
             "goal": task.goal,
             "status": task.status,
             "channels": task.channels,
@@ -825,9 +952,25 @@ class SessionManager:
             "current_phase": task.current_phase,
             "sandbox_id": task.sandbox_id,
             "started_at": task.started_at,
+            "started": task.started_at,
             "ended_at": task.ended_at,
+            "ended": task.ended_at,
+            "input_tokens": getattr(task, "input_tokens", 0),
+            "output_tokens": getattr(task, "output_tokens", 0),
+            "estimated_cost": round(getattr(task, "estimated_cost", 0.0), 6),
         }
         (task.path / "task.meta.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        task_log_writer = self._task_log_writers.get(task.task_id)
+        if task_log_writer is not None:
+            task_log_writer.meta.status = task.status
+            task_log_writer.meta.started = task.started_at
+            task_log_writer.meta.ended = task.ended_at
+            task_log_writer.meta.channels = list(task.channels.keys())
+            task_log_writer.meta.agents = sorted(task.agents)
+            task_log_writer.meta.input_tokens = getattr(task, "input_tokens", 0)
+            task_log_writer.meta.output_tokens = getattr(task, "output_tokens", 0)
+            task_log_writer.meta.estimated_cost = round(getattr(task, "estimated_cost", 0.0), 6)
+            task_log_writer._write_meta()
 
     def _update_session_tasks(self, task: TaskRecord) -> None:
         """Description:
@@ -851,6 +994,7 @@ class SessionManager:
             "sandbox_id": task.sandbox_id,
         }
         meta_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        self._sync_session_totals()
 
     async def activate_task_phase(self, task: TaskRecord | str, phase: str) -> list[str]:
         """Description:
@@ -893,6 +1037,109 @@ class SessionManager:
         self._write_task_meta(task)
         return joining
 
+    def append_channel_message(
+        self,
+        *,
+        task_id: str,
+        channel_name: str,
+        sender: str,
+        recipient: str,
+        msg_type: str,
+        summary: str,
+        status: str | None = None,
+        needs: str | None = None,
+        files: list[str] | None = None,
+        context_ref: str | None = None,
+    ) -> Path:
+        """Description:
+            Append one compact-style task channel message to the persisted task log.
+
+        Requirements:
+            - Create the channel log lazily under the task directory.
+            - Track specialist participants in task metadata and agent indices.
+
+        :param task_id: Task identifier to append under.
+        :param channel_name: Channel identifier to log.
+        :param sender: Sending participant name.
+        :param recipient: Receiving participant name.
+        :param msg_type: Compact message type.
+        :param summary: Human-readable summary text.
+        :param status: Optional status field.
+        :param needs: Optional needs field.
+        :param files: Optional file list.
+        :param context_ref: Optional context reference.
+        :returns: Written channel log path.
+        """
+
+        task = self.tasks[task_id]
+        task.channels.setdefault(
+            channel_name, {"name": channel_name, "agents": [], "message_count": 0}
+        )
+        for participant in (sender, recipient):
+            if participant not in {"project-agent", "user"}:
+                task.agents.add(participant)
+        channel_agents = set(task.channels[channel_name].get("agents", []))
+        channel_agents.update(
+            agent for agent in (sender, recipient) if agent not in {"project-agent", "user"}
+        )
+        task.channels[channel_name]["agents"] = sorted(channel_agents)
+        task.channels[channel_name]["message_count"] = (
+            int(task.channels[channel_name].get("message_count", 0)) + 1
+        )
+        task_writer = self._ensure_task_log_writer(task)
+        for agent_name in sorted(task.agents):
+            task_writer.add_agent(agent_name)
+        channel_writer = task_writer.get_channel_writer(channel_name)
+        timestamp = _now().strftime("%H:%M:%S")
+        channel_writer.write_message(
+            timestamp=timestamp,
+            sender=sender,
+            recipient=recipient,
+            msg_type=msg_type,
+            summary=summary,
+            status=status,
+            needs=needs,
+            files=files,
+            context_ref=context_ref,
+        )
+        self._write_task_meta(task)
+        self._update_agent_session_indices(task)
+        return task_writer.task_dir / f"{channel_name}.log"
+
+    def record_token_usage(
+        self,
+        *,
+        task_id: str,
+        input_tokens: int,
+        output_tokens: int,
+        estimated_cost: float,
+    ) -> None:
+        """Description:
+            Accumulate token and cost totals against one task and its parent session.
+
+        Requirements:
+            - Keep both task-level and session-level totals current.
+            - Preserve the persisted metadata on every update.
+
+        :param task_id: Task identifier receiving the token usage.
+        :param input_tokens: Prompt token count to add.
+        :param output_tokens: Completion token count to add.
+        :param estimated_cost: Estimated cost to add in USD.
+        """
+
+        task = self.tasks[task_id]
+        task.input_tokens = getattr(task, "input_tokens", 0) + input_tokens
+        task.output_tokens = getattr(task, "output_tokens", 0) + output_tokens
+        task.estimated_cost = getattr(task, "estimated_cost", 0.0) + estimated_cost
+        task_writer = self._ensure_task_log_writer(task)
+        task_writer.update_tokens(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated_cost=estimated_cost,
+        )
+        self._write_task_meta(task)
+        self._sync_session_totals()
+
     def complete_task(self, task_id: str) -> None:
         """Description:
             Mark one task as complete.
@@ -907,6 +1154,10 @@ class SessionManager:
         task.finish("complete")
         self._write_task_meta(task)
         self._update_session_tasks(task)
+        task_writer = self._task_log_writers.get(task_id)
+        if task_writer is not None:
+            task_writer.complete()
+        self._update_agent_session_indices(task)
 
     def cancel_task(self, task_id: str) -> None:
         """Description:
@@ -922,6 +1173,10 @@ class SessionManager:
         task.finish("cancelled")
         self._write_task_meta(task)
         self._update_session_tasks(task)
+        task_writer = self._task_log_writers.get(task_id)
+        if task_writer is not None:
+            task_writer.finish("cancelled")
+        self._update_agent_session_indices(task)
 
     def get_active_tasks(self) -> dict[str, str]:
         """Description:
@@ -1043,11 +1298,13 @@ class SessionManager:
         data = json.loads(meta_path.read_text(encoding="utf-8"))
         data["status"] = "ended"
         data["ended_at"] = _iso(_now())
+        data["ended"] = data["ended_at"]
         active_agents = self.get_active_agent_ids()
         data["task_count"] = len(self.tasks)
         data["agents_active"] = active_agents
         data["active_task_id"] = None
         meta_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        self._sync_session_totals()
         self._write_project_agent_sessions_index()
         self.current_session.active_task_id = None
         if self._idle_task and not self._idle_task.done():
@@ -1059,6 +1316,7 @@ class SessionManager:
         self.current_session = None
         self.session_id = None
         self.session_dir = None
+        self._task_log_writers = {}
 
 
 Session = SessionRecord
