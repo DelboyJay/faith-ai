@@ -37,8 +37,9 @@ src/faith_web/
     └── index.html
 
 web/
+├── src/
+│   └── main.jsx                # Dockview shell registration hook
 ├── js/
-│   ├── app.js                  # Dockview shell registration hook
 │   └── panels/
 │       ├── audit-trail.js
 │       ├── event-timeline.js
@@ -70,7 +71,7 @@ web/
 
 - `src/faith_web/routes/logs.py`
 - `src/faith_web/templates/index.html`
-- `web/js/app.js`
+- `web/src/main.jsx`
 - `web/js/panels/audit-trail.js`
 - `web/js/panels/event-timeline.js`
 - `web/js/panels/session-history.js`
@@ -113,3 +114,5 @@ Minimum coverage:
 - Keep response models aligned with FAITH-021’s audit vocabulary.
 - This task is historical visibility only; live operational container
   visibility belongs to FAITH-058.
+- This task owns the read-only log-panel feature surfaces, not workspace
+  placement or layout mechanics.

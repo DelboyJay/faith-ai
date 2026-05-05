@@ -1,4 +1,4 @@
-# FAITH-042 — Terminal Dark Theme CSS
+# FAITH-042 — Shared Web UI Theme System
 
 **Phase:** 8 — Web UI Polish
 **Complexity:** S
@@ -11,11 +11,11 @@
 
 ## Objective
 
-Implement the shared dark theme for the Web UI. The theme defines the global
+Implement the shared FAITH Web UI theme system. The theme defines the global
 colour tokens, typography, Dockview chrome styling, Radix UI menu styling,
 xterm.js integration styling, approval-card treatment, input panel styling,
-status panel styling, and reusable utility classes. It also self-hosts the
-primary monospace font.
+status panel styling, log-view styling, and reusable utility classes. It also
+self-hosts the primary monospace font.
 
 ---
 
@@ -65,7 +65,7 @@ web/
 
 ## Acceptance Criteria
 
-1. The Web UI uses a consistent dark theme rooted in FRS Section 6.6.
+1. The Web UI uses a consistent FAITH theme rooted in FRS Section 6.6.
 2. Dockview tabs, splitters, floating surfaces, and content panes inherit the
    shared visual system.
 3. Radix UI menus inherit the shared visual system.

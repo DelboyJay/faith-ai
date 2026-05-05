@@ -32,10 +32,11 @@ src/faith_web/
     └── index.html            # Loads panel assets
 
 web/
+├── src/
+│   └── main.jsx              # React workspace shell / panel registration hook
 ├── js/
-│   ├── src/                  # React workspace shell / panel components (modify)
 │   ├── panels/
-│   │   └── agent-panel.js    # Main panel module (this task)
+│   │   └── agent-panel.js    # Main panel runtime module (this task)
 │   └── vendor/               # Vendored xterm.js if FAITH is in offline mode
 └── css/
     └── theme.css             # Shared theme styles (FAITH-042)
@@ -68,7 +69,7 @@ web/
 ## Files to Create or Update
 
 - `web/js/panels/agent-panel.js`
-- `web/js/app.js`
+- `web/src/main.jsx`
 - `web/css/theme.css`
 - `tests/test_web_agent_panel_contract.py`
 
@@ -103,7 +104,7 @@ If browser-level automation is used, keep it focused on:
 4. Pause stops processing incoming output without closing the WebSocket.
 5. Copy and clear actions work from the panel toolbar.
 6. The panel reconnects automatically after an unexpected socket drop.
-7. The implementation uses the no-build `src/faith_web` plus `web/` structure and does not introduce npm, TypeScript, or `.vue` SFCs.
+7. The implementation uses the current bundled `src/faith_web` plus `web/` frontend structure and does not reintroduce legacy no-build or `.vue` assumptions.
 8. Tests cover the backend message contract and the expected failure paths.
 
 ---
@@ -112,4 +113,4 @@ If browser-level automation is used, keep it focused on:
 
 - This task is intentionally frontend-focused. The WebSocket bridge itself belongs to FAITH-036.
 - Reuse the shared theme tokens and panel chrome from FAITH-042 rather than introducing panel-specific styling systems.
-- Keep the component format consistent with the rest of the no-build Web UI: plain module exports mounted by `app.js`.
+- Keep the component format consistent with the current bundled React shell: panel modules are registered from `web/src/main.jsx` and consumed through the existing frontend build pipeline rather than a second runtime path.

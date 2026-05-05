@@ -4,19 +4,22 @@
  *
  * Requirements:
  *   - Reuse the existing browser panel runtimes while replacing the workspace engine.
- *   - Persist and restore Dockview layouts with a versioned localStorage key.
- *   - Preserve the current default Project Agent, System Status, Input, User Settings, and Approvals view.
+ *   - Persist and restore Dockview layouts together with minimized-panel state.
+ *   - Provide a maintained Radix UI menubar and context-menu layer for shell actions.
  */
 
 import React from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
+import * as ContextMenu from "@radix-ui/react-context-menu";
 import { DockviewReact } from "dockview";
+import * as Menubar from "@radix-ui/react-menubar";
 
 import "./faith-ui.css";
 
-const LAYOUT_STORAGE_KEY = "faith_dockview_layout_v1";
+const LAYOUT_STORAGE_KEY = "faith_dockview_layout_v2";
 const LEGACY_LAYOUT_STORAGE_KEYS = Object.freeze([
+  "faith_dockview_layout_v1",
   "faith_layout_v1",
   "faith_layout_v2",
   "faith_layout_v3",
@@ -38,6 +41,107 @@ const COMPONENT_TYPES = Object.freeze({
   PA_SYSTEM_PROMPT: "pa-system-prompt-panel",
   USER_SETTINGS: "user-settings-panel",
 });
+
+const SHELL_PANEL_OPTIONS = Object.freeze([
+  {
+    label: "Project Agent",
+    id: "project-agent",
+    title: "Project Agent",
+    componentType: COMPONENT_TYPES.AGENT,
+    componentState: {
+      agentId: "project-agent",
+      displayName: "Project Agent",
+      model: "ollama/llama3:8b",
+    },
+  },
+  {
+    label: "System Status",
+    id: "system-status",
+    title: "System Status",
+    componentType: COMPONENT_TYPES.STATUS,
+    componentState: {},
+  },
+  {
+    label: "Input",
+    id: "input",
+    title: "Input",
+    componentType: COMPONENT_TYPES.INPUT,
+    componentState: {},
+  },
+  {
+    label: "Approvals",
+    id: "approvals",
+    title: "Approvals",
+    componentType: COMPONENT_TYPES.APPROVAL,
+    componentState: {},
+  },
+  {
+    label: "Docker Runtime",
+    id: "docker-runtime",
+    title: "Docker Runtime",
+    componentType: COMPONENT_TYPES.DOCKER_RUNTIME,
+    componentState: {},
+  },
+  {
+    label: "Audit Trail",
+    id: "audit-trail",
+    title: "Audit Trail",
+    componentType: COMPONENT_TYPES.AUDIT_TRAIL,
+    componentState: {},
+  },
+  {
+    label: "Event Timeline",
+    id: "event-timeline",
+    title: "Event Timeline",
+    componentType: COMPONENT_TYPES.EVENT_TIMELINE,
+    componentState: {},
+  },
+  {
+    label: "Session History",
+    id: "session-history",
+    title: "Session History",
+    componentType: COMPONENT_TYPES.SESSION_HISTORY,
+    componentState: {},
+  },
+  {
+    label: "Token Usage",
+    id: "token-usage",
+    title: "Token Usage",
+    componentType: COMPONENT_TYPES.TOKEN_USAGE,
+    componentState: {},
+  },
+  {
+    label: "Approval History",
+    id: "approval-history",
+    title: "Approval History",
+    componentType: COMPONENT_TYPES.APPROVAL_HISTORY,
+    componentState: {},
+  },
+  {
+    label: "PA System Prompt",
+    id: "pa-system-prompt",
+    title: "PA System Prompt",
+    componentType: COMPONENT_TYPES.PA_SYSTEM_PROMPT,
+    componentState: {},
+  },
+  {
+    label: "User Settings",
+    id: "user-settings",
+    title: "User Settings",
+    componentType: COMPONENT_TYPES.USER_SETTINGS,
+    componentState: {},
+  },
+  {
+    label: "Agent Panel",
+    dynamic: "agent",
+    componentType: COMPONENT_TYPES.AGENT,
+  },
+  {
+    label: "Tool Panel",
+    dynamic: "tool",
+    componentType: COMPONENT_TYPES.TOOL,
+  },
+]);
 
 const mountedPanelHandles = new Map();
 
@@ -164,20 +268,20 @@ function getDefaultWorkspaceDescriptor() {
     },
     lowerGroup: {
       panels: [
-          {
-            id: "input",
-            componentType: COMPONENT_TYPES.INPUT,
-            title: "Input",
-            stackedPanels: [
-              {
-                id: "user-settings",
-                componentType: COMPONENT_TYPES.USER_SETTINGS,
-                title: "User Settings",
-                componentState: {},
-              },
-            ],
-            componentState: {},
-          },
+        {
+          id: "input",
+          componentType: COMPONENT_TYPES.INPUT,
+          title: "Input",
+          stackedPanels: [
+            {
+              id: "user-settings",
+              componentType: COMPONENT_TYPES.USER_SETTINGS,
+              title: "User Settings",
+              componentState: {},
+            },
+          ],
+          componentState: {},
+        },
         {
           id: "approvals",
           componentType: COMPONENT_TYPES.APPROVAL,
@@ -218,6 +322,135 @@ function buildPanelId(componentType, componentState, fallbackId) {
 
 /**
  * Description:
+ *   Normalize one panel descriptor into the shape expected by the workspace helpers.
+ *
+ * Requirements:
+ *   - Preserve existing panel identity rules for singleton and runtime panels.
+ *
+ * @param {object} panelDescriptor Partial or complete panel descriptor.
+ * @returns {object} Normalized descriptor with stable ID, title, component type, and state.
+ */
+function normalizePanelDescriptor(panelDescriptor) {
+  const componentState = panelDescriptor.componentState || panelDescriptor.componentState === null
+    ? panelDescriptor.componentState || {}
+    : panelDescriptor.params || {};
+  const componentType =
+    panelDescriptor.componentType || panelDescriptor.component || COMPONENT_TYPES.TOOL;
+  const fallbackId =
+    panelDescriptor.id ||
+    componentState.agentId ||
+    componentState.toolId ||
+    componentType;
+
+  return {
+    id: buildPanelId(componentType, componentState, fallbackId),
+    title: panelDescriptor.title || componentState.displayName || componentState.toolId || fallbackId,
+    componentType: componentType,
+    componentState: componentState,
+  };
+}
+
+/**
+ * Description:
+ *   Build a serializable panel descriptor from one Dockview panel instance.
+ *
+ * Requirements:
+ *   - Preserve the params and title needed to recreate the panel later.
+ *
+ * @param {object} panel Dockview panel instance.
+ * @returns {object} Normalized panel descriptor.
+ */
+function buildPanelDescriptorFromDockviewPanel(panel) {
+  return normalizePanelDescriptor({
+    id: panel.id,
+    title: panel.title,
+    componentType: panel.component,
+    componentState: panel.params || {},
+  });
+}
+
+/**
+ * Description:
+ *   Return the best-effort default restore placement for a known FAITH panel.
+ *
+ * Requirements:
+ *   - Rebuild the agreed default arrangement when a more precise restore hint is unavailable.
+ *
+ * @param {object} panelDescriptor Normalized panel descriptor.
+ * @returns {object} Restore placement hint.
+ */
+function getDefaultRestorePlacement(panelDescriptor) {
+  switch (panelDescriptor.id) {
+    case "system-status":
+      return { referencePanelId: "agent:project-agent", direction: "within" };
+    case "input":
+      return { referencePanelId: "agent:project-agent", direction: "below" };
+    case "user-settings":
+      return { referencePanelId: "input", direction: "within" };
+    case "approvals":
+      return { referencePanelId: "input", direction: "right" };
+    default:
+      return { referencePanelId: "agent:project-agent", direction: "within" };
+  }
+}
+
+/**
+ * Description:
+ *   Build the best available restore placement for one minimized panel.
+ *
+ * Requirements:
+ *   - Prefer restoring a panel back into its previous tab group when sibling tabs still exist.
+ *   - Fall back to the canonical FAITH layout slots when no live sibling reference remains.
+ *
+ * @param {object} panelDescriptor Normalized panel descriptor.
+ * @param {object} panelApi Dockview panel API instance.
+ * @returns {object} Restore placement hint.
+ */
+function buildRestorePlacement(panelDescriptor, panelApi) {
+  const siblingPanels =
+    panelApi && panelApi.group && Array.isArray(panelApi.group.panels)
+      ? panelApi.group.panels.filter(function keepSibling(panel) {
+          return panel.id !== panelDescriptor.id;
+        })
+      : [];
+
+  if (siblingPanels.length > 0) {
+    return {
+      referencePanelId: siblingPanels[0].id,
+      direction: "within",
+    };
+  }
+
+  return getDefaultRestorePlacement(panelDescriptor);
+}
+
+/**
+ * Description:
+ *   Resolve one restore placement into a Dockview addPanel position.
+ *
+ * Requirements:
+ *   - Fall back cleanly when the recorded reference panel no longer exists.
+ *
+ * @param {object} api Dockview API instance.
+ * @param {object} restorePlacement Saved restore placement descriptor.
+ * @returns {object|undefined} Dockview position object when it can be resolved.
+ */
+function resolveRestorePosition(api, restorePlacement) {
+  if (!restorePlacement || !restorePlacement.referencePanelId) {
+    return undefined;
+  }
+  const referencePanel = api.getPanel(restorePlacement.referencePanelId);
+  if (!referencePanel) {
+    return undefined;
+  }
+  return {
+    referencePanel: restorePlacement.referencePanelId,
+    direction: restorePlacement.direction || "within",
+  };
+}
+
+/**
+ * Description:
  *   Add one panel to Dockview unless it already exists.
  *
  * Requirements:
@@ -226,26 +459,22 @@ function buildPanelId(componentType, componentState, fallbackId) {
  *
  * @param {object} api Dockview API instance.
  * @param {object} panelDescriptor Panel descriptor from the workspace config.
- * @param {object | undefined} position Optional Dockview positioning directive.
+ * @param {object|undefined} position Optional Dockview positioning directive.
  * @param {boolean} inactive Whether the new panel should stay inactive after insertion.
  * @returns {object} Existing or newly created Dockview panel object.
  */
 function ensurePanel(api, panelDescriptor, position, inactive = false) {
-  const panelId = buildPanelId(
-    panelDescriptor.componentType,
-    panelDescriptor.componentState || {},
-    panelDescriptor.id,
-  );
-  const existingPanel = api.getPanel(panelId);
+  const normalizedDescriptor = normalizePanelDescriptor(panelDescriptor);
+  const existingPanel = api.getPanel(normalizedDescriptor.id);
   if (existingPanel) {
     existingPanel.api.setActive();
     return existingPanel;
   }
   return api.addPanel({
-    id: panelId,
-    component: panelDescriptor.componentType,
-    title: panelDescriptor.title,
-    params: panelDescriptor.componentState || {},
+    id: normalizedDescriptor.id,
+    component: normalizedDescriptor.componentType,
+    title: normalizedDescriptor.title,
+    params: normalizedDescriptor.componentState,
     position: position,
     inactive: inactive,
   });
@@ -264,12 +493,15 @@ function ensurePanel(api, panelDescriptor, position, inactive = false) {
  */
 function applyDefaultWorkspace(api) {
   const workspaceDescriptor = getDefaultWorkspaceDescriptor();
-  const upperPanels = workspaceDescriptor.upperGroup && Array.isArray(workspaceDescriptor.upperGroup.panels)
-    ? workspaceDescriptor.upperGroup.panels
-    : [];
-  const lowerPanels = workspaceDescriptor.lowerGroup && Array.isArray(workspaceDescriptor.lowerGroup.panels)
-    ? workspaceDescriptor.lowerGroup.panels
-    : [];
+  const upperPanels =
+    workspaceDescriptor.upperGroup && Array.isArray(workspaceDescriptor.upperGroup.panels)
+      ? workspaceDescriptor.upperGroup.panels
+      : [];
+  const lowerPanels =
+    workspaceDescriptor.lowerGroup && Array.isArray(workspaceDescriptor.lowerGroup.panels)
+      ? workspaceDescriptor.lowerGroup.panels
+      : [];
+
   if (upperPanels.length === 0) {
     return;
   }
@@ -287,36 +519,43 @@ function applyDefaultWorkspace(api) {
     );
   });
 
-  if (lowerPanels.length > 0) {
-    const lowerPrimaryPanel = ensurePanel(api, lowerPanels[0], {
-      referencePanel: primaryUpperPanel.id,
-      direction: "below",
-    });
-    const stackedLowerPanels = Array.isArray(lowerPanels[0].stackedPanels)
-      ? lowerPanels[0].stackedPanels
-      : [];
-    stackedLowerPanels.forEach(function addLowerTab(panelDescriptor) {
-      ensurePanel(
-        api,
-        panelDescriptor,
-        {
-          referencePanel: lowerPrimaryPanel.id,
-          direction: "within",
-        },
-        true,
-      );
-    });
-    lowerPanels.slice(1).forEach(function addLowerSplit(panelDescriptor, index) {
-      ensurePanel(api, panelDescriptor, {
-        referencePanel: index === 0 ? lowerPrimaryPanel.id : buildPanelId(
-          lowerPanels[index].componentType,
-          lowerPanels[index].componentState || {},
-          lowerPanels[index].id,
-        ),
-        direction: "right",
-      });
-    });
+  if (lowerPanels.length === 0) {
+    return;
   }
+
+  const lowerPrimaryPanel = ensurePanel(api, lowerPanels[0], {
+    referencePanel: primaryUpperPanel.id,
+    direction: "below",
+  });
+  const stackedLowerPanels = Array.isArray(lowerPanels[0].stackedPanels)
+    ? lowerPanels[0].stackedPanels
+    : [];
+
+  stackedLowerPanels.forEach(function addLowerTab(panelDescriptor) {
+    ensurePanel(
+      api,
+      panelDescriptor,
+      {
+        referencePanel: lowerPrimaryPanel.id,
+        direction: "within",
+      },
+      true,
+    );
+  });
+
+  lowerPanels.slice(1).forEach(function addLowerSplit(panelDescriptor, index) {
+    ensurePanel(api, panelDescriptor, {
+      referencePanel:
+        index === 0
+          ? lowerPrimaryPanel.id
+          : buildPanelId(
+              lowerPanels[index].componentType,
+              lowerPanels[index].componentState || {},
+              lowerPanels[index].id,
+            ),
+      direction: "right",
+    });
+  });
 }
 
 /**
@@ -336,46 +575,74 @@ function clearLegacyLayouts() {
 
 /**
  * Description:
- *   Persist the current Dockview layout in localStorage.
+ *   Persist the current Dockview layout and minimized tray state in localStorage.
  *
  * Requirements:
  *   - Fail quietly when browser storage is unavailable so the workspace still runs.
  *
  * @param {object} api Dockview API instance.
+ * @param {object[]} minimizedPanels Serialized minimized panel descriptors.
  * @returns {void}
  */
-function saveLayout(api) {
+function saveWorkspaceState(api, minimizedPanels) {
   try {
-    window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(api.toJSON()));
+    window.localStorage.setItem(
+      LAYOUT_STORAGE_KEY,
+      JSON.stringify({
+        layout: api.toJSON(),
+        minimizedPanels: minimizedPanels,
+      }),
+    );
   } catch (error) {
-    console.warn("[FAITH] Failed to save Dockview layout state.", error);
+    console.warn("[FAITH] Failed to save Dockview workspace state.", error);
   }
 }
 
 /**
  * Description:
- *   Restore a previously saved Dockview layout when one exists.
+ *   Restore the saved Dockview layout and minimized tray state when available.
  *
  * Requirements:
- *   - Return false when no valid saved layout is available.
- *   - Clear malformed saved layout state before falling back.
+ *   - Preserve backward compatibility with the earlier layout-only storage format.
+ *   - Clear malformed saved workspace state before falling back.
  *
  * @param {object} api Dockview API instance.
- * @returns {boolean} True when a saved layout was restored.
+ * @returns {object} Restored workspace state metadata.
  */
-function restoreSavedLayout(api) {
+function restoreSavedWorkspaceState(api) {
   clearLegacyLayouts();
   try {
-    const rawLayout = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
-    if (!rawLayout) {
-      return false;
+    const rawWorkspaceState = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (!rawWorkspaceState) {
+      return {
+        restored: false,
+        minimizedPanels: [],
+      };
     }
-    api.fromJSON(JSON.parse(rawLayout));
-    return true;
+
+    const parsedWorkspaceState = JSON.parse(rawWorkspaceState);
+    if (parsedWorkspaceState && parsedWorkspaceState.layout) {
+      api.fromJSON(parsedWorkspaceState.layout);
+      return {
+        restored: true,
+        minimizedPanels: Array.isArray(parsedWorkspaceState.minimizedPanels)
+          ? parsedWorkspaceState.minimizedPanels
+          : [],
+      };
+    }
+
+    api.fromJSON(parsedWorkspaceState);
+    return {
+      restored: true,
+      minimizedPanels: [],
+    };
   } catch (error) {
     window.localStorage.removeItem(LAYOUT_STORAGE_KEY);
-    console.warn("[FAITH] Failed to restore Dockview layout state.", error);
-    return false;
+    console.warn("[FAITH] Failed to restore Dockview workspace state.", error);
+    return {
+      restored: false,
+      minimizedPanels: [],
+    };
   }
 }
 
@@ -385,9 +652,9 @@ function restoreSavedLayout(api) {
  *
  * Requirements:
  *   - Reuse the proven panel logic while the workspace shell moves to React + Dockview.
- *   - Support cleanup functions returned either directly or through a ``destroy`` method.
+ *   - Support cleanup functions returned either directly or through a `destroy` method.
  *
- * @param {string} namespace Global namespace that exposes ``mountPanel``.
+ * @param {string} namespace Global namespace that exposes `mountPanel`.
  * @param {string} panelId Stable panel ID used for lifecycle coordination.
  * @param {object} params Panel parameter object passed through Dockview.
  * @returns {React.ReactElement} Mounted panel host element.
@@ -421,7 +688,7 @@ function LegacyPanelBridge({ namespace, panelId, params }) {
     [namespace, panelId, JSON.stringify(params || {})],
   );
 
-  return React.createElement("div", { className: "faith-react-panel-host", ref: hostRef });
+  return <div className="faith-react-panel-host" ref={hostRef} />;
 }
 
 /**
@@ -447,35 +714,114 @@ function ToolPlaceholderPanel(props) {
 
 /**
  * Description:
- *   Render the Dockview header action for closing panels.
+ *   Render a Radix context menu around one panel surface.
  *
  * Requirements:
- *   - Keep the close affordance visible in the panel title bar.
- *   - Suppress the button for protected singleton panels.
+ *   - Reuse the same minimize and close commands exposed through the shell menubar.
+ *
+ * @param {object} options Panel context-menu options.
+ * @returns {React.ReactElement} Context-menu wrapped panel content.
+ */
+function renderPanelContextMenu(options) {
+  const closeDisabled = options.closeDisabled || false;
+
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>{options.children}</ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content className="faith-shell-menu faith-shell-menu--context" sideOffset={6}>
+          <ContextMenu.Item
+            className="faith-shell-menu__item"
+            onSelect={function onMinimizeSelect(event) {
+              event.preventDefault();
+              options.onMinimize();
+            }}
+          >
+            Minimize
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            className="faith-shell-menu__item"
+            disabled={closeDisabled}
+            onSelect={function onCloseSelect(event) {
+              event.preventDefault();
+              if (!closeDisabled) {
+                options.onClose();
+              }
+            }}
+          >
+            Close
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
+  );
+}
+
+/**
+ * Description:
+ *   Wrap one panel surface with the shared context-menu actions.
+ *
+ * Requirements:
+ *   - Keep panel command routing consistent across every panel type.
+ *
+ * @param {object} props Panel shell properties.
+ * @returns {React.ReactElement} Wrapped panel content.
+ */
+function PanelActionFrame(props) {
+  return renderPanelContextMenu({
+    closeDisabled: props.closeDisabled,
+    onClose: props.onClose,
+    onMinimize: props.onMinimize,
+    children: <div className="faith-panel-frame">{props.children}</div>,
+  });
+}
+
+/**
+ * Description:
+ *   Render the Dockview header actions for minimizing and closing panels.
+ *
+ * Requirements:
+ *   - Keep minimize available for supported panels.
+ *   - Suppress close for protected singleton panels.
  *
  * @param {object} props Dockview header action props.
- * @returns {React.ReactElement|null} Header action button or ``null``.
+ * @returns {React.ReactElement|null} Header action buttons or `null`.
  */
-function DockviewCloseAction(props) {
-  const panelId = props && props.panel ? props.panel.id : "";
-  const isProtectedPanel = panelId === "project-agent";
-  if (isProtectedPanel || !props || !props.panel) {
+function DockviewHeaderActions(props) {
+  if (!props || !props.activePanel) {
     return null;
   }
+  const panelId = props.activePanel.id;
+  const closeDisabled = panelId === "agent:project-agent";
+
   return (
-    <button
-      type="button"
-      className="faith-toolbar__button"
-      aria-label="Close panel"
-      onClick={function closePanel() {
-        if (!confirmPanelAction(panelId, "close the panel")) {
-          return;
-        }
-        props.panel.api.close();
-      }}
-    >
-      ×
-    </button>
+    <div className="faith-panel-actions">
+      <button
+        type="button"
+        className="faith-toolbar__button"
+        aria-label="Minimize panel"
+        onClick={function onMinimizeClick() {
+          props.onMinimize(
+            buildPanelDescriptorFromDockviewPanel(props.activePanel),
+            props.activePanel.api,
+          );
+        }}
+      >
+        _
+      </button>
+      {!closeDisabled ? (
+        <button
+          type="button"
+          className="faith-toolbar__button"
+          aria-label="Close panel"
+          onClick={function onCloseClick() {
+            props.onClose(panelId, props.activePanel.api);
+          }}
+        >
+          ×
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -484,228 +830,116 @@ function DockviewCloseAction(props) {
  *   Render the empty-state watermark inside Dockview when no panels remain.
  *
  * Requirements:
- *   - Give the user a clear hint that the add-panel control can restore panels.
+ *   - Give the user a clear hint that the panels menubar can restore panels.
  *
  * @returns {React.ReactElement} Empty-state watermark element.
  */
 function WorkspaceWatermark() {
-  return <div className="faith-dockview-watermark">Use the + button to reopen a panel.</div>;
+  return <div className="faith-dockview-watermark">Use Panels in the menu bar to reopen a panel.</div>;
 }
 
 /**
  * Description:
- *   Render the toolbar controls into the static server-rendered toolbar shell.
+ *   Render the shell menubar into the static server-rendered toolbar host.
  *
  * Requirements:
- *   - Keep add-panel and reset-layout actions outside the Dockview content area.
- *   - Defer dynamic panel prompts until the Dockview API is ready.
+ *   - Provide maintained Radix UI menus for workspace and panel actions.
+ *   - Reuse the same panel-opening and reset handlers as the wider shell.
  *
- * @param {object} props Toolbar properties.
- * @returns {React.ReactElement|null} Portal with toolbar controls or ``null``.
+ * @param {object} props Menubar properties.
+ * @returns {React.ReactElement|null} Portal with the toolbar menubar or `null`.
  */
 function ToolbarControls(props) {
   const host = document.getElementById("faith-toolbar-controls");
-  const isReady = Boolean(props.api);
-  const [menuOpen, setMenuOpen] = React.useState(false);
-  const addMenuRef = React.useRef(null);
-  const panelOptions = [
-    { label: "Project Agent", componentType: COMPONENT_TYPES.AGENT, state: { agentId: "project-agent", displayName: "Project Agent", model: "ollama/llama3:8b" }, title: "Project Agent", id: "project-agent" },
-    { label: "System Status", componentType: COMPONENT_TYPES.STATUS, state: {}, title: "System Status", id: "system-status" },
-    { label: "Input", componentType: COMPONENT_TYPES.INPUT, state: {}, title: "Input", id: "input" },
-    { label: "Approvals", componentType: COMPONENT_TYPES.APPROVAL, state: {}, title: "Approvals", id: "approvals" },
-    { label: "Docker Runtime", componentType: COMPONENT_TYPES.DOCKER_RUNTIME, state: {}, title: "Docker Runtime", id: "docker-runtime" },
-    { label: "Audit Trail", componentType: COMPONENT_TYPES.AUDIT_TRAIL, state: {}, title: "Audit Trail", id: "audit-trail" },
-    { label: "Event Timeline", componentType: COMPONENT_TYPES.EVENT_TIMELINE, state: {}, title: "Event Timeline", id: "event-timeline" },
-    { label: "Session History", componentType: COMPONENT_TYPES.SESSION_HISTORY, state: {}, title: "Session History", id: "session-history" },
-    { label: "Token Usage", componentType: COMPONENT_TYPES.TOKEN_USAGE, state: {}, title: "Token Usage", id: "token-usage" },
-    { label: "Approval History", componentType: COMPONENT_TYPES.APPROVAL_HISTORY, state: {}, title: "Approval History", id: "approval-history" },
-    { label: "PA System Prompt", componentType: COMPONENT_TYPES.PA_SYSTEM_PROMPT, state: {}, title: "PA System Prompt", id: "pa-system-prompt" },
-    { label: "User Settings", componentType: COMPONENT_TYPES.USER_SETTINGS, state: {}, title: "User Settings", id: "user-settings" },
-    { label: "Agent Panel", componentType: COMPONENT_TYPES.AGENT, dynamic: "agent" },
-    { label: "Tool Panel", componentType: COMPONENT_TYPES.TOOL, dynamic: "tool" },
-  ];
 
-  /**
-   * Description:
-   *   Add or reveal one requested panel from the toolbar.
-   *
-   * Requirements:
-   *   - Prompt for runtime identities on dynamic agent and tool panels.
-   *   - Reuse existing Dockview panels instead of creating duplicates.
-   *
-   * @param {object} option Toolbar panel option descriptor.
-   * @returns {void}
-   */
-  function handleAddPanel(option) {
-    if (!props.api) {
-      return;
-    }
-
-    if (option.dynamic === "agent") {
-      const agentId = window.prompt("Enter agent ID", "new-agent");
-      if (!agentId) {
-        return;
-      }
-      ensurePanel(props.api, {
-        id: agentId,
-        componentType: COMPONENT_TYPES.AGENT,
-        title: agentId,
-        componentState: {
-          agentId: agentId,
-          displayName: agentId,
-          model: "unknown",
-        },
-      });
-      setMenuOpen(false);
-      return;
-    }
-
-    if (option.dynamic === "tool") {
-      const toolId = window.prompt("Enter tool ID", "tool-id");
-      if (!toolId) {
-        return;
-      }
-      ensurePanel(props.api, {
-        id: toolId,
-        componentType: COMPONENT_TYPES.TOOL,
-        title: toolId,
-        componentState: {
-          toolId: toolId,
-          displayName: toolId,
-        },
-      });
-      setMenuOpen(false);
-      return;
-    }
-
-    ensurePanel(props.api, {
-      id: option.id,
-      componentType: option.componentType,
-      title: option.title,
-      componentState: option.state,
-    });
-    setMenuOpen(false);
+  function renderMenubar() {
+    return (
+      <Menubar.Root className="faith-toolbar__menubar">
+        <Menubar.Menu>
+          <Menubar.Trigger className="faith-toolbar__button">Workspace</Menubar.Trigger>
+          <Menubar.Portal>
+            <Menubar.Content className="faith-shell-menu" sideOffset={6} align="end">
+              <Menubar.Item
+                className="faith-shell-menu__item"
+                disabled={!props.isReady}
+                onSelect={function onResetSelect(event) {
+                  event.preventDefault();
+                  props.handleResetLayout();
+                }}
+              >
+                Reset Layout
+              </Menubar.Item>
+            </Menubar.Content>
+          </Menubar.Portal>
+        </Menubar.Menu>
+        <Menubar.Menu>
+          <Menubar.Trigger className="faith-toolbar__button">Panels</Menubar.Trigger>
+          <Menubar.Portal>
+            <Menubar.Content className="faith-shell-menu" sideOffset={6} align="end">
+              {SHELL_PANEL_OPTIONS.map(function renderPanelOption(option) {
+                return (
+                  <Menubar.Item
+                    key={option.label}
+                    className="faith-shell-menu__item"
+                    disabled={!props.isReady}
+                    onSelect={function onPanelSelect(event) {
+                      event.preventDefault();
+                      props.handleAddPanelOption(option);
+                    }}
+                  >
+                    {option.label}
+                  </Menubar.Item>
+                );
+              })}
+            </Menubar.Content>
+          </Menubar.Portal>
+        </Menubar.Menu>
+      </Menubar.Root>
+    );
   }
-
-  /**
-   * Description:
-   *   Reset the browser workspace to the canonical default layout.
-   *
-   * Requirements:
-   *   - Clear any saved Dockview state first.
-   *   - Rebuild the layout immediately without forcing a browser reload.
-   *
-   * @returns {void}
-   */
-  function handleResetLayout() {
-    if (!props.api) {
-      return;
-    }
-    if (!confirmWorkspaceReset()) {
-      return;
-    }
-    if (!window.confirm("Reset to the default FAITH layout?")) {
-      return;
-    }
-    clearLegacyLayouts();
-    window.localStorage.removeItem(LAYOUT_STORAGE_KEY);
-    props.api.clear();
-    applyDefaultWorkspace(props.api);
-    saveLayout(props.api);
-  }
-
-  /**
-   * Description:
-   *   Close the add-panel menu when focus or pointer interaction moves outside it.
-   *
-   * Requirements:
-   *   - Ignore outside-dismiss handling when the menu is already closed.
-   *   - Keep interactions inside the menu wrapper from closing it.
-   *
-   * @returns {void}
-   */
-  React.useEffect(
-    function subscribeOutsideDismiss() {
-      if (!menuOpen) {
-        return undefined;
-      }
-
-      /**
-       * Description:
-       *   Close the add-panel menu when one event target is outside the menu wrapper.
-       *
-       * Requirements:
-       *   - Ignore events without a concrete event target.
-       *   - Preserve the menu while interacting with its trigger or options.
-       *
-       * @param {Event} event Pointer or focus event raised by the browser.
-       * @returns {void}
-       */
-      function handleOutsideInteraction(event) {
-        if (!addMenuRef.current || !(event.target instanceof Node)) {
-          return;
-        }
-        if (!addMenuRef.current.contains(event.target)) {
-          setMenuOpen(false);
-        }
-      }
-
-      window.addEventListener("pointerdown", handleOutsideInteraction);
-      window.addEventListener("focusin", handleOutsideInteraction);
-      return function cleanupOutsideDismiss() {
-        window.removeEventListener("pointerdown", handleOutsideInteraction);
-        window.removeEventListener("focusin", handleOutsideInteraction);
-      };
-    },
-    [menuOpen],
-  );
 
   if (!host) {
     return null;
   }
 
-  return createPortal(
-    <div className="faith-toolbar__controls">
-      <details className="faith-toolbar__add-wrapper" ref={addMenuRef} open={menuOpen}>
-        <summary
-          className="faith-toolbar__button faith-toolbar__button--add"
-          aria-label="Add panel"
-          aria-expanded={menuOpen}
-          onClick={function onToggleAddMenu(event) {
-            event.preventDefault();
-            setMenuOpen(!menuOpen);
-          }}
-        >
-          +
-        </summary>
-        <div className="faith-toolbar__menu">
-          {panelOptions.map(function renderPanelOption(option) {
-            return (
-              <button
-                key={option.label}
-                type="button"
-                className="faith-toolbar__menu-item"
-                disabled={!isReady}
-                onClick={function onAddPanelClick() {
-                  handleAddPanel(option);
-                }}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
-      </details>
-      <button
-        type="button"
-        className="faith-toolbar__button"
-        disabled={!isReady}
-        onClick={handleResetLayout}
-      >
-        Reset Layout
-      </button>
-    </div>,
-    host,
+  return createPortal(renderMenubar(), host);
+}
+
+/**
+ * Description:
+ *   Render the tray of minimized panels below the main workspace.
+ *
+ * Requirements:
+ *   - Keep minimized panels discoverable and restorable without reopening the full add-panel menu.
+ *
+ * @param {object} props Tray properties.
+ * @returns {React.ReactElement|null} Restore tray or `null`.
+ */
+function MinimizedPanelTray(props) {
+  if (!props.minimizedPanels.length) {
+    return null;
+  }
+
+  return (
+    <div className="faith-toolbar__tray" aria-label="Minimized panels">
+      <span className="faith-toolbar__tray-label">Minimized</span>
+      <div className="faith-toolbar__tray-items">
+        {props.minimizedPanels.map(function renderTrayItem(panelDescriptor) {
+          return (
+            <button
+              key={panelDescriptor.id}
+              type="button"
+              className="faith-toolbar__tray-button"
+              onClick={function onRestoreClick() {
+                props.handleRestoreMinimizedPanel(panelDescriptor.id);
+              }}
+            >
+              {panelDescriptor.title}
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -715,29 +949,242 @@ function ToolbarControls(props) {
  *
  * Requirements:
  *   - Initialise Dockview once and restore the saved layout when present.
- *   - Persist future layout changes through the Dockview API.
+ *   - Persist future layout changes together with minimized tray state.
  *   - Keep the legacy panel runtimes mounted through thin bridge components.
  *
  * @returns {React.ReactElement} Root FAITH workspace application.
  */
 function FaithWorkspaceApp() {
   const [dockviewApi, setDockviewApi] = React.useState(null);
+  const [minimizedPanels, setMinimizedPanels] = React.useState([]);
   const hasInitialisedLayoutRef = React.useRef(false);
+  const minimizedPanelsRef = React.useRef([]);
+
+  React.useEffect(
+    function syncMinimizedPanelsRef() {
+      minimizedPanelsRef.current = minimizedPanels;
+    },
+    [minimizedPanels],
+  );
+
+  /**
+   * Description:
+   *   Persist the current workspace state when the Dockview API is ready.
+   *
+   * Requirements:
+   *   - Avoid writing state before the initial restore or default layout application finishes.
+   *
+   * @returns {void}
+   */
+  function persistWorkspaceState() {
+    if (!dockviewApi || !hasInitialisedLayoutRef.current) {
+      return;
+    }
+    saveWorkspaceState(dockviewApi, minimizedPanelsRef.current);
+  }
+
+  /**
+   * Description:
+   *   Close one panel through the shared shell command path.
+   *
+   * Requirements:
+   *   - Confirm unsaved changes before closing.
+   *   - Keep the protected Project Agent singleton from being closed accidentally.
+   *
+   * @param {object} panel Dockview panel instance.
+   * @returns {void}
+   */
+  function handleClosePanel(panelId, panelApi) {
+    if (!panelId || !panelApi || panelId === "agent:project-agent") {
+      return;
+    }
+    if (!confirmPanelAction(panelId, "close the panel")) {
+      return;
+    }
+    panelApi.close();
+  }
+
+  /**
+   * Description:
+   *   Minimize one panel into the bottom restore tray.
+   *
+   * Requirements:
+   *   - Remove the panel from the active Dockview layout.
+   *   - Preserve enough metadata to restore it later.
+   *
+   * @param {object} panel Dockview panel instance.
+   * @returns {void}
+   */
+  function handleMinimizePanel(panelDescriptor, panelApi) {
+    if (!dockviewApi || !panelDescriptor || !panelApi) {
+      return;
+    }
+    if (!confirmPanelAction(panelDescriptor.id, "minimize the panel")) {
+      return;
+    }
+    const restorePlacement = buildRestorePlacement(panelDescriptor, panelApi);
+
+    setMinimizedPanels(function updateMinimizedPanels(currentPanels) {
+      if (currentPanels.some((entry) => entry.id === panelDescriptor.id)) {
+        return currentPanels;
+      }
+      return currentPanels.concat([
+        {
+          ...panelDescriptor,
+          restorePlacement: restorePlacement,
+        },
+      ]);
+    });
+
+    panelApi.close();
+  }
+
+  /**
+   * Description:
+   *   Restore one minimized panel back into the Dockview workspace.
+   *
+   * Requirements:
+   *   - Return the panel to its prior restore hint when the reference panel still exists.
+   *   - Fall back cleanly when the original placement can no longer be recreated.
+   *
+   * @param {string} panelId Stable minimized-panel identifier.
+   * @returns {void}
+   */
+  function handleRestoreMinimizedPanel(panelId) {
+    if (!dockviewApi) {
+      return;
+    }
+    const minimizedPanel = minimizedPanelsRef.current.find(function findMinimizedPanel(entry) {
+      return entry.id === panelId;
+    });
+    if (!minimizedPanel) {
+      return;
+    }
+
+    const restorePosition = resolveRestorePosition(dockviewApi, minimizedPanel.restorePlacement);
+    ensurePanel(dockviewApi, minimizedPanel, restorePosition);
+
+    setMinimizedPanels(function removeRestoredPanel(currentPanels) {
+      return currentPanels.filter(function keepRemainingPanel(entry) {
+        return entry.id !== panelId;
+      });
+    });
+  }
+
+  /**
+   * Description:
+   *   Add or reveal one requested panel from the shell menubar.
+   *
+   * Requirements:
+   *   - Prompt for runtime identities on dynamic agent and tool panels.
+   *   - Reuse existing Dockview panels instead of creating duplicates.
+   *
+   * @param {object} option Toolbar panel option descriptor.
+   * @returns {void}
+   */
+  function handleAddPanelOption(option) {
+    if (!dockviewApi) {
+      return;
+    }
+
+    if (option.dynamic === "agent") {
+      const agentId = window.prompt("Enter agent ID", "new-agent");
+      if (!agentId) {
+        return;
+      }
+      ensurePanel(dockviewApi, {
+        id: agentId,
+        title: agentId,
+        componentType: COMPONENT_TYPES.AGENT,
+        componentState: {
+          agentId: agentId,
+          displayName: agentId,
+          model: "unknown",
+        },
+      });
+      return;
+    }
+
+    if (option.dynamic === "tool") {
+      const toolId = window.prompt("Enter tool ID", "tool-id");
+      if (!toolId) {
+        return;
+      }
+      ensurePanel(dockviewApi, {
+        id: toolId,
+        title: toolId,
+        componentType: COMPONENT_TYPES.TOOL,
+        componentState: {
+          toolId: toolId,
+          displayName: toolId,
+        },
+      });
+      return;
+    }
+
+    ensurePanel(dockviewApi, option);
+  }
+
+  /**
+   * Description:
+   *   Reset the browser workspace to the canonical default layout.
+   *
+   * Requirements:
+   *   - Clear any saved Dockview and minimize state first.
+   *   - Rebuild the layout immediately without forcing a browser reload.
+   *
+   * @returns {void}
+   */
+  function handleResetLayout() {
+    if (!dockviewApi) {
+      return;
+    }
+    if (!confirmWorkspaceReset()) {
+      return;
+    }
+    if (!window.confirm("Reset to the default FAITH layout?")) {
+      return;
+    }
+
+    clearLegacyLayouts();
+    window.localStorage.removeItem(LAYOUT_STORAGE_KEY);
+    setMinimizedPanels([]);
+    dockviewApi.clear();
+    applyDefaultWorkspace(dockviewApi);
+    saveWorkspaceState(dockviewApi, []);
+  }
+
+  React.useEffect(
+    function restoreWorkspaceOnReady() {
+      if (!dockviewApi || hasInitialisedLayoutRef.current) {
+        return undefined;
+      }
+
+      hasInitialisedLayoutRef.current = true;
+      const restoredWorkspaceState = restoreSavedWorkspaceState(dockviewApi);
+      if (!restoredWorkspaceState.restored) {
+        applyDefaultWorkspace(dockviewApi);
+      }
+      setMinimizedPanels(restoredWorkspaceState.minimizedPanels);
+      saveWorkspaceState(
+        dockviewApi,
+        restoredWorkspaceState.minimizedPanels,
+      );
+      return undefined;
+    },
+    [dockviewApi],
+  );
 
   React.useEffect(
     function subscribeLayoutPersistence() {
       if (!dockviewApi) {
         return undefined;
       }
-      if (!hasInitialisedLayoutRef.current) {
-        hasInitialisedLayoutRef.current = true;
-        if (!restoreSavedLayout(dockviewApi)) {
-          applyDefaultWorkspace(dockviewApi);
-        }
-      }
+
       const disposable = dockviewApi.onDidLayoutChange(function onLayoutChange() {
-        saveLayout(dockviewApi);
+        persistWorkspaceState();
       });
+
       return function disposeLayoutPersistence() {
         if (disposable && typeof disposable.dispose === "function") {
           disposable.dispose();
@@ -747,126 +1194,381 @@ function FaithWorkspaceApp() {
     [dockviewApi],
   );
 
+  React.useEffect(
+    function persistMinimizedPanels() {
+      persistWorkspaceState();
+    },
+    [dockviewApi, minimizedPanels],
+  );
+
   return (
-    <React.Fragment>
-      <ToolbarControls api={dockviewApi} />
+    <div className="faith-workspace-shell">
+      <ToolbarControls
+        handleAddPanelOption={handleAddPanelOption}
+        handleResetLayout={handleResetLayout}
+        isReady={Boolean(dockviewApi)}
+      />
       <DockviewReact
         className="faith-dockview-shell dockview-theme-dark"
         components={{
           [COMPONENT_TYPES.AGENT]: function AgentPanelComponent(props) {
+            const panelId = buildPanelId(COMPONENT_TYPES.AGENT, props.params || {}, "agent");
             return (
-              <LegacyPanelBridge
-                namespace="faithAgentPanel"
-                panelId={buildPanelId(COMPONENT_TYPES.AGENT, props.params || {}, "agent")}
-                params={props.params}
-              />
+              <PanelActionFrame
+                closeDisabled={panelId === "agent:project-agent"}
+                onClose={function onClose() {
+                  handleClosePanel(panelId, props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: panelId,
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.AGENT,
+                      componentState: props.params || {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge
+                  namespace="faithAgentPanel"
+                  panelId={panelId}
+                  params={props.params}
+                />
+              </PanelActionFrame>
             );
           },
-          [COMPONENT_TYPES.INPUT]: function InputPanelComponent() {
-            return <LegacyPanelBridge namespace="faithInputPanel" panelId="input" params={{}} />;
-          },
-          [COMPONENT_TYPES.APPROVAL]: function ApprovalPanelComponent() {
+          [COMPONENT_TYPES.INPUT]: function InputPanelComponent(props) {
             return (
-              <LegacyPanelBridge
-                namespace="faithApprovalPanel"
-                panelId="approvals"
-                params={{}}
-              />
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("input", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "input",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.INPUT,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge namespace="faithInputPanel" panelId="input" params={{}} />
+              </PanelActionFrame>
             );
           },
-          [COMPONENT_TYPES.STATUS]: function StatusPanelComponent() {
+          [COMPONENT_TYPES.APPROVAL]: function ApprovalPanelComponent(props) {
             return (
-              <LegacyPanelBridge
-                namespace="faithDockerRuntimePanel"
-                panelId="system-status"
-                params={{}}
-              />
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("approvals", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "approvals",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.APPROVAL,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge namespace="faithApprovalPanel" panelId="approvals" params={{}} />
+              </PanelActionFrame>
             );
           },
-          [COMPONENT_TYPES.DOCKER_RUNTIME]: function DockerRuntimePanelComponent() {
+          [COMPONENT_TYPES.STATUS]: function StatusPanelComponent(props) {
             return (
-              <LegacyPanelBridge
-                namespace="faithDockerRuntimePanel"
-                panelId="docker-runtime"
-                params={{}}
-              />
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("system-status", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "system-status",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.STATUS,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge
+                  namespace="faithDockerRuntimePanel"
+                  panelId="system-status"
+                  params={{}}
+                />
+              </PanelActionFrame>
             );
           },
-          [COMPONENT_TYPES.AUDIT_TRAIL]: function AuditTrailPanelComponent() {
+          [COMPONENT_TYPES.DOCKER_RUNTIME]: function DockerRuntimePanelComponent(props) {
             return (
-              <LegacyPanelBridge
-                namespace="faithAuditTrailPanel"
-                panelId="audit-trail"
-                params={{}}
-              />
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("docker-runtime", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "docker-runtime",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.DOCKER_RUNTIME,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge
+                  namespace="faithDockerRuntimePanel"
+                  panelId="docker-runtime"
+                  params={{}}
+                />
+              </PanelActionFrame>
             );
           },
-          [COMPONENT_TYPES.EVENT_TIMELINE]: function EventTimelinePanelComponent() {
+          [COMPONENT_TYPES.AUDIT_TRAIL]: function AuditTrailPanelComponent(props) {
             return (
-              <LegacyPanelBridge
-                namespace="faithEventTimelinePanel"
-                panelId="event-timeline"
-                params={{}}
-              />
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("audit-trail", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "audit-trail",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.AUDIT_TRAIL,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge
+                  namespace="faithAuditTrailPanel"
+                  panelId="audit-trail"
+                  params={{}}
+                />
+              </PanelActionFrame>
             );
           },
-          [COMPONENT_TYPES.SESSION_HISTORY]: function SessionHistoryPanelComponent() {
+          [COMPONENT_TYPES.EVENT_TIMELINE]: function EventTimelinePanelComponent(props) {
             return (
-              <LegacyPanelBridge
-                namespace="faithSessionHistoryPanel"
-                panelId="session-history"
-                params={{}}
-              />
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("event-timeline", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "event-timeline",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.EVENT_TIMELINE,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge
+                  namespace="faithEventTimelinePanel"
+                  panelId="event-timeline"
+                  params={{}}
+                />
+              </PanelActionFrame>
             );
           },
-          [COMPONENT_TYPES.TOKEN_USAGE]: function TokenUsagePanelComponent() {
+          [COMPONENT_TYPES.SESSION_HISTORY]: function SessionHistoryPanelComponent(props) {
             return (
-              <LegacyPanelBridge
-                namespace="faithTokenUsagePanel"
-                panelId="token-usage"
-                params={{}}
-              />
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("session-history", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "session-history",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.SESSION_HISTORY,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge
+                  namespace="faithSessionHistoryPanel"
+                  panelId="session-history"
+                  params={{}}
+                />
+              </PanelActionFrame>
             );
           },
-          [COMPONENT_TYPES.APPROVAL_HISTORY]: function ApprovalHistoryPanelComponent() {
+          [COMPONENT_TYPES.TOKEN_USAGE]: function TokenUsagePanelComponent(props) {
             return (
-              <LegacyPanelBridge
-                namespace="faithApprovalHistoryPanel"
-                panelId="approval-history"
-                params={{}}
-              />
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("token-usage", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "token-usage",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.TOKEN_USAGE,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge
+                  namespace="faithTokenUsagePanel"
+                  panelId="token-usage"
+                  params={{}}
+                />
+              </PanelActionFrame>
             );
           },
-          [COMPONENT_TYPES.PA_SYSTEM_PROMPT]: function PaSystemPromptPanelComponent() {
+          [COMPONENT_TYPES.APPROVAL_HISTORY]: function ApprovalHistoryPanelComponent(props) {
             return (
-              <LegacyPanelBridge
-                namespace="faithPaSystemPromptPanel"
-                panelId="pa-system-prompt"
-                params={{}}
-              />
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("approval-history", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "approval-history",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.APPROVAL_HISTORY,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge
+                  namespace="faithApprovalHistoryPanel"
+                  panelId="approval-history"
+                  params={{}}
+                />
+              </PanelActionFrame>
             );
           },
-          [COMPONENT_TYPES.USER_SETTINGS]: function UserSettingsPanelComponent() {
+          [COMPONENT_TYPES.PA_SYSTEM_PROMPT]: function PaSystemPromptPanelComponent(props) {
             return (
-              <LegacyPanelBridge
-                namespace="faithUserSettingsPanel"
-                panelId="user-settings"
-                params={{}}
-              />
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("pa-system-prompt", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "pa-system-prompt",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.PA_SYSTEM_PROMPT,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge
+                  namespace="faithPaSystemPromptPanel"
+                  panelId="pa-system-prompt"
+                  params={{}}
+                />
+              </PanelActionFrame>
             );
           },
-          [COMPONENT_TYPES.TOOL]: ToolPlaceholderPanel,
+          [COMPONENT_TYPES.USER_SETTINGS]: function UserSettingsPanelComponent(props) {
+            return (
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("user-settings", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "user-settings",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.USER_SETTINGS,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge
+                  namespace="faithUserSettingsPanel"
+                  panelId="user-settings"
+                  params={{}}
+                />
+              </PanelActionFrame>
+            );
+          },
+          [COMPONENT_TYPES.TOOL]: function ToolPanelComponent(props) {
+            return (
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel(
+                    buildPanelId(COMPONENT_TYPES.TOOL, props.params || {}, props.params.toolId || "tool"),
+                    props.api,
+                  );
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: buildPanelId(
+                        COMPONENT_TYPES.TOOL,
+                        props.params || {},
+                        props.params.toolId || "tool",
+                      ),
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.TOOL,
+                      componentState: props.params || {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <ToolPlaceholderPanel {...props} />
+              </PanelActionFrame>
+            );
+          },
         }}
         getTabContextMenuItems={function getTabContextMenuItems() {
-          return ["close", "closeOthers", "closeAll"];
+          return [];
         }}
-        rightHeaderActionsComponent={DockviewCloseAction}
+        rightHeaderActionsComponent={function renderHeaderActions(props) {
+          return (
+            <DockviewHeaderActions
+              {...props}
+              onClose={handleClosePanel}
+              onMinimize={handleMinimizePanel}
+            />
+          );
+        }}
         watermarkComponent={WorkspaceWatermark}
         onReady={function onDockviewReady(event) {
           setDockviewApi(event.api);
         }}
       />
-    </React.Fragment>
+      <MinimizedPanelTray
+        handleRestoreMinimizedPanel={handleRestoreMinimizedPanel}
+        minimizedPanels={minimizedPanels}
+      />
+    </div>
   );
 }
 

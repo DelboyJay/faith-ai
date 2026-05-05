@@ -1,7 +1,14 @@
 @import "dockview/dist/styles/dockview.css";
 
-.faith-dockview-shell {
+.faith-workspace-shell {
+  display: flex;
+  flex-direction: column;
   height: 100%;
+  min-height: 0;
+}
+
+.faith-dockview-shell {
+  flex: 1 1 auto;
   min-height: 520px;
 }
 
@@ -29,12 +36,102 @@
   border-bottom: 1px solid #30363d;
 }
 
-.faith-toolbar__menu {
-  z-index: 40;
-}
-
 .faith-react-panel-host {
   height: 100%;
+}
+
+.faith-panel-frame {
+  height: 100%;
+}
+
+.faith-panel-actions {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.faith-toolbar__menubar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.faith-shell-menu {
+  min-width: 13rem;
+  padding: 0.4rem;
+  border: 1px solid #30363d;
+  border-radius: 0.6rem;
+  background: #161b22;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+  z-index: 60;
+}
+
+.faith-shell-menu--context {
+  min-width: 10rem;
+}
+
+.faith-shell-menu__item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.45rem 0.6rem;
+  border: 0;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: #c9d1d9;
+  font-size: 0.9rem;
+  line-height: 1.25;
+  user-select: none;
+  outline: none;
+}
+
+.faith-shell-menu__item[data-highlighted] {
+  background: rgba(88, 166, 255, 0.16);
+  color: #f0f6fc;
+}
+
+.faith-shell-menu__item[data-disabled] {
+  opacity: 0.5;
+}
+
+.faith-toolbar__tray {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.9rem;
+  padding: 0.55rem 0.9rem;
+  border-top: 1px solid #30363d;
+  background: rgba(13, 17, 23, 0.9);
+}
+
+.faith-toolbar__tray-label {
+  color: #8b949e;
+  font-size: 0.82rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.faith-toolbar__tray-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.faith-toolbar__tray-button {
+  min-height: 2rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid #30363d;
+  border-radius: 999px;
+  background: #21262d;
+  color: #c9d1d9;
+  cursor: pointer;
+}
+
+.faith-toolbar__tray-button:hover,
+.faith-toolbar__tray-button:focus-visible {
+  border-color: #58a6ff;
+  color: #f0f6fc;
+  outline: none;
 }
 
 .faith-dockview-watermark {

@@ -286,7 +286,7 @@ def test_index_renders_visible_web_ui_version(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert 'class="faith-toolbar__version"' in response.text
-    assert "v0.11.0" in response.text
+    assert "v0.12.0" in response.text
 
 
 def test_index_route_uses_non_deprecated_template_signature(client: TestClient) -> None:
@@ -365,6 +365,8 @@ def test_index_bootstraps_dockview_shell(client: TestClient) -> None:
     assert "/static/dist/faith-ui.css" in response.text
     assert "/static/dist/faith-ui.js" in response.text
     assert "goldenlayout" not in response.text.lower()
+    assert "/static/js/layout.js" not in response.text
+    assert "/static/js/app.js" not in response.text
 
 
 def test_index_cache_busts_local_static_assets(client: TestClient) -> None:
@@ -403,6 +405,96 @@ def test_dockview_bundle_assets_are_served(client: TestClient) -> None:
     assert js_response.status_code == 200
 
 
+def test_frontend_package_manifest_pins_radix_dependencies(client: TestClient) -> None:
+    """Description:
+        Verify the bundled frontend manifest includes the Radix UI packages needed by the maintained workspace shell.
+
+    Requirements:
+        - This test is needed to prove the React + Dockview shell can rely on a pinned Radix menu layer.
+        - Verify the package manifest declares the menubar, context-menu, and xterm.js dependencies explicitly.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    del client
+    project_root = Path(__file__).resolve().parents[1]
+    package_manifest = json.loads((project_root / "package.json").read_text(encoding="utf-8"))
+    dependencies = package_manifest["dependencies"]
+
+    assert "@radix-ui/react-context-menu" in dependencies
+    assert "@radix-ui/react-menubar" in dependencies
+    assert "@xterm/xterm" in dependencies
+
+
+def test_dockview_bundle_source_uses_radix_menu_primitives(client: TestClient) -> None:
+    """Description:
+        Verify the Dockview shell source imports Radix UI menu primitives.
+
+    Requirements:
+        - This test is needed to prove the workspace shell no longer relies only on ad hoc HTML menus.
+        - Verify the bundled React source imports both menubar and context-menu primitives.
+        - Verify the toolbar shell uses the Radix menubar component rather than an ad hoc details dropdown.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    del client
+    project_root = Path(__file__).resolve().parents[1]
+    source = (project_root / "web" / "src" / "main.jsx").read_text(encoding="utf-8")
+
+    assert "@radix-ui/react-menubar" in source
+    assert "@radix-ui/react-context-menu" in source
+    assert "Menubar.Root" in source
+    assert "ContextMenu.Root" in source
+    assert "<details" not in source
+
+
+def test_dockview_bundle_source_persists_minimized_panel_state(client: TestClient) -> None:
+    """Description:
+        Verify the Dockview shell source persists minimized-panel state alongside the layout.
+
+    Requirements:
+        - This test is needed to prove minimize/restore survives page refreshes rather than only existing in memory.
+        - Verify the bundled React source stores an explicit minimized-panel collection and renders a tray affordance.
+        - Verify the bundled React source persists restore metadata for minimized panels.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    del client
+    project_root = Path(__file__).resolve().parents[1]
+    source = (project_root / "web" / "src" / "main.jsx").read_text(encoding="utf-8")
+
+    assert "minimizedPanels" in source
+    assert "faith-toolbar__tray" in source
+    assert "handleMinimizePanel" in source
+    assert "restorePlacement" in source
+
+
+def test_dockview_bundle_source_uses_shared_command_dispatch_for_shell_actions(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the Dockview shell routes menubar and context-menu actions through shared workspace commands.
+
+    Requirements:
+        - This test is needed to prove minimize, close, restore, and reset do not fork into unrelated code paths.
+        - Verify the bundled React source defines shared handlers reused across the shell action surfaces.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    del client
+    project_root = Path(__file__).resolve().parents[1]
+    source = (project_root / "web" / "src" / "main.jsx").read_text(encoding="utf-8")
+
+    assert "handleResetLayout" in source
+    assert "handleRestoreMinimizedPanel" in source
+    assert "handleClosePanel" in source
+    assert "renderPanelContextMenu" in source
+    assert "renderMenubar" in source
+
+
 def test_dockview_bundle_closes_add_panel_menu_on_outside_interaction(
     client: TestClient,
 ) -> None:
@@ -411,7 +503,7 @@ def test_dockview_bundle_closes_add_panel_menu_on_outside_interaction(
 
     Requirements:
         - This test is needed to prove the toolbar panel-picker closes when the user clicks elsewhere in the page.
-        - Verify the shipped bundle listens for outside pointer and focus interactions around the add-panel wrapper.
+        - Verify the shipped bundle uses the maintained Radix menubar implementation for panel selection.
 
     :param client: FastAPI test client bound to the FAITH web app.
     """
@@ -420,10 +512,9 @@ def test_dockview_bundle_closes_add_panel_menu_on_outside_interaction(
     source = (project_root / "web" / "src" / "main.jsx").read_text(encoding="utf-8")
 
     del client
-    assert "open={menuOpen}" in source
-    assert 'window.addEventListener("pointerdown"' in source
-    assert 'window.addEventListener("focusin"' in source
-    assert "setMenuOpen(false)" in source
+    assert "Menubar.Root" in source
+    assert "Menubar.Content" in source
+    assert "Panels" in source
 
 
 def test_workspace_config_asset_is_served(client: TestClient) -> None:

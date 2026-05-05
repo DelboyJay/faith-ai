@@ -2320,27 +2320,33 @@ Dockview manages the panel workspace. On first load, a default layout is rendere
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  [Project Agent]                              [+]   │  ← tab bar
+│  [Project Agent] [System Status]              [+]   │  ← upper tab stack
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  Project Agent / System Status workspace            │
+│                                                     │
 ├───────────────────────────────┬─────────────────────┤
-│                               │                     │
-│  Project Agent                │  Input              │
-│  (xterm panel)                │  (text + upload)    │
-│                               │                     │
-├───────────────────────────────┴─────────────────────┤
-│  Approvals                    │  System Status      │
-│  (action panel)               │  (status panel)     │
+│ [Input] [User Settings]       │  Approvals          │
+│ text + upload + settings      │  action panel       │
 └─────────────────────────────────────────────────────┘
 ```
 
-This is intentionally minimal. Only the Project Agent is shown by default. Specialist agent panels must be created only after the PA has decided those agents are needed and has started them. The default layout must not assume a software-team workflow or pre-create Software Developer, QA, Security, or tool-specific panels before those runtimes exist.
+This is intentionally minimal. The default workspace may include the Project Agent, System Status, Input, User Settings, and Approvals surfaces, but specialist agent panels, tool-runtime panels, and workflow-specific panels must be created only after the PA has decided they are needed and has started those runtimes. The default layout must not assume a software-team workflow or pre-create Software Developer, QA, Security, or tool-specific panels before those runtimes exist.
 
 The workspace layout manager should be implemented with **Dockview** so panels can be docked, tab-stacked, reordered, resized, floated, and restored from saved layout state. Desktop-style menus and context menus should be implemented with **Radix UI** primitives rather than being re-created from scratch.
 
+Phase ownership is split intentionally:
+- **Phase 13** owns the workspace shell, default layout, layout persistence, minimize/restore behaviour, menu primitives, and other Dockview-level mechanics.
+- **Phase 8** owns panel behaviour, panel content, feature-specific UX, and the user-facing functionality rendered inside that shell.
+
 **Implementation task anchors:**
-- Minimal first-load layout requirements derive the implementation task for the default Project Agent/Input/Approvals/Status workspace.
+- Workspace-shell migration requirements derive the implementation task for replacing the legacy layout shell with a React + Dockview workspace shell.
+- Default layout requirements derive the implementation task for the Project Agent/System Status stack, lower Input/User Settings stack, and non-stacked Approvals placement.
+- Minimized-panel tray requirements derive the implementation task for bottom-strip minimize/restore behaviour layered on top of Dockview state.
+- Radix UI menu requirements derive the implementation task for desktop-style menu bar and popup/context menu primitives in the Web UI.
+- Snap-grid refinement requirements derive the implementation task for tidy dashboard-like movement and resizing behaviour at the workspace-mechanics level.
 - Runtime status card requirements derive the implementation task for replacing raw status JSON with readable FAITH-managed container cards.
 - Panel lifecycle requirements derive the implementation task for close/reopen behaviour, singleton deduping, and runtime-identity deduping.
-- Snap-grid layout requirements derive the implementation task for tidy dashboard-like movement and resizing behaviour.
 - Panel title-bar requirements derive the implementation task for moving names into panel title bars and adding visible close controls.
 - Theme-aware chat transcript requirements derive the implementation task for readable Project Agent chat bubbles, visible retained context, and streamed assistant replies.
 - Restart-time transcript rehydration requirements derive the implementation task for restoring the latest persisted Project Agent conversation back into the Project Agent panel after Web UI or PA restart.
@@ -2353,10 +2359,6 @@ The workspace layout manager should be implemented with **Dockview** so panels c
 - Speech-to-text input requirements derive the implementation task for microphone-driven dictation in the Input panel backed by a local transcription service.
 - Input composer keyboard-shortcut requirements derive the implementation task for Enter-to-send behaviour, Alt+Enter newline insertion, and visible shortcut help text in the Input panel.
 - Frontend build-pipeline requirements derive the implementation task for introducing the bundled React toolchain and compiled browser assets consumed by the Web UI service.
-- Dockview migration requirements derive the implementation task for replacing the legacy layout shell with a React + Dockview workspace shell.
-- Dockview layout constraints requirements derive the implementation task for the default PA/System Status stack, lower chat region, and non-stacked Approvals placement.
-- Minimized-panel tray requirements derive the implementation task for bottom-strip minimize/restore behaviour layered on top of Dockview state.
-- Radix UI menu requirements derive the implementation task for desktop-style menu bar and popup/context menu primitives in the Web UI.
 
 **Supported user interactions:**
 

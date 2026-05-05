@@ -26,8 +26,9 @@ src/faith_web/
     └── index.html             # Toolbar mount point
 
 web/
+├── src/
+│   └── main.jsx               # Toolbar mount / menu wiring
 ├── js/
-│   ├── app.js                 # Toolbar mount / WebSocket event wiring
 │   └── project-switcher.js    # This task
 └── css/
     └── theme.css
@@ -51,7 +52,7 @@ web/
 - `src/faith_web/routes/projects.py`
 - `src/faith_web/templates/index.html`
 - `web/js/project-switcher.js`
-- `web/js/app.js`
+- `web/src/main.jsx`
 - `tests/test_project_switcher.py`
 
 ---
@@ -82,4 +83,5 @@ Minimum coverage:
 ## Notes
 
 - The Web UI must not switch projects by mutating files directly; the PA remains the orchestration authority.
-- Keep the toolbar implementation consistent with the shared no-build frontend architecture.
+- Keep the toolbar or menu implementation consistent with the bundled React +
+  Dockview frontend architecture.

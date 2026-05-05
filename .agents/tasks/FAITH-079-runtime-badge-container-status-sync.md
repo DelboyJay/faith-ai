@@ -4,7 +4,7 @@
 **Complexity:** S
 **Model:** Sonnet / GPT-5.4
 **Status:** TODO
-**Dependencies:** FAITH-038, FAITH-040, FAITH-058, FAITH-061, FAITH-074
+**Dependencies:** FAITH-038, FAITH-040, FAITH-058, FAITH-074
 **FRS Reference:** Section 6.4.2, 6.5
 
 ---

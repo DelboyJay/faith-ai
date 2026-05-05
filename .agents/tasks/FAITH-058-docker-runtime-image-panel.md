@@ -25,8 +25,9 @@ src/faith_web/
     └── index.html
 
 web/
+├── src/
+│   └── main.jsx                 # React/Dockview panel registration hook
 ├── js/
-│   ├── src/                     # React/Dockview panel registration hook
 │   └── panels/
 │       └── docker-runtime-panel.js
 └── css/
@@ -68,7 +69,7 @@ web/
 - `src/faith_web/routes/docker_runtime.py`
 - `src/faith_web/templates/index.html`
 - `web/js/panels/docker-runtime-panel.js`
-- `web/js/app.js`
+- `web/src/main.jsx`
 - `web/css/theme.css`
 - `tests/test_docker_runtime_panel_contract.py`
 

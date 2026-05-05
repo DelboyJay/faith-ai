@@ -4,7 +4,7 @@
 **Complexity:** M
 **Model:** Sonnet / GPT-5.4
 **Status:** TODO
-**Dependencies:** FAITH-040, FAITH-058, FAITH-074
+**Dependencies:** FAITH-040, FAITH-058, FAITH-074, FAITH-079
 **FRS Reference:** Section 6.4.2
 
 ---
@@ -40,6 +40,8 @@ fit cleanly inside the Dockview-based System Status panel.
    endpoints.
 7. Keep this panel as the quick operational summary; deeper Docker detail
    remains the responsibility of FAITH-058.
+8. Rely on the same authoritative runtime status source used by badge-sync work
+   so the cards do not drift from other UI health indicators.
 
 ---
 
@@ -84,3 +86,5 @@ Add or update tests that prove:
 - Keep the styling within the shared Web UI theme system.
 - This task depends on FAITH-058 because the panel needs a stable runtime data
   contract for container status.
+- Refresh cadence and badge/status truth are shared with FAITH-079; this task
+  should not invent a conflicting health polling model.

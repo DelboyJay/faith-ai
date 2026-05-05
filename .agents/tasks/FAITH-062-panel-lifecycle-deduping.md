@@ -4,7 +4,7 @@
 **Complexity:** S
 **Model:** Haiku / GPT-5.4-mini
 **Status:** TODO
-**Dependencies:** FAITH-074, FAITH-061
+**Dependencies:** FAITH-074, FAITH-075, FAITH-061
 **FRS Reference:** Section 6.4.1, 6.10
 
 ---
@@ -33,7 +33,7 @@ Make panel lifecycle behaviour reliable and user-friendly. Users must be able to
 ## Files to Create or Update
 
 - `web/js/layout.js`
-- `web/js/app.js`
+- `web/src/main.jsx`
 - `web/css/theme.css` (only if lifecycle controls need styling)
 - `tests/test_web_server.py`
 - `tests/test_layout.html`
@@ -64,5 +64,7 @@ Add or update tests that prove:
 
 ## Notes
 
-- This is a Dockview workspace UX refinement on top of FAITH-074 and FAITH-075.
+- This task depends on the Phase 13 workspace shell and default layout, but it
+  remains a Phase 8 panel-behaviour concern because it governs how user-facing
+  panels open, close, and dedupe.
 - Prefer “focus existing panel” behaviour over silently doing nothing when the user selects an already-open panel type.

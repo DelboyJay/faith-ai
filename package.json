@@ -1,15 +1,18 @@
 {
   "name": "faith-web-ui",
-  "version": "0.9.0",
+  "version": "0.12.0",
   "private": true,
   "description": "Bundled React + Dockview frontend for the FAITH Web UI.",
   "scripts": {
     "build": "node ./web/build-faith-ui.mjs"
   },
   "dependencies": {
+    "@radix-ui/react-context-menu": "2.2.16",
+    "@radix-ui/react-menubar": "1.1.16",
     "dockview": "4.13.1",
     "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "react-dom": "18.3.1",
+    "@xterm/xterm": "6.0.0"
   },
   "devDependencies": {
     "esbuild": "0.25.11"

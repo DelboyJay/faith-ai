@@ -25,8 +25,9 @@ src/faith_web/
     └── index.html
 
 web/
+├── src/
+│   └── main.jsx              # React shell / panel registration hook
 ├── js/
-│   ├── src/                  # React input panel implementation
 │   └── panels/
 │       └── input-panel.js    # This task
 └── css/
@@ -39,7 +40,7 @@ web/
 ## Required Scope
 
 1. Register an `input-panel` React/Dockview panel component.
-2. Provide a multi-line text area with keyboard send shortcut.
+2. Provide a multi-line text area suitable for typed chat input.
 3. Send text-only messages through `POST /input`.
 4. Send files through `POST /upload` using multipart form data.
 5. Support drag-and-drop upload for allowed file types.
@@ -53,7 +54,7 @@ web/
 ## Files to Create or Update
 
 - `web/js/panels/input-panel.js`
-- `web/js/app.js`
+- `web/src/main.jsx`
 - `web/css/theme.css`
 - `web/css/input-panel.css` if separate styles are needed
 - `tests/test_input_panel_contract.py`
@@ -89,4 +90,8 @@ Minimum coverage:
 ## Notes
 
 - Keep file-type and size validation aligned with the backend contract; frontend validation is a guard, not the only enforcement layer.
-- This task must not add a separate frontend build pipeline.
+- Enter/Alt+Enter behaviour and visible shortcut help text are owned by
+  FAITH-085 so this task can stay focused on core composer and attachment
+  behaviour.
+- This task must use the existing bundled frontend build pipeline and must not
+  introduce a second frontend runtime path.

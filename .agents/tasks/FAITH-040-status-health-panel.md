@@ -1,4 +1,4 @@
-# FAITH-040 — Status Bar & System Health Panel
+# FAITH-040 — System Status Panel & Health Summary
 
 **Phase:** 8 — Web UI Panels
 **Complexity:** S
@@ -29,8 +29,9 @@ src/faith_web/
     └── index.html
 
 web/
+├── src/
+│   └── main.jsx            # Dockview shell registration hook (modify)
 ├── js/
-│   ├── app.js              # Dockview shell registration hook (modify)
 │   └── panels/
 │       └── status-panel.js # This task
 └── css/
@@ -62,7 +63,7 @@ web/
 ## Files to Create or Update
 
 - `web/js/panels/status-panel.js`
-- `web/js/app.js`
+- `web/src/main.jsx`
 - `web/css/theme.css`
 - `tests/test_status_panel_contract.py`
 
@@ -88,8 +89,10 @@ Minimum coverage:
 1. The panel renders a full status snapshot from `WS /ws/status`.
 2. Empty and degraded states are explicit and non-crashing.
 3. MCP tools expose a route into their configuration page when available.
-4. The implementation follows the current `src/faith_web` plus `web/`
+4. The implementation follows the current `src/faith_web` plus bundled `web/`
    architecture and remains compatible with the Dockview shell.
+5. This task owns panel content and health summarisation, not workspace layout
+   arrangement, minimization, or menu behaviour.
 
 ---
 

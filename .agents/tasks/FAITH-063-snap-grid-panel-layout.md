@@ -1,6 +1,6 @@
 # FAITH-063 — Snap-Grid Panel Layout Refinement
 
-**Phase:** 8 — Web UI
+**Phase:** 13 — Web UI Workspace Migration
 **Complexity:** M
 **Model:** Sonnet / GPT-5.4
 **Status:** TODO
@@ -14,7 +14,8 @@
 Refine panel movement and resizing so the Dockview workspace feels structured
 and dashboard-like. Where practical, Dockview placement and resizing should be
 augmented with grid-aligned or layout-guided refinement so panels settle into
-tidy arrangements instead of messy layouts.
+tidy arrangements instead of messy layouts. This is a workspace-mechanics task,
+not a panel-content task, so it belongs with the shell/layout migration work.
 
 ---
 
@@ -36,6 +37,7 @@ tidy arrangements instead of messy layouts.
 
 ## Files to Create or Update
 
+- `web/src/main.jsx`
 - `web/js/layout.js`
 - `web/css/theme.css`
 - `tests/test_layout.html`
@@ -67,7 +69,6 @@ Add or update tests or harness checks that prove:
 
 ## Notes
 
-- This is now a Dockview workspace UX refinement task rather than a legacy
-  enhancement.
+- This is a Phase 13 workspace-mechanics task rather than a panel-feature task.
 - If exact Datadog-style behaviour is impractical, prefer lightweight alignment
   and predictable placement over excessive customisation.

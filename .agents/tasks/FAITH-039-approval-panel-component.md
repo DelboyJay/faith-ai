@@ -39,8 +39,9 @@ src/faith_web/
     └── index.html
 
 web/
+├── src/
+│   └── main.jsx               # Web UI shell registration hook (modify)
 ├── js/
-│   ├── app.js                 # Web UI shell registration hook (modify)
 │   └── panels/
 │       └── approval-panel.js  # This task
 └── css/
@@ -68,14 +69,14 @@ web/
 7. Move resolved items to an in-panel history list.
 8. Ignore duplicate request IDs.
 9. Show a subtle visual alert when new approvals arrive.
-10. Show explicit disconnected / reconnecting state for the WebSocket.
+10. Surface disconnected / reconnecting state through panel badge or chrome without relying on redundant inline disconnect copy.
 
 ---
 
 ## Files to Create or Update
 
 - `web/js/panels/approval-panel.js`
-- `web/js/app.js`
+- `web/src/main.jsx`
 - `web/css/theme.css`
 - `tests/test_approval_panel_contract.py`
 
@@ -106,7 +107,7 @@ Minimum coverage:
 2. The user can choose any of the six FRS-defined actions.
 3. Persisted actions show an editable rule preview before the POST is sent.
 4. Resolved cards leave the queue and appear in history.
-5. WebSocket disconnect state is visible and reconnects automatically.
+5. WebSocket connection state is visible through badge or equivalent panel chrome and reconnects automatically.
 6. The implementation uses `src/faith_web` plus `web/` and does not reintroduce
    the old `faith-web-ui/...` layout.
 7. The panel remains compatible with the Dockview workspace migration and does

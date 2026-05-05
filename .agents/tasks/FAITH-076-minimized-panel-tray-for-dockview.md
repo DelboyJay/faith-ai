@@ -3,7 +3,7 @@
 **Phase:** 13 - Web UI Workspace Migration
 **Complexity:** M
 **Model:** Sonnet / GPT-5.4
-**Status:** TODO
+**Status:** DONE
 **Dependencies:** FAITH-074
 **FRS Reference:** Section 6.4.1, 6.10
 

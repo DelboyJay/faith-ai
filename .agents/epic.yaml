@@ -430,7 +430,7 @@ phases:
   - id: 8
     title: 'Web UI'
     status: 'TODO'
-    summary: ''
+    summary: 'Implement panel-level behaviour and user-facing Web UI features on top of the React + Dockview workspace. Phase 8 owns panel content, interaction UX, and feature surfaces; Phase 13 owns workspace shell, default layout mechanics, minimize/restore behaviour, and menu primitives.'
     task_count: 23
     tasks:
       - id: 'FAITH-036'
@@ -450,7 +450,7 @@ phases:
         task_doc: 'tasks/FAITH-038-agent-panel-component.md'
         dependencies: ['FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.2'
-        summary: 'React component wrapping xterm.js for each agent. Panel header: agent name, status badge (idle/active/blocked/waiting), model name. WebSocket connection to `/ws/agent/{agent_id}`. Stream character-by-character output. ANSI colour support. Dimmed colour for compact protocol messages. Per-panel toolbar: Clear, Copy, Pause, Pin. Scrollback buffer (configurable depth). Auto-reconnect on WebSocket drop.'
+        summary: 'React-based Project Agent or specialist-agent panel using xterm.js inside the Dockview shell. Render streamed output from `/ws/agent/{agent_id}`, show runtime-aware status and model metadata, expose local clear/copy/pause/pin actions, and keep reconnect, scrollback, and transcript-state behaviour reliable inside the bundled frontend.'
       - id: 'FAITH-039'
         name: 'Approval Panel Component'
         complexity: 'M'
@@ -461,14 +461,14 @@ phases:
         frs_reference: 'Section 5.6, 6.4.2'
         summary: 'React-based approval queue panel for the Dockview workspace. Subscribe to `/ws/approvals`, render pending approval cards with the six canonical actions, preview learned rules before persisted decisions are submitted, collapse resolved items into history, and keep reconnect/degraded states explicit without depending on legacy layout-specific APIs.'
       - id: 'FAITH-040'
-        name: 'Status Bar & System Health Panel'
+        name: 'System Status Panel & Health Summary'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
         status: 'TODO'
         task_doc: 'tasks/FAITH-040-status-health-panel.md'
         dependencies: ['FAITH-036', 'FAITH-074']
         frs_reference: 'Section 6.4.2'
-        summary: 'React-based System Status panel for the Dockview workspace. Subscribe to `/ws/status`, render agent/channel/tool/Redis/token/cost/hot-reload summaries, surface degraded and reconnecting states clearly, and expose per-tool configuration routes where the backend advertises them.'
+        summary: 'React-based System Status panel for the Dockview workspace. Subscribe to `/ws/status`, render agent/channel/tool/Redis/token/cost/hot-reload summaries, surface degraded and reconnecting states clearly, and expose per-tool configuration routes where the backend advertises them. This task owns panel content and health summarisation, not workspace arrangement mechanics.'
       - id: 'FAITH-058'
         name: 'Docker Runtime & Image Panel'
         complexity: 'M'
@@ -486,9 +486,9 @@ phases:
         task_doc: 'tasks/FAITH-041-input-panel-upload.md'
         dependencies: ['FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.2'
-        summary: 'React component: multi-line text input, image paste from clipboard with inline thumbnail, drag-and-drop document upload (PDF, DOCX, TXT, MD, images). Send via `POST /input` or `POST /upload`. Keyboard shortcut `Ctrl+Enter` to send. Sent messages echoed into PA panel.'
+        summary: 'React-based Input panel for text, uploads, and attachment workflow. Provide the editable composer, clipboard-image preview, drag/drop document upload, backend echo semantics, and clear failure states through `POST /input` and `POST /upload`, while leaving the specific Enter/Alt+Enter composer ergonomics to FAITH-085.'
       - id: 'FAITH-042'
-        name: 'Terminal Dark Theme CSS'
+        name: 'Shared Web UI Theme System'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
         status: 'TODO'
@@ -504,43 +504,34 @@ phases:
         task_doc: 'tasks/FAITH-043-project-switcher-ui.md'
         dependencies: ['FAITH-015', 'FAITH-074']
         frs_reference: 'Section 6.9, 2.5'
-        summary: 'Toolbar dropdown listing recent projects from `config/recent-projects.yaml` (framework-level, not per-project). Selecting a project triggers the PA''s coordinated teardown flow (save `state.md` per agent, stop containers) via `POST /input`, then mounts new project and reconstructs team from `.faith/agents/*/config.yaml`.'
-        - id: 'FAITH-044'
-          name: 'Web UI Log Views'
-          complexity: 'M'
-          model: 'Opus / GPT-5.4 high reasoning'
-          status: 'IN PROGRESS'
-          task_doc: 'tasks/FAITH-044-web-ui-log-views.md'
-          dependencies: ['FAITH-021', 'FAITH-074']
-          frs_reference: 'Section 8.7'
-          summary: 'Implement read-only log viewer panels inside the Dockview workspace: Audit trail, Event timeline, Session history, Token usage, and Approval history. All data remains read-only, served through FastAPI endpoints, and mounted from `logs/` without browser write paths.'
+        summary: 'Toolbar or menu-driven project switcher that shows the current project, lists recent projects from framework config, and routes project changes through the PA''s coordinated teardown/rebuild flow without bypassing PA orchestration authority.'
+      - id: 'FAITH-044'
+        name: 'Web UI Log Views'
+        complexity: 'M'
+        model: 'Opus / GPT-5.4 high reasoning'
+        status: 'IN PROGRESS'
+        task_doc: 'tasks/FAITH-044-web-ui-log-views.md'
+        dependencies: ['FAITH-021', 'FAITH-074']
+        frs_reference: 'Section 8.7'
+        summary: 'Implement read-only log viewer panels inside the Dockview workspace: Audit trail, Event timeline, Session history, Token usage, and Approval history. All data remains read-only, served through FastAPI endpoints, and mounted from host-backed runtime log sources without browser write paths.'
       - id: 'FAITH-061'
         name: 'Runtime Status Cards'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
         status: 'TODO'
         task_doc: 'tasks/FAITH-061-runtime-status-cards.md'
-        dependencies: ['FAITH-040', 'FAITH-058', 'FAITH-074']
+        dependencies: ['FAITH-040', 'FAITH-058', 'FAITH-074', 'FAITH-079']
         frs_reference: 'Section 6.4.2'
-        summary: 'Improve the System Status panel UX so FAITH-managed runtime state is shown as readable cards rather than raw JSON. Render one compact card per relevant bootstrap, agent, tool, sandbox, or runtime container with state, health, role, and human-usable URL where applicable, while keeping the dedicated Docker Runtime panel as the detailed operational view.'
+        summary: 'Improve the System Status panel UX so FAITH-managed runtime state is shown as readable cards rather than raw JSON. Render one compact card per relevant bootstrap, agent, tool, sandbox, or runtime container with state, health, role, and human-usable URL where applicable, while keeping the dedicated Docker Runtime panel as the detailed operational view and relying on FAITH-079 for authoritative refresh cadence.'
       - id: 'FAITH-062'
         name: 'Panel Lifecycle & Deduping'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
         status: 'TODO'
         task_doc: 'tasks/FAITH-062-panel-lifecycle-deduping.md'
-        dependencies: ['FAITH-074', 'FAITH-061']
+        dependencies: ['FAITH-074', 'FAITH-075', 'FAITH-061']
         frs_reference: 'Section 6.4.1, 6.10'
         summary: 'Make panel lifecycle behaviour reliable. Panels must close and reopen cleanly, singleton panels must not duplicate, and agent/tool panels must dedupe by runtime identity. If the user tries to add an already-open panel, focus the existing panel instead of creating another copy.'
-      - id: 'FAITH-063'
-        name: 'Snap-Grid Panel Layout Refinement'
-        complexity: 'M'
-        model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
-        task_doc: 'tasks/FAITH-063-snap-grid-panel-layout.md'
-        dependencies: ['FAITH-062', 'FAITH-074', 'FAITH-075']
-        frs_reference: 'Section 6.4.1, 6.10'
-        summary: 'Refine Dockview panel movement and resizing so the workspace feels structured and dashboard-like. Preserve Dockview docking/tab/floating behaviour while adding practical grid-alignment or layout-guided refinement where feasible so panels land in tidy arrangements.'
       - id: 'FAITH-064'
         name: 'Panel Title-Bar Actions'
         complexity: 'S'
@@ -592,7 +583,7 @@ phases:
         model: 'Sonnet / GPT-5.4'
         status: 'TODO'
         task_doc: 'tasks/FAITH-079-runtime-badge-container-status-sync.md'
-        dependencies: ['FAITH-038', 'FAITH-040', 'FAITH-058', 'FAITH-061', 'FAITH-074']
+        dependencies: ['FAITH-038', 'FAITH-040', 'FAITH-058', 'FAITH-074']
         frs_reference: 'Section 6.4.2, 6.5'
         summary: 'Keep runtime-derived UI status in sync with actual FAITH container/service health. Poll or refresh the authoritative runtime snapshot at least every 10 seconds (or faster when newer push data is available), update the Project Agent and other relevant badges from that shared truth, and ensure the System Status panel and badge chrome both reflect stopped/degraded services within the same refresh window.'
       - id: 'FAITH-080'
@@ -820,14 +811,14 @@ phases:
   - id: 13
     title: 'Web UI Workspace Migration'
     status: 'IN PROGRESS'
-    summary: 'Move the Web UI onto a bundled React + Dockview frontend and add Radix UI menu primitives for maintained panel and command surfaces.'
-    task_count: 5
+    summary: 'Move the Web UI onto a bundled React + Dockview frontend and complete the maintained workspace mechanics: shell migration, default layout, layout refinement, minimize/restore behaviour, and Radix UI menu primitives.'
+    task_count: 6
     tasks:
       - id: 'FAITH-074'
         name: 'React + Dockview Workspace Shell Migration'
         complexity: 'L'
         model: 'Sonnet / GPT-5.4'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-074-dockview-workspace-shell-migration.md'
         dependencies: ['FAITH-036', 'FAITH-078']
         frs_reference: 'Section 2.2.5, 6.4.1, 6.10'
@@ -836,16 +827,25 @@ phases:
         name: 'Dockview Default Layout & Panel Constraints'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-075-dockview-default-layout-panel-constraints.md'
-        dependencies: ['FAITH-074', 'FAITH-070', 'FAITH-072']
+        dependencies: ['FAITH-074', 'FAITH-084']
         frs_reference: 'Section 6.4.1, 6.4.2, 6.10'
-        summary: 'Implement the new default Dockview layout: the Project Agent as the main upper view with fixed-height internal scrolling, System Status tab-stacked with the Project Agent, the chat/input region below taking the remaining height, and the Approvals panel placed to the left of the lower chat region without default stacking. Users must still be able to drag, resize, and re-stack panels afterwards within Dockview capabilities.'
+        summary: 'Implement the new default Dockview layout: the Project Agent as the main upper view with System Status tab-stacked alongside it, the lower-left region tab-stacking Input and User Settings, and the Approvals panel placed alongside that lower workspace without default stacking. The transcript must remain internally scrollable within the current panel space, and users must still be able to drag, resize, and re-stack panels afterwards within Dockview capabilities.'
+      - id: 'FAITH-063'
+        name: 'Snap-Grid Panel Layout Refinement'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-063-snap-grid-panel-layout.md'
+        dependencies: ['FAITH-062', 'FAITH-074', 'FAITH-075']
+        frs_reference: 'Section 6.4.1, 6.10'
+        summary: 'Refine Dockview panel movement and resizing so the workspace feels structured and dashboard-like. Preserve Dockview docking/tab/floating behaviour while adding practical grid-alignment or layout-guided refinement where feasible so panels land in tidy arrangements.'
       - id: 'FAITH-076'
         name: 'Minimized Panel Tray for Dockview'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-076-minimized-panel-tray-for-dockview.md'
         dependencies: ['FAITH-074']
         frs_reference: 'Section 6.4.1, 6.10'
@@ -854,7 +854,7 @@ phases:
         name: 'Radix UI Menubar & Context Menu Integration'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-077-radix-vue-menubar-context-menu-integration.md'
         dependencies: ['FAITH-074']
         frs_reference: 'Section 2.2.5, 6.4.1, 6.4.2'
@@ -863,7 +863,7 @@ phases:
         name: 'Frontend Build Pipeline & Bundled Asset Integration'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-078-frontend-build-pipeline-bundled-assets.md'
         dependencies: ['FAITH-036']
         frs_reference: 'Section 2.2.5, 6.3, 6.10'
