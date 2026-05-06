@@ -810,7 +810,7 @@ phases:
         summary: 'Adapt FAITH for cloud deployment: Kubernetes orchestration (replace Docker socket with scoped service account), OAuth2/SSO via control plane, per-project namespace isolation, S3-compatible object storage, server-side layout persistence, per-project or shared Redis. Build the FAITH Management Service: user auth, project CRUD, billing integration, licence enforcement. Ensure PA/agent/tool code is identical between local and cloud — only orchestration layer differs.'
   - id: 13
     title: 'Web UI Workspace Migration'
-    status: 'IN PROGRESS'
+    status: 'DONE'
     summary: 'Move the Web UI onto a bundled React + Dockview frontend and complete the maintained workspace mechanics: shell migration, default layout, layout refinement, minimize/restore behaviour, and Radix UI menu primitives.'
     task_count: 6
     tasks:
@@ -836,11 +836,11 @@ phases:
         name: 'Snap-Grid Panel Layout Refinement'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-063-snap-grid-panel-layout.md'
         dependencies: ['FAITH-062', 'FAITH-074', 'FAITH-075']
         frs_reference: 'Section 6.4.1, 6.10'
-        summary: 'Refine Dockview panel movement and resizing so the workspace feels structured and dashboard-like. Preserve Dockview docking/tab/floating behaviour while adding practical grid-alignment or layout-guided refinement where feasible so panels land in tidy arrangements.'
+        summary: 'Refine Dockview panel movement and resizing so the workspace feels structured and dashboard-like. Preserve Dockview docking/tab/floating behaviour while adding practical grid-alignment or layout-guided refinement where feasible so panels land in tidy arrangements. The current implementation snaps persisted split ratios and percentages to tidy increments during save/restore rather than attempting a full free-form grid engine on top of Dockview.'
       - id: 'FAITH-076'
         name: 'Minimized Panel Tray for Dockview'
         complexity: 'M'

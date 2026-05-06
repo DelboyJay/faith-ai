@@ -3,7 +3,7 @@
 **Phase:** 13 — Web UI Workspace Migration
 **Complexity:** M
 **Model:** Sonnet / GPT-5.4
-**Status:** TODO
+**Status:** DONE
 **Dependencies:** FAITH-062, FAITH-074, FAITH-075
 **FRS Reference:** Section 6.4.1, 6.10
 
@@ -16,6 +16,13 @@ and dashboard-like. Where practical, Dockview placement and resizing should be
 augmented with grid-aligned or layout-guided refinement so panels settle into
 tidy arrangements instead of messy layouts. This is a workspace-mechanics task,
 not a panel-content task, so it belongs with the shell/layout migration work.
+
+Current implementation note: FAITH now applies a lightweight layout-guided snap
+layer when persisting and restoring Dockview layouts, rounding clear ratio or
+percentage split collections into tidy increments while leaving native Dockview
+drag, docking, tab, and float behaviour intact. Exact Datadog-style live grid
+snapping is not attempted because Dockview is not a free-form grid engine; the
+refinement is intentionally persistence-oriented and non-invasive.
 
 ---
 

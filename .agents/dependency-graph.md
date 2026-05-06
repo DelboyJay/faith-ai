@@ -69,7 +69,7 @@
 | FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | DONE | FAITH-005, FAITH-036 | S | Sonnet / GPT-5.4 |
 | FAITH-061 | Runtime Status Cards | 8 (Web UI) | TODO | FAITH-040, FAITH-058, FAITH-074, FAITH-079 | M | Sonnet / GPT-5.4 |
 | FAITH-062 | Panel Lifecycle & Deduping | 8 (Web UI) | TODO | FAITH-074, FAITH-075, FAITH-061 | S | Haiku / GPT-5.4-mini |
-| FAITH-063 | Snap-Grid Panel Layout Refinement | 13 (Web UI Workspace Migration) | TODO | FAITH-062, FAITH-074, FAITH-075 | M | Sonnet / GPT-5.4 |
+| FAITH-063 | Snap-Grid Panel Layout Refinement | 13 (Web UI Workspace Migration) | DONE | FAITH-062, FAITH-074, FAITH-075 | M | Sonnet / GPT-5.4 |
 | FAITH-064 | Panel Title-Bar Actions | 8 (Web UI) | TODO | FAITH-074, FAITH-062 | S | Haiku / GPT-5.4-mini |
 | FAITH-065 | Docker Daemon Not Running Guidance | 10 (First Run) | TODO | FAITH-005 | S | Haiku / GPT-5.4-mini |
 | FAITH-066 | Project `cag/` Auto-Loading & Budget Guidance | 7 (CAG & External MCP) | DONE | FAITH-034, FAITH-022 | M | Sonnet / GPT-5.4 |
@@ -205,7 +205,7 @@ flowchart TD
     FAITH-052["FAITH-052<br/>Cloud Deployment Architecture<br/>Phase 12 | TODO | XL"]
 
     %% ── Phase 13: Web UI Workspace Migration ──
-    FAITH-063["FAITH-063<br/>Snap-Grid Panel Layout Refinement<br/>Phase 13 | TODO | M"]
+    FAITH-063["FAITH-063<br/>Snap-Grid Panel Layout Refinement<br/>Phase 13 | DONE | M"]
     FAITH-074["FAITH-074<br/>React + Dockview Workspace Shell Migration<br/>Phase 13 | DONE | L"]
     FAITH-075["FAITH-075<br/>Dockview Default Layout & Panel Constraints<br/>Phase 13 | DONE | M"]
     FAITH-076["FAITH-076<br/>Minimized Panel Tray for Dockview<br/>Phase 13 | DONE | M"]
@@ -670,7 +670,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 ### Wave 14
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
-| FAITH-063 | Snap-Grid Panel Layout Refinement | 13 (Web UI Workspace Migration) | TODO | M |
+| FAITH-063 | Snap-Grid Panel Layout Refinement | 13 (Web UI Workspace Migration) | DONE | M |
 | FAITH-064 | Panel Title-Bar Actions | 8 (Web UI) | TODO | S |
 
 ### Wave 15

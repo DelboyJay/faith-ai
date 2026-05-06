@@ -14,8 +14,11 @@ import { createRoot } from "react-dom/client";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import { DockviewReact } from "dockview";
 import * as Menubar from "@radix-ui/react-menubar";
+import workspaceLayoutSnap from "./workspace-layout-snap.js";
 
 import "./faith-ui.css";
+
+const { normalizeLayoutForPersistence } = workspaceLayoutSnap;
 
 const LAYOUT_STORAGE_KEY = "faith_dockview_layout_v2";
 const LEGACY_LAYOUT_STORAGE_KEYS = Object.freeze([
@@ -586,10 +589,13 @@ function clearLegacyLayouts() {
  */
 function saveWorkspaceState(api, minimizedPanels) {
   try {
+    // Dockview does not expose a true Datadog-style grid engine, so FAITH normalizes
+    // persisted split sizes to tidy increments instead of fighting live drag behavior.
+    const normalizedLayout = normalizeLayoutForPersistence(api.toJSON());
     window.localStorage.setItem(
       LAYOUT_STORAGE_KEY,
       JSON.stringify({
-        layout: api.toJSON(),
+        layout: normalizedLayout,
         minimizedPanels: minimizedPanels,
       }),
     );
@@ -622,7 +628,7 @@ function restoreSavedWorkspaceState(api) {
 
     const parsedWorkspaceState = JSON.parse(rawWorkspaceState);
     if (parsedWorkspaceState && parsedWorkspaceState.layout) {
-      api.fromJSON(parsedWorkspaceState.layout);
+      api.fromJSON(normalizeLayoutForPersistence(parsedWorkspaceState.layout));
       return {
         restored: true,
         minimizedPanels: Array.isArray(parsedWorkspaceState.minimizedPanels)
@@ -631,7 +637,7 @@ function restoreSavedWorkspaceState(api) {
       };
     }
 
-    api.fromJSON(parsedWorkspaceState);
+    api.fromJSON(normalizeLayoutForPersistence(parsedWorkspaceState));
     return {
       restored: true,
       minimizedPanels: [],

@@ -286,7 +286,7 @@ def test_index_renders_visible_web_ui_version(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert 'class="faith-toolbar__version"' in response.text
-    assert "v0.13.0" in response.text
+    assert "v0.14.0" in response.text
 
 
 def test_index_route_uses_non_deprecated_template_signature(client: TestClient) -> None:
@@ -493,6 +493,50 @@ def test_dockview_bundle_source_uses_shared_command_dispatch_for_shell_actions(
     assert "handleClosePanel" in source
     assert "renderPanelContextMenu" in source
     assert "renderMenubar" in source
+
+
+def test_dockview_bundle_source_normalizes_persisted_layout_splits(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the Dockview shell normalizes persisted split sizes to tidy snap increments.
+
+    Requirements:
+        - This test is needed to prove Phase 13 layout refinement persists tidy split sizes instead of arbitrary drift.
+        - Verify the bundled React shell imports the layout-snap helper and applies it during save and restore.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    del client
+    project_root = Path(__file__).resolve().parents[1]
+    source = (project_root / "web" / "src" / "main.jsx").read_text(encoding="utf-8")
+
+    assert "workspace-layout-snap.js" in source
+    assert "normalizeLayoutForPersistence(api.toJSON())" in source
+    assert "normalizeLayoutForPersistence(parsedWorkspaceState.layout)" in source
+
+
+def test_dockview_bundle_styles_workspace_with_grid_guides(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the bundled Dockview shell styles the workspace with tidy grid cues.
+
+    Requirements:
+        - This test is needed to prove the workspace refinement is visible rather than only hidden in persistence code.
+        - Verify the shell CSS includes a grid-like background and minimum panel sizing guidance.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    del client
+    project_root = Path(__file__).resolve().parents[1]
+    source = (project_root / "web" / "src" / "faith-ui.css").read_text(encoding="utf-8")
+
+    assert "background-size: 1.5rem 1.5rem;" in source
+    assert "min-width: 16rem;" in source
+    assert "min-height: 10rem;" in source
 
 
 def test_dockview_bundle_closes_add_panel_menu_on_outside_interaction(

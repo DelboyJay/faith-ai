@@ -12,6 +12,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
+const { normalizeLayoutForPersistence } = require(path.join(
+  process.cwd(),
+  "web",
+  "src",
+  "workspace-layout-snap.js",
+));
+
 /**
  * Description:
  *   Provide a minimal DOM element stand-in for the layout runtime tests.
@@ -220,6 +227,42 @@ function assert(condition, message) {
     throw new Error(message);
   }
 }
+
+const normalizedPercentageLayout = normalizeLayoutForPersistence({
+  root: {
+    type: "row",
+    content: [
+      { type: "component", title: "Left", size: 57 },
+      { type: "component", title: "Right", size: 43 },
+    ],
+  },
+});
+assert(
+  normalizedPercentageLayout.root.content[0].size === 55,
+  "Expected percentage-based sibling sizes to snap to the nearest tidy increment.",
+);
+assert(
+  normalizedPercentageLayout.root.content[1].size === 45,
+  "Expected percentage-based sibling totals to remain balanced after snapping.",
+);
+
+const normalizedRatioLayout = normalizeLayoutForPersistence({
+  root: {
+    type: "column",
+    content: [
+      { type: "stack", title: "Upper", size: 0.58 },
+      { type: "row", title: "Lower", size: 0.42 },
+    ],
+  },
+});
+assert(
+  normalizedRatioLayout.root.content[0].size === 0.6,
+  "Expected ratio-based sibling sizes to snap to tidy dashboard-like ratios.",
+);
+assert(
+  normalizedRatioLayout.root.content[1].size === 0.4,
+  "Expected ratio-based sibling totals to remain stable after snapping.",
+);
 
 const defaultLayout = window.faithLayout.buildDefaultLayoutConfig();
 const lowerRow = defaultLayout.root.content[1];

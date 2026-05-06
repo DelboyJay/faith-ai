@@ -10,6 +10,12 @@
 .faith-dockview-shell {
   flex: 1 1 auto;
   min-height: 520px;
+  position: relative;
+  background:
+    linear-gradient(rgba(48, 54, 61, 0.12) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(48, 54, 61, 0.12) 1px, transparent 1px);
+  background-size: 1.5rem 1.5rem;
+  background-position: 0 0;
 }
 
 .faith-dockview-shell.dockview-theme-dark {
@@ -26,10 +32,21 @@
 
 .faith-dockview-shell .dv-groupview {
   background: transparent;
+  min-width: 16rem;
+  min-height: 10rem;
 }
 
 .faith-dockview-shell .dv-groupview .dv-content-container {
   background: transparent;
+}
+
+.faith-dockview-shell .dv-sash-container .dv-sash {
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.faith-dockview-shell .dv-sash-container .dv-sash:hover,
+.faith-dockview-shell .dv-sash-container .dv-sash.dv-sash-active {
+  background: rgba(88, 166, 255, 0.26);
 }
 
 .faith-dockview-shell .dv-groupview .dv-groupview-header {
