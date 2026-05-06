@@ -642,8 +642,8 @@ phases:
         summary: 'Restore the latest persisted Project Agent conversation into the Web UI panel after browser reload, Web UI restart, or PA restart. The PA must persist the session-level transcript to `pa-user.log`, expose an API for the latest transcript, resume the latest session when appropriate, and render the saved conversation before live WebSocket streaming resumes so the visible transcript matches retained backend context.'
   - id: 9
     title: 'Logging & Observability'
-    status: 'IN PROGRESS'
-    summary: 'Persist and surface FAITH audit, event, session, token, and archive state with honest operational visibility. Event logging and retention/rotation are now implemented; broader session/task and token/cost runtime coverage still has remaining work.'
+    status: 'DONE'
+    summary: 'Persist and surface FAITH audit, event, session, token, and archive state with honest operational visibility. Event logging, session/task logging, pricing-backed token/cost logging, and retention/rotation are now implemented across the runtime and Web UI log surfaces.'
     task_count: 4
     tasks:
       - id: 'FAITH-045'
@@ -659,20 +659,20 @@ phases:
         name: 'Session & Task Log Writer'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-046-session-task-log-writer.md'
         dependencies: ['FAITH-015']
         frs_reference: 'Section 8.4'
-        summary: 'Write session logs in the two-level `.faith/sessions/` directory structure. `session.meta.json` and `task.meta.json` with all fields defined in FRS. Channel logs in markdown format with compact protocol rendering. `pa-user.log` at session level. Agent cross-reference index (`agents/*/sessions.index.md`). No content duplication — one log per channel per task. Current implementation covers persisted session/task metadata, PA transcript persistence, compact channel logs, token aggregation, and agent indices, but broader specialist-agent runtime coverage remains incomplete.'
+        summary: 'Write session logs in the two-level `.faith/sessions/` directory structure. `session.meta.json` and `task.meta.json` with all fields defined in FRS. Channel logs in markdown format with compact protocol rendering. `pa-user.log` at session level. Agent cross-reference index (`agents/*/sessions.index.md`). No content duplication — one log per channel per task. The runtime now persists session metadata, task metadata, PA transcript logs, compact channel logs, direct `pa-<agent>.log` assignment logs, token aggregation, and per-agent session indices.'
       - id: 'FAITH-047'
         name: 'Token & Cost Log'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-047-token-cost-log.md'
         dependencies: ['FAITH-013', 'FAITH-030']
         frs_reference: 'Section 8.5'
-        summary: 'Log every LLM API call to `logs/tokens.log` as JSON lines: timestamp, session_id, task_id, agent, model, input_tokens, output_tokens, estimated_cost (via Pricing tool), price_source, price_age_days. Implement proactive cost warning: when session cost crosses threshold (default $1.00), surface warning in Web UI. Current implementation now covers the Project Agent chat loop, base-agent token logging hooks, and persisted token accounting, but broader pricing-tool/runtime status integration remains incomplete.'
+        summary: 'Log every LLM API call to `logs/tokens.log` as JSON lines: timestamp, session_id, task_id, agent, model, input_tokens, output_tokens, estimated_cost, price_source, and price_age_days. The token logger now bootstraps pricing from persisted FAITH price files, estimates costs using distinct input/output token prices, records runtime usage for PA and specialist-agent flows, and surfaces Web UI cost warnings that identify the highest-cost agent and suggest a cheaper model option.'
       - id: 'FAITH-048'
         name: 'Log Retention & Rotation'
         complexity: 'S'
@@ -868,6 +868,48 @@ phases:
         dependencies: ['FAITH-036']
         frs_reference: 'Section 2.2.5, 6.3, 6.10'
         summary: 'Introduce the Node-based frontend build pipeline required by React + Dockview. Add package manifests, pinned frontend dependencies, container build integration, and compiled browser bundles served by the existing FastAPI Web UI service. The host machine must not require Node directly; the supported path is containerised or build-stage execution.'
+  - id: 14
+    title: 'Specialist-Agent Delegation from PA Chat'
+    status: 'TODO'
+    summary: 'Extend the live PA chat experience so the Project Agent can create or reuse one specialist agent, delegate bounded work, wait for the result, and report back cleanly with durable runtime and log state.'
+    task_count: 4
+    tasks:
+      - id: 'FAITH-088'
+        name: 'Runtime Specialist-Agent Materialisation & Lifecycle'
+        complexity: 'L'
+        model: 'Opus / GPT-5.4 high reasoning'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-088-runtime-specialist-agent-materialisation-lifecycle.md'
+        dependencies: ['FAITH-014', 'FAITH-015', 'FAITH-049']
+        frs_reference: 'Section 2.2.1, 3.1.2, 3.1.4'
+        summary: 'Implement the runtime path that lets the PA reuse an existing specialist agent or create/start one on demand during an active session. This includes choosing or generating the agent definition, writing/updating `.faith/agents/{id}/config.yaml` and `prompt.md` when needed, starting the container, preserving paid-model approval rules, and surfacing the resulting team change back to the user and runtime state.'
+      - id: 'FAITH-089'
+        name: 'PA Chat Specialist Delegation Loop'
+        complexity: 'L'
+        model: 'Opus / GPT-5.4 high reasoning'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-089-pa-chat-specialist-delegation-loop.md'
+        dependencies: ['FAITH-015', 'FAITH-016', 'FAITH-068', 'FAITH-088']
+        frs_reference: 'Section 3.1.2, 3.2, 3.7.8'
+        summary: 'Extend the interactive Project Agent chat runtime so it can decide when to delegate a user request to one specialist agent, create or reuse the backing task, send a bounded assignment over `pa-{agent-id}`, wait for completion/error events, and then resume the main user conversation with the returned result. Include bounded timeout, intervention, and visible progress updates while delegation is running.'
+      - id: 'FAITH-090'
+        name: 'Delegated Specialist Result Relay & Persistence'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-090-delegated-specialist-result-relay-persistence.md'
+        dependencies: ['FAITH-046', 'FAITH-082', 'FAITH-089']
+        frs_reference: 'Section 3.2, 6.4, 8.4, 8.5'
+        summary: 'Persist and surface the full single-specialist delegation trace cleanly: assignment log, delegated task metadata, completion/error summary, transcript rehydration, and Web UI updates. The user-facing PA panel should show that work was delegated and completed without exposing raw protocol noise by default, while logs and session history retain the underlying details.'
+      - id: 'FAITH-091'
+        name: 'Canonical Specialist-Agent Team Manifest & Delegation Grounding'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-091-canonical-specialist-agent-team-manifest-delegation-grounding.md'
+        dependencies: ['FAITH-015', 'FAITH-081', 'FAITH-088']
+        frs_reference: 'Section 3.1.2, 3.1.4, 4.1.2'
+        summary: 'Create a framework-owned runtime roster of specialist agents so the PA always knows which agents currently exist, what they are for, which model/tools they use, and whether they are available for delegation. Ground agent-roster answers and delegation prompts in that canonical manifest rather than relying on LLM memory or hard-coded panel assumptions.'
 
 
 

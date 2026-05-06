@@ -3,7 +3,7 @@
 **Phase:** 9 — Logging & Observability
 **Complexity:** M
 **Model:** Sonnet / GPT-5.4
-**Status:** IN PROGRESS
+**Status:** DONE
 **Dependencies:** FAITH-015
 **FRS Reference:** Section 8.4
 
@@ -13,7 +13,7 @@
 
 Implement the session and task log writer for FAITH. Session logs capture the full human-readable record of all conversations and tasks in a two-level directory structure under `.faith/sessions/`. The writer creates `session.meta.json` and `task.meta.json` with all fields defined in FRS Section 8.4. Channel logs are written in markdown format with compact protocol rendering. The PA-user conversation is logged to `pa-user.log` at session level. An agent cross-reference index (`agents/*/sessions.index.md`) provides per-agent session history without duplicating log content. The invariant is: one log per channel per task — no content duplication.
 
-Current implementation note: session/task metadata, `pa-user.log`, task channel logs, agent session indices, task/session token aggregation, and persisted task-channel writes from the PA runtime are now present in the runtime codebase, but the broader specialist-agent task flows described by the FRS are not yet fully complete.
+Current implementation note: session/task metadata, `pa-user.log`, task channel logs, direct `pa-<agent>.log` task assignments, agent session indices, task/session token aggregation, and persisted task-channel writes from the PA runtime are present in the runtime codebase and now satisfy the FRS scope for session and task logging.
 
 ---
 

@@ -380,3 +380,47 @@ async def test_session_manager_writes_channel_logs_and_agent_index(
     assert "project-agent → security-expert" in channel_log
     assert task.task_id in agent_index
     assert manager.current_session is not None
+
+
+@pytest.mark.asyncio
+async def test_session_manager_writes_pa_agent_assignment_log(
+    tmp_path: Path, system_config: SystemConfig
+) -> None:
+    """Description:
+    Verify the session manager writes direct PA-to-agent assignment logs for one task.
+
+    Requirements:
+        - This test is needed to prove the live PA session manager persists the `pa-<agent>.log` files required by FRS section 8.4.
+        - Verify the task directory contains a `pa-<agent>.log` file and the specialist agent receives a session-index entry.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
+    """
+
+    manager = SessionManager(project_root=tmp_path, system_config=system_config)
+    await manager.start_session(trigger="web-ui")
+    task = manager.create_task(
+        "Implement auth flow",
+        staged_agents={"implementation": ["software-developer"]},
+    )
+    manager.activate_phase(task.task_id, "implementation")
+
+    manager.append_pa_agent_message(
+        task_id=task.task_id,
+        agent_name="software-developer",
+        sender="project-agent",
+        recipient="software-developer",
+        msg_type="assignment",
+        summary="Implement the auth refresh flow and report back with files changed.",
+        status="active",
+    )
+
+    assignment_log = (task.path / "pa-software-developer.log").read_text(encoding="utf-8")
+    agent_index = (
+        tmp_path / ".faith" / "agents" / "software-developer" / "sessions.index.md"
+    ).read_text(encoding="utf-8")
+
+    assert "# Channel: pa-software-developer" in assignment_log
+    assert "project-agent → software-developer" in assignment_log
+    assert "Implement the auth refresh flow" in assignment_log
+    assert task.task_id in agent_index

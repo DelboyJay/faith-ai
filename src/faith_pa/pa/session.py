@@ -1106,6 +1106,53 @@ class SessionManager:
         self._update_agent_session_indices(task)
         return task_writer.task_dir / f"{channel_name}.log"
 
+    def append_pa_agent_message(
+        self,
+        *,
+        task_id: str,
+        agent_name: str,
+        sender: str,
+        recipient: str,
+        msg_type: str,
+        summary: str,
+        status: str | None = None,
+        needs: str | None = None,
+        files: list[str] | None = None,
+        context_ref: str | None = None,
+    ) -> Path:
+        """Description:
+            Append one direct PA-to-agent assignment message to the persisted task logs.
+
+        Requirements:
+            - Persist the log under `pa-<agent>.log` inside the task directory.
+            - Reuse the normal task-log and agent-index update path so assignment logs participate in session history.
+
+        :param task_id: Task identifier to append under.
+        :param agent_name: Specialist agent receiving the direct assignment log.
+        :param sender: Sending participant name.
+        :param recipient: Receiving participant name.
+        :param msg_type: Compact message type.
+        :param summary: Human-readable summary text.
+        :param status: Optional status field.
+        :param needs: Optional needs field.
+        :param files: Optional file list.
+        :param context_ref: Optional context reference.
+        :returns: Written PA-to-agent log path.
+        """
+
+        return self.append_channel_message(
+            task_id=task_id,
+            channel_name=f"pa-{agent_name}",
+            sender=sender,
+            recipient=recipient,
+            msg_type=msg_type,
+            summary=summary,
+            status=status,
+            needs=needs,
+            files=files,
+            context_ref=context_ref,
+        )
+
     def record_token_usage(
         self,
         *,

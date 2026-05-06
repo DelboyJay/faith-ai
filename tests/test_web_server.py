@@ -286,7 +286,7 @@ def test_index_renders_visible_web_ui_version(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert 'class="faith-toolbar__version"' in response.text
-    assert "v0.14.0" in response.text
+    assert "v0.15.1" in response.text
 
 
 def test_index_route_uses_non_deprecated_template_signature(client: TestClient) -> None:

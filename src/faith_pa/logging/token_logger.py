@@ -4,10 +4,12 @@
 Requirements:
     - Persist every logged LLM call as one JSON line.
     - Track per-session totals and expose helpers for threshold warnings and basic cost statistics.
+    - Bootstrap pricing data from FAITH's persisted bundled or cached pricing files when available.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -104,6 +106,7 @@ class TokenLogger:
         self.log_path = self.logs_dir / "tokens.log"
         self.cost_threshold_usd = cost_threshold_usd
         self._pricing_cache: dict[str, tuple[float, str, int]] = {}
+        self._pricing_breakdown: dict[str, tuple[float, float, str, int]] = {}
         self._session_total_cost_usd = 0.0
         self._warning_emitted = False
 
@@ -123,6 +126,39 @@ class TokenLogger:
         """
 
         self._pricing_cache[model] = (cost_per_token, source, age_days)
+        self._pricing_breakdown[model] = (cost_per_token, cost_per_token, source, age_days)
+
+    def set_detailed_pricing_data(
+        self,
+        model: str,
+        *,
+        input_cost_per_token: float,
+        output_cost_per_token: float,
+        source: str,
+        age_days: int,
+    ) -> None:
+        """Description:
+            Cache distinct input and output token prices for one model.
+
+        Requirements:
+            - Preserve separate input and output token rates for more accurate cost estimation.
+            - Keep the compatibility cache populated so legacy callers can still query one representative rate.
+
+        :param model: Model name.
+        :param input_cost_per_token: Input token price in USD.
+        :param output_cost_per_token: Output token price in USD.
+        :param source: Source of the price data.
+        :param age_days: Age of the cached price in days.
+        """
+
+        representative_rate = (input_cost_per_token + output_cost_per_token) / 2
+        self._pricing_cache[model] = (representative_rate, source, age_days)
+        self._pricing_breakdown[model] = (
+            input_cost_per_token,
+            output_cost_per_token,
+            source,
+            age_days,
+        )
 
     def get_pricing(self, model: str) -> tuple[float, str, int] | None:
         """Description:
@@ -152,11 +188,93 @@ class TokenLogger:
         :returns: Estimated cost, price source, and price age in days.
         """
 
+        pricing_breakdown = self._pricing_breakdown.get(model)
+        if pricing_breakdown is not None:
+            input_rate, output_rate, source, age_days = pricing_breakdown
+            return (
+                round((input_tokens * input_rate) + (output_tokens * output_rate), 12),
+                source,
+                age_days,
+            )
+
         pricing = self.get_pricing(model)
         if pricing is None:
             return (0.0, "unavailable", 0)
         cost_per_token, source, age_days = pricing
-        return ((input_tokens + output_tokens) * cost_per_token, source, age_days)
+        return (round((input_tokens + output_tokens) * cost_per_token, 12), source, age_days)
+
+    def load_pricing_catalog(self, *, data_dir: Path) -> bool:
+        """Description:
+            Load persisted FAITH model pricing from the live cache or bundled default file.
+
+        Requirements:
+            - Prefer `model-prices.cache.json` when it exists and is valid.
+            - Fall back to `model-prices.default.json` when no cache is available.
+            - Ignore malformed files without raising and return `False` when no valid catalog can be loaded.
+
+        :param data_dir: Directory containing the FAITH pricing files.
+        :returns: `True` when a valid pricing catalog was loaded.
+        """
+
+        data_root = Path(data_dir)
+        candidates = (
+            (data_root / "model-prices.cache.json", "cache"),
+            (data_root / "model-prices.default.json", "default"),
+        )
+        for path, source_label in candidates:
+            if not path.exists():
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            models = payload.get("models")
+            if not isinstance(models, dict):
+                continue
+            age_days = self._catalog_age_days(payload.get("generated_date"))
+            loaded_any = False
+            for model_name, model_payload in models.items():
+                if not isinstance(model_payload, dict):
+                    continue
+                input_cost = model_payload.get("input_cost_per_token")
+                output_cost = model_payload.get("output_cost_per_token")
+                if not isinstance(input_cost, (int, float)) or not isinstance(
+                    output_cost, (int, float)
+                ):
+                    continue
+                self.set_detailed_pricing_data(
+                    str(model_name),
+                    input_cost_per_token=float(input_cost),
+                    output_cost_per_token=float(output_cost),
+                    source=source_label,
+                    age_days=age_days,
+                )
+                loaded_any = True
+            if loaded_any:
+                return True
+        return False
+
+    @staticmethod
+    def _catalog_age_days(generated_date: object) -> int:
+        """Description:
+            Convert one pricing-catalog generated-date value into an age in days.
+
+        Requirements:
+            - Return zero when the supplied value is missing or malformed.
+            - Never return a negative age when the generated date is in the future.
+
+        :param generated_date: Raw generated-date value from the pricing catalog payload.
+        :returns: Non-negative age in days.
+        """
+
+        if not isinstance(generated_date, str) or not generated_date.strip():
+            return 0
+        try:
+            generated_at = datetime.strptime(generated_date.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            return 0
+        current_date = datetime.now(timezone.utc).date()
+        return max((current_date - generated_at).days, 0)
 
     def write(self, entry: TokenEntry) -> None:
         """Description:
@@ -439,6 +557,35 @@ class TokenLogger:
         stats = self.get_agent_stats(session_id, agent_name)
         stats["total_cost_usd"] = totals[agent_name]
         return stats
+
+    def cheaper_model_option(self, current_model: str) -> str | None:
+        """Description:
+            Return one cheaper available model suggestion for the supplied model.
+
+        Requirements:
+            - Compare models using the sum of input and output token rates.
+            - Return `None` when no cheaper configured model is known.
+
+        :param current_model: Current model name to compare against.
+        :returns: Cheaper model identifier, if one is available.
+        """
+
+        current_pricing = self._pricing_breakdown.get(current_model)
+        if current_pricing is None:
+            return None
+        current_total_rate = current_pricing[0] + current_pricing[1]
+        cheaper_candidates = [
+            (
+                model_name,
+                pricing[0] + pricing[1],
+            )
+            for model_name, pricing in self._pricing_breakdown.items()
+            if model_name != current_model and (pricing[0] + pricing[1]) < current_total_rate
+        ]
+        if not cheaper_candidates:
+            return None
+        cheaper_candidates.sort(key=lambda item: (item[1], item[0]))
+        return cheaper_candidates[0][0]
 
     @classmethod
     def from_system_config(cls, logs_dir: Path, system_config: dict[str, Any]) -> TokenLogger:

@@ -464,6 +464,7 @@ The framework supports three communication modes:
 - The PA dynamically creates specialist agents based on the user's project requirements. It determines the optimal team composition — roles, models, tools, and trust levels — and writes each agent's `config.yaml` and `prompt.md` in `.faith/agents/{id}/`. The user reviews and may adjust the proposed team before the PA starts agent containers. Agents can also be added, removed, or reconfigured mid-session at the user's request.
 - PA assigns tasks to specific agents based on their capabilities defined in their `config.yaml`.
 - PA determines execution order when multiple agents are involved.
+- During the interactive PA chat loop, the PA may decide that a user request should be delegated to a single specialist agent. In that case the PA either reuses a suitable running agent or creates/starts one, assigns a bounded sub-task over the agent's reserved `pa-{agent-id}` channel, waits for completion via the event system, and then reports the distilled result back to the user in the main PA conversation. The user should not need to address specialist agents directly.
 - Uses compact protocol for instructions, natural language only when the agent needs to reason about ambiguous requirements.
 - Each agent has a reserved direct channel `pa-{agent-id}` (e.g. `pa-software-developer`) created automatically when the agent container starts. The PA uses this channel for initial task assignment and direct queries. Agents listen on their `pa-{agent-id}` channel from startup. All subsequent multi-agent collaboration uses named task channels (e.g. `ch-auth-feature`).
 
@@ -563,6 +564,13 @@ When setting up an agent collaboration session, the PA:
 7. Notifies participating agents with their role in the session.
 8. **Does not monitor agent channel messages.** The PA subscribes to the `system-events` channel only and reacts to state-change events published by agents and tools. It joins an agent communication channel only when an event signals intervention is needed (see Section 3.7).
 9. Intervenes when: `channel:stalled`, `agent:task_blocked`, `channel:loop_detected`, `agent:error`, `approval:requested`, or `agent:model_escalation_requested` events are received.
+
+For single-agent delegation, the PA may skip creating a shared multi-agent task channel and instead:
+
+1. Create or reuse a normal task record for the delegated work.
+2. Send the assignment over the specialist agent's reserved `pa-{agent-id}` direct channel.
+3. Wait for the specialist agent's completion/error events rather than reading the full agent conversation.
+4. Summarise the result back into the main PA↔user conversation and persist the delegation trace in the task/session logs.
 
 #### 3.2.1 Channel Size Limit
 

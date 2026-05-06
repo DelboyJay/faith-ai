@@ -32,6 +32,7 @@ from faith_pa.config import (
     RuntimeContainerSummary,
     ServiceStatus,
     build_config_summary,
+    data_dir,
     load_system_config,
     logs_dir,
     update_system_config_fields,
@@ -1265,9 +1266,24 @@ class ProjectAgentChatRuntime:
             estimated_cost=token_entry.estimated_cost,
         )
         if self.token_logger.consume_threshold_warning():
-            await self._publish_warning(
-                "Project Agent session cost warning: the configured model-usage threshold has been reached."
+            highest_cost_agent = self.token_logger.highest_cost_agent(
+                self.session_manager.session_id
             )
+            agent_name = (
+                str(highest_cost_agent.get("agent"))
+                if isinstance(highest_cost_agent, dict) and highest_cost_agent.get("agent")
+                else PROJECT_AGENT_ID
+            )
+            warning = (
+                "Project Agent session cost warning: the configured model-usage threshold "
+                f"has been reached. Highest cost agent: {agent_name}."
+            )
+            cheaper_model = self.token_logger.cheaper_model_option(self.model_name)
+            if cheaper_model:
+                warning += f" You can switch it to a cheaper model such as {cheaper_model}."
+            else:
+                warning += " You can switch it to a cheaper model to reduce cost."
+            await self._publish_warning(warning)
 
     def _append_history(self, role: str, content: str) -> None:
         """Description:
@@ -1744,11 +1760,15 @@ def _build_token_logger() -> TokenLogger:
     try:
         system_config = load_system_config()
     except Exception:
-        return TokenLogger(logs_dir=logs_dir())
-    return TokenLogger(
+        logger = TokenLogger(logs_dir=logs_dir())
+        logger.load_pricing_catalog(data_dir=data_dir())
+        return logger
+    logger = TokenLogger(
         logs_dir=logs_dir(),
         cost_threshold_usd=system_config.cost_warning.threshold_usd,
     )
+    logger.load_pricing_catalog(data_dir=data_dir())
+    return logger
 
 
 def _build_event_log_writer() -> EventLogWriter:

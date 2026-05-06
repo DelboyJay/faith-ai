@@ -1489,7 +1489,7 @@ def test_pa_chat_bridge_streams_project_agent_frames(
         Wait until the fake Redis publish log contains streamed project-agent frames.
 
         Requirements:
-        - Fail when the chat bridge does not publish within a short timeout.
+        - Fail when the chat bridge does not publish a complete active→output→idle cycle within a short timeout.
         """
 
         for _ in range(40):
@@ -1498,7 +1498,9 @@ def test_pa_chat_bridge_streams_project_agent_frames(
                 for channel, payload in fake_redis.published
                 if channel == "agent:project-agent:output"
             ]
-            if any(item.get("type") == "output" for item in published):
+            if any(item.get("type") == "output" for item in published) and any(
+                item.get("type") == "status" and item.get("status") == "idle" for item in published
+            ):
                 return
             await asyncio.sleep(0.02)
         pytest.fail("Timed out waiting for streamed project-agent output.")
@@ -1886,6 +1888,7 @@ def test_pa_chat_runtime_logs_token_usage_and_cost_warning(tmp_path: Path) -> No
 
     token_logger = TokenLogger(logs_dir=tmp_path / "logs", cost_threshold_usd=0.01)
     token_logger.set_pricing_data("paid-model", 0.001, "cache", 1)
+    token_logger.set_pricing_data("budget-model", 0.0001, "cache", 1)
     fake_redis = FakeRedis()
     runtime = pa_app_module.ProjectAgentChatRuntime(
         redis_client=fake_redis,
@@ -1916,4 +1919,9 @@ def test_pa_chat_runtime_logs_token_usage_and_cost_warning(tmp_path: Path) -> No
     assert len(token_entries) == 1
     assert token_entries[0].agent == "project-agent"
     assert token_entries[0].estimated_cost == 0.02
-    assert any(frame.get("type") == "warning" for frame in published)
+    warning_frames = [frame for frame in published if frame.get("type") == "warning"]
+
+    assert warning_frames
+    assert "project-agent" in warning_frames[0]["message"]
+    assert "budget-model" in warning_frames[0]["message"]
+    assert "cheaper model" in warning_frames[0]["message"]

@@ -78,3 +78,92 @@ def test_token_logger_tracks_costs_queries_and_thresholds(tmp_path: Path) -> Non
     assert agent_stats["total_calls"] == 1
     assert agent_stats["total_cost_usd"] == 1.1
     assert parsed_line["price_source"] == "cache"
+
+
+def test_token_logger_loads_default_pricing_catalog(tmp_path: Path) -> None:
+    """Description:
+        Verify the token logger loads bundled FAITH pricing data and uses separate input/output rates.
+
+    Requirements:
+        - This test is needed to prove Phase 9 can estimate costs from FAITH's persisted pricing files without requiring a live pricing MCP server.
+        - Verify the logger reads `model-prices.default.json`, records `default` as the source, and calculates cost from distinct input and output token prices.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "model-prices.default.json").write_text(
+        json.dumps(
+            {
+                "generated_date": "2026-05-01",
+                "source": "openrouter.ai/models",
+                "models": {
+                    "openai/gpt-4o": {
+                        "input_cost_per_token": 0.0000025,
+                        "output_cost_per_token": 0.00001,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    logger = TokenLogger(logs_dir=tmp_path / "logs")
+
+    loaded = logger.load_pricing_catalog(data_dir=data_dir)
+    estimated_cost, price_source, price_age_days = logger.estimate_cost("openai/gpt-4o", 100, 50)
+
+    assert loaded is True
+    assert estimated_cost == 0.00075
+    assert price_source == "default"
+    assert price_age_days >= 0
+
+
+def test_token_logger_prefers_cached_pricing_catalog(tmp_path: Path) -> None:
+    """Description:
+        Verify the token logger prefers the live cached pricing file over the bundled default file.
+
+    Requirements:
+        - This test is needed to prove FAITH uses the freshest available pricing source when both persisted files exist.
+        - Verify `model-prices.cache.json` overrides the bundled default file for cost estimation and source metadata.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    payload = {
+        "generated_date": "2026-05-02",
+        "source": "openrouter.ai/models",
+        "models": {
+            "openai/gpt-4o": {
+                "input_cost_per_token": 0.000003,
+                "output_cost_per_token": 0.000012,
+            }
+        },
+    }
+    (data_dir / "model-prices.default.json").write_text(
+        json.dumps(
+            {
+                **payload,
+                "models": {
+                    "openai/gpt-4o": {
+                        "input_cost_per_token": 0.0000025,
+                        "output_cost_per_token": 0.00001,
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (data_dir / "model-prices.cache.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    logger = TokenLogger(logs_dir=tmp_path / "logs")
+
+    loaded = logger.load_pricing_catalog(data_dir=data_dir)
+    estimated_cost, price_source, _ = logger.estimate_cost("openai/gpt-4o", 100, 50)
+
+    assert loaded is True
+    assert estimated_cost == 0.0009
+    assert price_source == "cache"
