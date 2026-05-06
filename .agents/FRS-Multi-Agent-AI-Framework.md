@@ -2479,6 +2479,10 @@ The primary user interaction area.
 - Speech-to-text should prefer a free local/offline path in v1 using a dedicated transcription runtime rather than a paid hosted API by default.
 - The transcription result should be inserted into the editable input box so the user can review or correct the text before pressing Send.
 - The UI must show clear recording / transcribing / failed states and must ask the browser for microphone permission only when the user explicitly starts dictation.
+- FAITH may optionally expose a dedicated Avatar panel backed by a separate installable containerised avatar runtime that provides speech playback, avatar animation metadata, and session control without becoming a mandatory core dependency.
+- The avatar runtime should be installable, removable, enabled, and disabled independently of the core FAITH stack so users can keep the system lean when they do not want voice/avatar interaction.
+- When enabled, avatar chat should reuse the normal PA conversation as the authoritative text source and layer optional speech input, speech output, and talking-avatar rendering on top rather than creating a separate reasoning path.
+- The optional Avatar panel should behave like other workspace panels, including docking, tab stacking, minimise/restore, and reopen flows within the normal Dockview workspace.
 - Send button + keyboard shortcut (`Ctrl+Enter`).
 - Sent messages are echoed into the PA panel for continuity.
 

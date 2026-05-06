@@ -42,6 +42,8 @@ PHASE_COLOURS = {
     11: ("#3a1a3a", "#a040a0"),
     12: ("#4a0a0a", "#ff4040"),
     13: ("#22315a", "#88a0ff"),
+    14: ("#123c32", "#4fd1b5"),
+    15: ("#4a2b12", "#ffb366"),
 }
 
 PHASE_NAMES = {
@@ -58,6 +60,8 @@ PHASE_NAMES = {
     11: "CLI & Skills",
     12: "Cloud",
     13: "Web UI Workspace Migration",
+    14: "Specialist-Agent Delegation from PA Chat",
+    15: "Optional Voice & Avatar Experience",
 }
 
 COMPLEXITY_WEIGHTS = {"S": 0.5, "M": 2.0, "L": 4.0, "XL": 6.0}
