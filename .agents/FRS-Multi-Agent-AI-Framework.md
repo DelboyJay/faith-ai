@@ -2479,6 +2479,7 @@ The primary user interaction area.
 - Speech-to-text should prefer a free local/offline path in v1 using a dedicated transcription runtime rather than a paid hosted API by default.
 - The transcription result should be inserted into the editable input box so the user can review or correct the text before pressing Send.
 - The UI must show clear recording / transcribing / failed states and must ask the browser for microphone permission only when the user explicitly starts dictation.
+- First-run setup and later settings should treat speech-to-text, text-to-speech, and talking-avatar/video presentation as three separate optional features so the user can enable only the parts they want.
 - FAITH may optionally expose a dedicated Avatar panel backed by a separate installable containerised avatar runtime that provides speech playback, avatar animation metadata, and session control without becoming a mandatory core dependency.
 - The avatar runtime should be installable, removable, enabled, and disabled independently of the core FAITH stack so users can keep the system lean when they do not want voice/avatar interaction.
 - When enabled, avatar chat should reuse the normal PA conversation as the authoritative text source and layer optional speech input, speech output, and talking-avatar rendering on top rather than creating a separate reasoning path.

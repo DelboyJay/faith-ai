@@ -5,4 +5,4 @@ Requirements:
     - Keep version discovery lightweight for CLI compatibility checks.
 """
 
-__version__ = "0.15.3"
+__version__ = "0.15.4"

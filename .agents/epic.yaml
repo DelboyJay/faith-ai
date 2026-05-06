@@ -594,7 +594,7 @@ phases:
         task_doc: 'tasks/FAITH-080-speech-to-text-dictation-input.md'
         dependencies: ['FAITH-041', 'FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.1, 6.4.2'
-        summary: 'Add microphone-driven dictation to the Input panel. Capture audio from the browser only after explicit user action, transcribe it through a free local transcription path by default using a dedicated STT runtime/service, insert the transcript back into the editable input box before send, and surface clear recording / transcribing / failure states without blocking normal typed input.'
+        summary: 'Add microphone-driven dictation to the Input panel. Capture audio from the browser only after explicit user action, transcribe it through a free local transcription path by default using a dedicated STT runtime/service, insert the transcript back into the editable input box before send, and surface clear recording / transcribing / failure states without blocking normal typed input. The feature must remain separately installable/configurable from optional TTS and avatar capabilities.'
       - id: 'FAITH-084'
         name: 'User Settings Window & Profile Preferences'
         complexity: 'M'
@@ -913,18 +913,27 @@ phases:
   - id: 15
     title: 'Optional Voice & Avatar Experience'
     status: 'TODO'
-    summary: 'Add an optional installable avatar runtime so users can talk to FAITH, hear spoken replies, and watch a talking avatar without making voice/avatar features mandatory for the core system.'
-    task_count: 3
+    summary: 'Add optional installable speech and avatar services so users can choose speech-to-text, text-to-speech, and talking-avatar capabilities independently without making voice/avatar features mandatory for the core system.'
+    task_count: 4
     tasks:
+      - id: 'FAITH-095'
+        name: 'Optional Text-to-Speech Runtime & Spoken Reply Integration'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-095-optional-text-to-speech-runtime-spoken-reply-integration.md'
+        dependencies: ['FAITH-036', 'FAITH-084']
+        frs_reference: 'Section 6.4.2, 9.3'
+        summary: 'Add optional text-to-speech support as a separate installable/configurable feature so PA replies can be spoken aloud without requiring microphone dictation or the talking-avatar feature. Provide a stable local runtime contract, voice playback controls, and graceful fallback to text-only chat when TTS is disabled.'
       - id: 'FAITH-092'
         name: 'Containerised Avatar Runtime & Service Contract'
         complexity: 'L'
         model: 'Opus / GPT-5.4 high reasoning'
         status: 'TODO'
         task_doc: 'tasks/FAITH-092-containerised-avatar-runtime-service-contract.md'
-        dependencies: ['FAITH-001', 'FAITH-005', 'FAITH-036', 'FAITH-080']
+        dependencies: ['FAITH-001', 'FAITH-005', 'FAITH-036', 'FAITH-095']
         frs_reference: 'Section 6.4.2, 9.2'
-        summary: 'Define and implement an optional dedicated Docker image for an independent avatar runtime. The service should expose a stable local contract for session lifecycle, text-to-speech playback, avatar animation or viseme metadata, health, and configuration while remaining installable and removable independently from the core FAITH services.'
+        summary: 'Define and implement an optional dedicated Docker image for an independent avatar runtime. The service should expose a stable local contract for session lifecycle, avatar animation or viseme metadata, health, and configuration while remaining installable and removable independently from the core FAITH services.'
       - id: 'FAITH-093'
         name: 'Avatar Panel, Speech Playback, and Voice Chat Integration'
         complexity: 'L'
@@ -940,9 +949,9 @@ phases:
         model: 'Sonnet / GPT-5.4'
         status: 'TODO'
         task_doc: 'tasks/FAITH-094-avatar-runtime-install-removal-preferences.md'
-        dependencies: ['FAITH-049', 'FAITH-084', 'FAITH-092']
+        dependencies: ['FAITH-049', 'FAITH-084', 'FAITH-092', 'FAITH-095']
         frs_reference: 'Section 7.2, 9.2, 9.3'
-        summary: 'Allow users to enable, disable, install, remove, and configure the optional avatar runtime cleanly through FAITH setup and settings flows. Persist avatar preferences and keep the feature isolated so users who do not want it can remove the container and related UI affordances without affecting the core stack.'
+        summary: 'Allow users to enable, disable, install, remove, and configure speech-to-text, text-to-speech, and the optional avatar runtime cleanly through FAITH setup and settings flows. Persist preferences and keep the features isolated so users who do not want them can remove the containers and related UI affordances without affecting the core stack.'
 
 
 

@@ -59,7 +59,7 @@
 | FAITH-049 | First-Run Wizard: Multi-Step UI | 10 (First Run) | IN PROGRESS | FAITH-036, FAITH-003, FAITH-014, FAITH-057 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-050 | Privacy Profile Enforcement & Provider Knowledge Base | 10 (First Run) | TODO | FAITH-049, FAITH-057, FAITH-003 | M | Sonnet / GPT-5.4 |
 | FAITH-051 | Ollama Model Download Integration | 10 (First Run) | DONE | FAITH-049, FAITH-057 | S | Sonnet / GPT-5.4 |
-| FAITH-052 | Cloud Deployment Architecture | 12 (Cloud) | TODO | FAITH-001, FAITH-002, FAITH-003, FAITH-004, FAITH-005, FAITH-006, FAITH-007, FAITH-008, FAITH-009, FAITH-010, FAITH-011, FAITH-012, FAITH-013, FAITH-014, FAITH-015, FAITH-016, FAITH-017, FAITH-018, FAITH-019, FAITH-020, FAITH-021, FAITH-022, FAITH-023, FAITH-024, FAITH-025, FAITH-026, FAITH-027, FAITH-028, FAITH-029, FAITH-030, FAITH-031, FAITH-032, FAITH-033, FAITH-034, FAITH-035, FAITH-036, FAITH-038, FAITH-039, FAITH-040, FAITH-041, FAITH-042, FAITH-043, FAITH-044, FAITH-045, FAITH-046, FAITH-047, FAITH-048, FAITH-049, FAITH-050, FAITH-051, FAITH-053, FAITH-054, FAITH-055, FAITH-056, FAITH-057, FAITH-058, FAITH-059, FAITH-061, FAITH-062, FAITH-063, FAITH-064, FAITH-065, FAITH-066, FAITH-067, FAITH-068, FAITH-069, FAITH-070, FAITH-071, FAITH-072, FAITH-073, FAITH-074, FAITH-075, FAITH-076, FAITH-077, FAITH-078, FAITH-079, FAITH-080, FAITH-081, FAITH-082, FAITH-083, FAITH-084, FAITH-085, FAITH-086, FAITH-087, FAITH-088, FAITH-089, FAITH-090, FAITH-091, FAITH-092, FAITH-093, FAITH-094 | XL | Opus / GPT-5.4 high reasoning |
+| FAITH-052 | Cloud Deployment Architecture | 12 (Cloud) | TODO | FAITH-001, FAITH-002, FAITH-003, FAITH-004, FAITH-005, FAITH-006, FAITH-007, FAITH-008, FAITH-009, FAITH-010, FAITH-011, FAITH-012, FAITH-013, FAITH-014, FAITH-015, FAITH-016, FAITH-017, FAITH-018, FAITH-019, FAITH-020, FAITH-021, FAITH-022, FAITH-023, FAITH-024, FAITH-025, FAITH-026, FAITH-027, FAITH-028, FAITH-029, FAITH-030, FAITH-031, FAITH-032, FAITH-033, FAITH-034, FAITH-035, FAITH-036, FAITH-038, FAITH-039, FAITH-040, FAITH-041, FAITH-042, FAITH-043, FAITH-044, FAITH-045, FAITH-046, FAITH-047, FAITH-048, FAITH-049, FAITH-050, FAITH-051, FAITH-053, FAITH-054, FAITH-055, FAITH-056, FAITH-057, FAITH-058, FAITH-059, FAITH-061, FAITH-062, FAITH-063, FAITH-064, FAITH-065, FAITH-066, FAITH-067, FAITH-068, FAITH-069, FAITH-070, FAITH-071, FAITH-072, FAITH-073, FAITH-074, FAITH-075, FAITH-076, FAITH-077, FAITH-078, FAITH-079, FAITH-080, FAITH-081, FAITH-082, FAITH-083, FAITH-084, FAITH-085, FAITH-086, FAITH-087, FAITH-088, FAITH-089, FAITH-090, FAITH-091, FAITH-092, FAITH-093, FAITH-094, FAITH-095 | XL | Opus / GPT-5.4 high reasoning |
 | FAITH-053 | First-Run Wizard: Detailed Specification | 10 (First Run) | TODO | FAITH-049, FAITH-057 | M | Sonnet / GPT-5.4 |
 | FAITH-054 | `faith run` Command & Task API | 11 (CLI & Skills) | TODO | FAITH-005, FAITH-036, FAITH-015 | M | Sonnet / GPT-5.4 |
 | FAITH-055 | Skill Definitions & Unattended Execution | 11 (CLI & Skills) | TODO | FAITH-054, FAITH-019 | M | Opus / GPT-5.4 high reasoning |
@@ -98,9 +98,10 @@
 | FAITH-089 | PA Chat Specialist Delegation Loop | 14 (Specialist-Agent Delegation from PA Chat) | TODO | FAITH-015, FAITH-016, FAITH-068, FAITH-088 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-090 | Delegated Specialist Result Relay & Persistence | 14 (Specialist-Agent Delegation from PA Chat) | TODO | FAITH-046, FAITH-082, FAITH-089 | M | Sonnet / GPT-5.4 |
 | FAITH-091 | Canonical Specialist-Agent Team Manifest & Delegation Grounding | 14 (Specialist-Agent Delegation from PA Chat) | TODO | FAITH-015, FAITH-081, FAITH-088 | M | Sonnet / GPT-5.4 |
-| FAITH-092 | Containerised Avatar Runtime & Service Contract | 15 (Optional Voice & Avatar Experience) | TODO | FAITH-001, FAITH-005, FAITH-036, FAITH-080 | L | Opus / GPT-5.4 high reasoning |
+| FAITH-092 | Containerised Avatar Runtime & Service Contract | 15 (Optional Voice & Avatar Experience) | TODO | FAITH-001, FAITH-005, FAITH-036, FAITH-095 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-093 | Avatar Panel, Speech Playback, and Voice Chat Integration | 15 (Optional Voice & Avatar Experience) | TODO | FAITH-080, FAITH-084, FAITH-092 | L | Opus / GPT-5.4 high reasoning |
-| FAITH-094 | Avatar Runtime Install, Removal, and Preference Management | 15 (Optional Voice & Avatar Experience) | TODO | FAITH-049, FAITH-084, FAITH-092 | M | Sonnet / GPT-5.4 |
+| FAITH-094 | Avatar Runtime Install, Removal, and Preference Management | 15 (Optional Voice & Avatar Experience) | TODO | FAITH-049, FAITH-084, FAITH-092, FAITH-095 | M | Sonnet / GPT-5.4 |
+| FAITH-095 | Optional Text-to-Speech Runtime & Spoken Reply Integration | 15 (Optional Voice & Avatar Experience) | TODO | FAITH-036, FAITH-084 | M | Sonnet / GPT-5.4 |
 
 ---
 
@@ -229,6 +230,7 @@ flowchart TD
     FAITH-092["FAITH-092<br/>Containerised Avatar Runtime & Service Contract<br/>Phase 15 | TODO | L"]
     FAITH-093["FAITH-093<br/>Avatar Panel, Speech Playback, and Voice Chat Integration<br/>Phase 15 | TODO | L"]
     FAITH-094["FAITH-094<br/>Avatar Runtime Install, Removal, and Preference Management<br/>Phase 15 | TODO | M"]
+    FAITH-095["FAITH-095<br/>Optional Text-to-Speech Runtime & Spoken Reply Integration<br/>Phase 15 | TODO | M"]
 
     %% ════════════════════════════════════
     %% DEPENDENCY ARROWS
@@ -412,6 +414,7 @@ flowchart TD
     FAITH-092 --> FAITH-052
     FAITH-093 --> FAITH-052
     FAITH-094 --> FAITH-052
+    FAITH-095 --> FAITH-052
     FAITH-049 --> FAITH-053
     FAITH-057 --> FAITH-053
     FAITH-005 --> FAITH-054
@@ -522,13 +525,16 @@ flowchart TD
     FAITH-001 --> FAITH-092
     FAITH-005 --> FAITH-092
     FAITH-036 --> FAITH-092
-    FAITH-080 --> FAITH-092
+    FAITH-095 --> FAITH-092
     FAITH-080 --> FAITH-093
     FAITH-084 --> FAITH-093
     FAITH-092 --> FAITH-093
     FAITH-049 --> FAITH-094
     FAITH-084 --> FAITH-094
     FAITH-092 --> FAITH-094
+    FAITH-095 --> FAITH-094
+    FAITH-036 --> FAITH-095
+    FAITH-084 --> FAITH-095
 
     %% ════════════════════════════════════
     %% PHASE COLOUR CODING
@@ -564,7 +570,7 @@ flowchart TD
     class FAITH-052 phase12
     class FAITH-063,FAITH-074,FAITH-075,FAITH-076,FAITH-077,FAITH-078 phase13
     class FAITH-088,FAITH-089,FAITH-090,FAITH-091 phase14
-    class FAITH-092,FAITH-093,FAITH-094 phase15
+    class FAITH-092,FAITH-093,FAITH-094,FAITH-095 phase15
 ```
 
 ---
@@ -576,10 +582,10 @@ The critical path is the longest weighted dependency chain before cloud deployme
 ### Primary Critical Path
 
 ```
-FAITH-001 -> FAITH-002 -> FAITH-007 -> FAITH-010 -> FAITH-014 -> FAITH-057 -> FAITH-015 -> FAITH-016 -> FAITH-068 -> FAITH-089 -> FAITH-090
+FAITH-001 -> FAITH-002 -> FAITH-007 -> FAITH-010 -> FAITH-014 -> FAITH-057 -> FAITH-049 -> FAITH-083 -> FAITH-084 -> FAITH-095 -> FAITH-092 -> FAITH-093
 ```
 
-**Weighted duration estimate:** ~29 days using the epic complexity weights.
+**Weighted duration estimate:** ~29.5 days using the epic complexity weights.
 
 ---
 
@@ -695,7 +701,6 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-073 | Agent Runtime Date Time Prompt Injection | 8 (Web UI) | DONE | S |
 | FAITH-082 | Project Agent Transcript Rehydration on Restart | 8 (Web UI) | DONE | S |
 | FAITH-091 | Canonical Specialist-Agent Team Manifest & Delegation Grounding | 14 (Specialist-Agent Delegation from PA Chat) | TODO | M |
-| FAITH-092 | Containerised Avatar Runtime & Service Contract | 15 (Optional Voice & Avatar Experience) | TODO | L |
 
 ### Wave 10
 | Task | Name | Phase | Status | Complexity |
@@ -718,19 +723,21 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-075 | Dockview Default Layout & Panel Constraints | 13 (Web UI Workspace Migration) | DONE | M |
 | FAITH-086 | Host-Backed Web UI Saved State Persistence | 8 (Web UI) | DONE | S |
 | FAITH-087 | Locale & Timezone Fixed-Option Selectors | 8 (Web UI) | DONE | S |
-| FAITH-093 | Avatar Panel, Speech Playback, and Voice Chat Integration | 15 (Optional Voice & Avatar Experience) | TODO | L |
-| FAITH-094 | Avatar Runtime Install, Removal, and Preference Management | 15 (Optional Voice & Avatar Experience) | TODO | M |
+| FAITH-095 | Optional Text-to-Speech Runtime & Spoken Reply Integration | 15 (Optional Voice & Avatar Experience) | TODO | M |
 
 ### Wave 13
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
 | FAITH-062 | Panel Lifecycle & Deduping | 8 (Web UI) | TODO | S |
+| FAITH-092 | Containerised Avatar Runtime & Service Contract | 15 (Optional Voice & Avatar Experience) | TODO | L |
 
 ### Wave 14
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
 | FAITH-063 | Snap-Grid Panel Layout Refinement | 13 (Web UI Workspace Migration) | DONE | M |
 | FAITH-064 | Panel Title-Bar Actions | 8 (Web UI) | TODO | S |
+| FAITH-093 | Avatar Panel, Speech Playback, and Voice Chat Integration | 15 (Optional Voice & Avatar Experience) | TODO | L |
+| FAITH-094 | Avatar Runtime Install, Removal, and Preference Management | 15 (Optional Voice & Avatar Experience) | TODO | M |
 
 ### Wave 15
 | Task | Name | Phase | Status | Complexity |
@@ -761,12 +768,12 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | **Wave 6** | FAITH-035, FAITH-057, FAITH-074 | Waves 1-5 | 3 |
 | **Wave 7** | FAITH-015, FAITH-022, FAITH-024, FAITH-026, FAITH-031, FAITH-038, FAITH-039, FAITH-040, FAITH-041, FAITH-044, FAITH-049, FAITH-058, FAITH-076, FAITH-077, FAITH-081 | Waves 1-6 | 15 |
 | **Wave 8** | FAITH-016, FAITH-018, FAITH-023, FAITH-027, FAITH-028, FAITH-030, FAITH-032, FAITH-034, FAITH-042, FAITH-043, FAITH-046, FAITH-050, FAITH-051, FAITH-053, FAITH-054, FAITH-071, FAITH-079, FAITH-080, FAITH-085, FAITH-088 | Waves 1-7 | 20 |
-| **Wave 9** | FAITH-017, FAITH-047, FAITH-055, FAITH-061, FAITH-066, FAITH-067, FAITH-068, FAITH-073, FAITH-082, FAITH-091, FAITH-092 | Waves 1-8 | 11 |
+| **Wave 9** | FAITH-017, FAITH-047, FAITH-055, FAITH-061, FAITH-066, FAITH-067, FAITH-068, FAITH-073, FAITH-082, FAITH-091 | Waves 1-8 | 10 |
 | **Wave 10** | FAITH-048, FAITH-056, FAITH-069, FAITH-083, FAITH-089 | Waves 1-9 | 5 |
 | **Wave 11** | FAITH-084, FAITH-090 | Waves 1-10 | 2 |
-| **Wave 12** | FAITH-075, FAITH-086, FAITH-087, FAITH-093, FAITH-094 | Waves 1-11 | 5 |
-| **Wave 13** | FAITH-062 | Waves 1-12 | 1 |
-| **Wave 14** | FAITH-063, FAITH-064 | Waves 1-13 | 2 |
+| **Wave 12** | FAITH-075, FAITH-086, FAITH-087, FAITH-095 | Waves 1-11 | 4 |
+| **Wave 13** | FAITH-062, FAITH-092 | Waves 1-12 | 2 |
+| **Wave 14** | FAITH-063, FAITH-064, FAITH-093, FAITH-094 | Waves 1-13 | 4 |
 | **Wave 15** | FAITH-070 | Waves 1-14 | 1 |
 | **Wave 16** | FAITH-072 | Waves 1-15 | 1 |
 | **Wave 17** | FAITH-052 | Waves 1-16 | 1 |
@@ -775,7 +782,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 
 ## Notes
 
-- **Total tasks:** 92 (FAITH-001 through FAITH-094)
+- **Total tasks:** 93 (FAITH-001 through FAITH-095)
 - **Minimum waves to completion (excl. cloud):** 16
 - **Maximum parallelism:** Wave 8 with 20 concurrent tasks
 - **Source of truth:** `epic.yaml`
