@@ -3,7 +3,7 @@
 **Phase:** 9 — Logging & Observability
 **Complexity:** S
 **Model:** Haiku / GPT-5.4-mini
-**Status:** TODO
+**Status:** DONE
 **Dependencies:** FAITH-021, FAITH-045, FAITH-047
 **FRS Reference:** Section 8.6
 
@@ -12,6 +12,8 @@
 ## Objective
 
 Implement log rotation and retention policy for the FAITH framework. Audit logs, event logs, and token logs are archived after `log_retention_days` (default 90 days). Session logs are archived after `session_retention_days` (default 365 days). Archived logs are moved to `logs/archive/` — never automatically deleted. The PA surfaces a notification when the archive exceeds a configurable size threshold (default 1GB).
+
+Current implementation note: the PA now performs startup rotation checks across active logs and persisted session history, archives aged data instead of deleting it, and warns the user when retained archive size crosses the configured threshold.
 
 ---
 
@@ -251,7 +253,7 @@ class LogRotator:
         """Check and rotate session log directories if older than threshold.
 
         Session logs are stored in a two-level structure:
-        logs/sessions/sess-XXXX-YYYY-MM-DD/
+        .faith/sessions/sess-XXXX-YYYY-MM-DD/
         └── task-NNN-HHMMSS.mmm/
 
         Each session directory has a session.meta.json file with a 'started'
@@ -1007,7 +1009,7 @@ The LogRotator integrates with existing log writer infrastructure:
 - `AuditLogger` (FAITH-021) — rotator archives `audit.log`
 - `EventLogWriter` (FAITH-045) — rotator archives `events.log`
 - `TokenLogWriter` (FAITH-047) — rotator archives `tokens.log`
-- `SessionLogWriter` (FAITH-046) — rotator archives `logs/sessions/` directories
+- `SessionLogWriter` (FAITH-046) — rotator archives `.faith/sessions/` directories
 
 No changes to the log writers themselves are needed; the rotator is independent.
 
@@ -1020,7 +1022,7 @@ No changes to the log writers themselves are needed; the rotator is independent.
 3. `rotate_audit_log()` archives `logs/audit.log` if older than `log_retention_days`; returns archived path or None.
 4. `rotate_event_log()` archives `logs/events.log` if older than `log_retention_days`; returns archived path or None.
 5. `rotate_token_log()` archives `logs/tokens.log` if older than `log_retention_days`; returns archived path or None.
-6. `rotate_session_logs()` archives session directories from `logs/sessions/` if the session start time (from `session.meta.json`) is older than `session_retention_days`; returns list of archived paths.
+6. `rotate_session_logs()` archives session directories from `.faith/sessions/` if the session start time (from `session.meta.json`) is older than `session_retention_days`; returns list of archived paths.
 7. Session directories are grouped under a timestamped parent directory (`sessions_YYYYMMDD_HHMMSS/`) during archival to preserve structure.
 8. Archived files are moved (never copied) to `logs/archive/` with a timestamp suffix in the filename (e.g., `audit_20260325_143201.log`).
 9. `get_archive_size()` calculates total archive size in bytes; `get_archive_size_gb()` returns size in GB.

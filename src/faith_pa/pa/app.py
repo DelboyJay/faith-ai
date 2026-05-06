@@ -36,7 +36,7 @@ from faith_pa.config import (
     logs_dir,
     update_system_config_fields,
 )
-from faith_pa.logging import TokenLogger
+from faith_pa.logging import EventLogWriter, LogRotator, TokenLogger
 from faith_pa.pa.chat_tool_loop import (
     ProjectAgentMCPToolExecutor,
     build_mcp_inventory_answer,
@@ -1751,6 +1751,41 @@ def _build_token_logger() -> TokenLogger:
     )
 
 
+def _build_event_log_writer() -> EventLogWriter:
+    """Description:
+        Build the shared event log writer used by the PA runtime.
+
+    Requirements:
+        - Write to the canonical host-backed logs directory.
+
+    :returns: Configured event log writer for system event persistence.
+    """
+
+    return EventLogWriter(logs_dir=logs_dir())
+
+
+def _build_log_rotator() -> LogRotator:
+    """Description:
+        Build the shared log rotator used by the PA runtime.
+
+    Requirements:
+        - Honour configured retention thresholds when the project config is available.
+        - Fall back to default thresholds when config loading fails.
+
+    :returns: Configured log rotator for startup retention checks.
+    """
+
+    try:
+        system_config = load_system_config()
+    except Exception:
+        return LogRotator(logs_dir=logs_dir(), session_root=_project_agent_session_root())
+    return LogRotator.from_system_config(
+        logs_dir=logs_dir(),
+        session_root=_project_agent_session_root(),
+        system_config=system_config.model_dump(mode="python"),
+    )
+
+
 async def _build_status(app: FastAPI) -> ServiceStatus:
     """Description:
         Build the current runtime status snapshot.
@@ -2045,8 +2080,11 @@ async def lifespan(app: FastAPI):
         project_root=Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
     )
     app.state.project_agent_token_logger = _build_token_logger()
+    app.state.event_log_writer = _build_event_log_writer()
+    app.state.log_rotator = _build_log_rotator()
     app.state.redis = await get_async_client()
     chat_runtime = None
+    event_log_task = None
     if app.state.redis is not None:
         llm_client = _build_project_agent_llm_client()
         app.state.chat_llm_client = llm_client
@@ -2060,7 +2098,23 @@ async def lifespan(app: FastAPI):
         )
         app.state.project_agent_chat_runtime = chat_runtime
         await chat_runtime.start()
+        for _ in range(10):
+            if chat_runtime._pubsub is not None:
+                break
+            await asyncio.sleep(0)
+        event_log_task = asyncio.create_task(
+            app.state.event_log_writer.run(app.state.redis),
+            name="faith-event-log-writer",
+        )
+        rotation_summary = app.state.log_rotator.rotate_all()
+        if rotation_summary["archive_size_threshold_exceeded"]:
+            await chat_runtime._publish_warning(
+                "FAITH log archive warning: retained logs exceed the configured archive-size threshold."
+            )
     yield
+    if event_log_task is not None:
+        await app.state.event_log_writer.stop()
+        await event_log_task
     if chat_runtime is not None:
         await chat_runtime.stop()
     redis_client = getattr(app.state, "redis", None)

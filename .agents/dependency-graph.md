@@ -1,7 +1,7 @@
 # FAITH Epic — Dependency Graph & Implementation Schedule
 
 **Generated from:** `epic.yaml`
-**Date:** 2026-05-05
+**Date:** 2026-05-06
 
 ---
 
@@ -52,10 +52,10 @@
 | FAITH-042 | Shared Web UI Theme System | 8 (Web UI) | TODO | FAITH-074, FAITH-077 | S | Haiku / GPT-5.4-mini |
 | FAITH-043 | Project Switcher UI | 8 (Web UI) | TODO | FAITH-015, FAITH-074 | S | Haiku / GPT-5.4-mini |
 | FAITH-044 | Web UI Log Views | 8 (Web UI) | IN PROGRESS | FAITH-021, FAITH-074 | M | Opus / GPT-5.4 high reasoning |
-| FAITH-045 | Event Log Writer | 9 (Logging) | TODO | FAITH-009 | S | Haiku / GPT-5.4-mini |
+| FAITH-045 | Event Log Writer | 9 (Logging) | DONE | FAITH-009 | S | Haiku / GPT-5.4-mini |
 | FAITH-046 | Session & Task Log Writer | 9 (Logging) | IN PROGRESS | FAITH-015 | M | Sonnet / GPT-5.4 |
 | FAITH-047 | Token & Cost Log | 9 (Logging) | IN PROGRESS | FAITH-013, FAITH-030 | S | Haiku / GPT-5.4-mini |
-| FAITH-048 | Log Retention & Rotation | 9 (Logging) | TODO | FAITH-021, FAITH-045, FAITH-047 | S | Haiku / GPT-5.4-mini |
+| FAITH-048 | Log Retention & Rotation | 9 (Logging) | DONE | FAITH-021, FAITH-045, FAITH-047 | S | Haiku / GPT-5.4-mini |
 | FAITH-049 | First-Run Wizard: Multi-Step UI | 10 (First Run) | IN PROGRESS | FAITH-036, FAITH-003, FAITH-014, FAITH-057 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-050 | Privacy Profile Enforcement & Provider Knowledge Base | 10 (First Run) | TODO | FAITH-049, FAITH-057, FAITH-003 | M | Sonnet / GPT-5.4 |
 | FAITH-051 | Ollama Model Download Integration | 10 (First Run) | DONE | FAITH-049, FAITH-057 | S | Sonnet / GPT-5.4 |
@@ -181,10 +181,10 @@ flowchart TD
     FAITH-087["FAITH-087<br/>Locale & Timezone Fixed-Option Selectors<br/>Phase 8 | DONE | S"]
 
     %% ── Phase 9: Logging ──
-    FAITH-045["FAITH-045<br/>Event Log Writer<br/>Phase 9 | TODO | S"]
+    FAITH-045["FAITH-045<br/>Event Log Writer<br/>Phase 9 | DONE | S"]
     FAITH-046["FAITH-046<br/>Session & Task Log Writer<br/>Phase 9 | IN PROGRESS | M"]
     FAITH-047["FAITH-047<br/>Token & Cost Log<br/>Phase 9 | IN PROGRESS | S"]
-    FAITH-048["FAITH-048<br/>Log Retention & Rotation<br/>Phase 9 | TODO | S"]
+    FAITH-048["FAITH-048<br/>Log Retention & Rotation<br/>Phase 9 | DONE | S"]
 
     %% ── Phase 10: First Run ──
     FAITH-049["FAITH-049<br/>First-Run Wizard: Multi-Step UI<br/>Phase 10 | IN PROGRESS | L"]
@@ -576,7 +576,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-012 | MCP Adapter Layer | 3 (Agent Runtime) | DONE | L |
 | FAITH-013 | LLM API Client (Ollama + OpenRouter) | 3 (Agent Runtime) | DONE | M |
 | FAITH-014 | PA Container Setup & Docker SDK Integration | 4 (PA Core) | DONE | M |
-| FAITH-045 | Event Log Writer | 9 (Logging) | TODO | S |
+| FAITH-045 | Event Log Writer | 9 (Logging) | DONE | S |
 | FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | DONE | S |
 | FAITH-078 | Frontend Build Pipeline & Bundled Asset Integration | 13 (Web UI Workspace Migration) | DONE | M |
 
@@ -645,7 +645,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 ### Wave 10
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
-| FAITH-048 | Log Retention & Rotation | 9 (Logging) | TODO | S |
+| FAITH-048 | Log Retention & Rotation | 9 (Logging) | DONE | S |
 | FAITH-056 | Built-in Skill Scheduler | 11 (CLI & Skills) | TODO | M |
 | FAITH-069 | PA MCP Inventory Grounding | 7 (CAG & External MCP) | DONE | S |
 | FAITH-083 | User Timezone Preference Resolution & Persistence | 10 (First Run) | IN PROGRESS | S |

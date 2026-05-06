@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from faith_pa.logging.token_logger import TokenLogger
 from faith_pa.pa.chat_tool_loop import ChatToolCall, list_available_chat_mcp_tools
 from faith_pa.runtime_time_context import RuntimeTimeContextProvider
 from faith_pa.utils.redis_client import USER_INPUT_CHANNEL
+from faith_shared.protocol.events import SYSTEM_EVENTS_CHANNEL, EventType, FaithEvent
 
 
 class FakePubSub:
@@ -144,6 +146,8 @@ class FakeRedis:
         self.ping_value = ping_value
         self.published: list[tuple[str, str]] = []
         self.pubsub_instance = FakePubSub()
+        self._extra_pubsubs: list[FakePubSub] = []
+        self._pubsub_calls = 0
 
     async def ping(self) -> bool:
         """Description:
@@ -187,7 +191,13 @@ class FakeRedis:
         :returns: Reusable fake pub/sub object.
         """
 
-        return self.pubsub_instance
+        if self._pubsub_calls == 0:
+            self._pubsub_calls += 1
+            return self.pubsub_instance
+        pubsub = FakePubSub()
+        self._extra_pubsubs.append(pubsub)
+        self._pubsub_calls += 1
+        return pubsub
 
 
 class FakeLLMResponse:
@@ -586,6 +596,42 @@ def test_pa_docker_runtime_websocket_streams_snapshot(client: TestClient) -> Non
     finally:
         if hasattr(pa_app_module.app.state, "runtime_snapshot_builder"):
             delattr(pa_app_module.app.state, "runtime_snapshot_builder")
+
+
+def test_pa_lifespan_persists_system_events_to_events_log(
+    client: TestClient,
+    fake_redis: FakeRedis,
+) -> None:
+    """Description:
+    Verify the PA lifespan starts the event log writer and persists system events.
+
+    Requirements:
+    - This test is needed to prove Phase 9 event logging is active in the running PA service, not only in isolated unit tests.
+    - Verify a queued system event is written to `events.log` by the background event log subscriber.
+
+    :param client: Test client for the PA application.
+    :param fake_redis: Fake Redis client used by the application lifespan.
+    """
+
+    del client
+    event = FaithEvent(
+        event=EventType.CHANNEL_STALLED,
+        source="system",
+        channel="ch-auth-review",
+        data={"idle_seconds": 120},
+    )
+    assert fake_redis._extra_pubsubs
+    fake_redis._extra_pubsubs[0].inject_message(SYSTEM_EVENTS_CHANNEL, event.to_json())
+
+    for _ in range(20):
+        log_path = pa_app_module.app.state.event_log_writer.log_path
+        if log_path.exists() and "channel:stalled" in log_path.read_text(encoding="utf-8"):
+            break
+        time.sleep(0.01)
+
+    log_text = pa_app_module.app.state.event_log_writer.log_path.read_text(encoding="utf-8")
+    assert "channel:stalled" in log_text
+    assert "ch-auth-review" in log_text
 
 
 def test_pa_config_returns_redacted_summary(client: TestClient) -> None:

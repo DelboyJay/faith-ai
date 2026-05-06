@@ -3,7 +3,7 @@
 **Phase:** 9 — Logging & Observability
 **Complexity:** S
 **Model:** Haiku / GPT-5.4-mini
-**Status:** TODO
+**Status:** DONE
 **Dependencies:** FAITH-009
 **FRS Reference:** Section 8.3
 
@@ -12,6 +12,8 @@
 ## Objective
 
 Implement the `EventLogWriter` class that subscribes to the `system-events` Redis channel via `EventSubscriber` (FAITH-009) and writes every event to `logs/events.log` as JSON lines. The event log complements the audit log — where the audit log records *what agents did*, the event log records *the state changes that drove PA decisions*. Retention follows the same policy as the audit log (`log_retention_days` in `.faith/system.yaml`, default 90 days, archive not delete).
+
+Current implementation note: the runtime now persists canonical `system-events` traffic to `logs/events.log`, exposes stable read/query helpers used by the Web UI log views, and starts/stops the event writer as part of the PA lifespan.
 
 ---
 

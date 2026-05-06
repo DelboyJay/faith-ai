@@ -2881,7 +2881,7 @@ FAITH maintains four distinct log types, each with a clear purpose, format, and 
 |---|---|---|---|
 | **Audit log** | `logs/audit.log` | JSON lines | Every tool action, approval decision, container event |
 | **Event log** | `logs/events.log` | JSON lines | All system events from the `system-events` channel |
-| **Session logs** | `logs/sessions/sess-XXXX-YYYY-MM-DD/` | Markdown + JSON | Conversation history, task metadata |
+| **Session logs** | `.faith/sessions/sess-XXXX-YYYY-MM-DD/` | Markdown + JSON | Conversation history, task metadata |
 | **Token log** | `logs/tokens.log` | JSON lines | Per-call token counts, cost estimates, model used |
 
 ---
@@ -2911,7 +2911,7 @@ Retention follows the same policy as the audit log (`log_retention_days` in `sys
 Session logs capture the full human-readable record of all conversations and tasks. Structure defined in Section 3 discussions:
 
 ```
-logs/sessions/
+.faith/sessions/
 └── sess-0042-2026-03-23/
     ├── session.meta.json              ← session metadata (JSON — read by PA on restart)
     ├── pa-user.log                    ← PA↔user conversation (markdown, full session)
@@ -3018,7 +3018,7 @@ The following log views are available in the Web UI:
 |---|---|---|
 | **Audit trail** | `audit.log` | Filter by agent, tool, action, date range; search by command |
 | **Event timeline** | `events.log` | Chronological event stream; filter by event type or agent |
-| **Session history** | `logs/sessions/` | Browse sessions and tasks; open channel logs as read-only panels |
+| **Session history** | `.faith/sessions/` | Browse sessions and tasks; open channel logs as read-only panels |
 | **Token usage** | `tokens.log` | Per-agent token chart; cumulative cost by model; session comparisons |
 | **Approval history** | `audit.log` (filtered) | All approve/deny decisions with full context |
 

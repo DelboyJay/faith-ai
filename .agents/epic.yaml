@@ -642,19 +642,19 @@ phases:
         summary: 'Restore the latest persisted Project Agent conversation into the Web UI panel after browser reload, Web UI restart, or PA restart. The PA must persist the session-level transcript to `pa-user.log`, expose an API for the latest transcript, resume the latest session when appropriate, and render the saved conversation before live WebSocket streaming resumes so the visible transcript matches retained backend context.'
   - id: 9
     title: 'Logging & Observability'
-    status: 'TODO'
-    summary: ''
+    status: 'IN PROGRESS'
+    summary: 'Persist and surface FAITH audit, event, session, token, and archive state with honest operational visibility. Event logging and retention/rotation are now implemented; broader session/task and token/cost runtime coverage still has remaining work.'
     task_count: 4
     tasks:
       - id: 'FAITH-045'
         name: 'Event Log Writer'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-045-event-log-writer.md'
         dependencies: ['FAITH-009']
         frs_reference: 'Section 8.3'
-        summary: 'Subscribe to `system-events` and write all events to `logs/events.log` as JSON lines. Same retention policy as audit log.'
+        summary: 'Subscribe to `system-events` and write all events to `logs/events.log` as JSON lines. Same retention policy as audit log. The PA runtime now starts a background event-log writer, persists canonical system events, and exposes stable read/query helpers for Web UI log views.'
       - id: 'FAITH-046'
         name: 'Session & Task Log Writer'
         complexity: 'M'
@@ -663,7 +663,7 @@ phases:
         task_doc: 'tasks/FAITH-046-session-task-log-writer.md'
         dependencies: ['FAITH-015']
         frs_reference: 'Section 8.4'
-        summary: 'Write session logs in the two-level directory structure. `session.meta.json` and `task.meta.json` with all fields defined in FRS. Channel logs in markdown format with compact protocol rendering. `pa-user.log` at session level. Agent cross-reference index (`agents/*/sessions.index.md`). No content duplication — one log per channel per task.'
+        summary: 'Write session logs in the two-level `.faith/sessions/` directory structure. `session.meta.json` and `task.meta.json` with all fields defined in FRS. Channel logs in markdown format with compact protocol rendering. `pa-user.log` at session level. Agent cross-reference index (`agents/*/sessions.index.md`). No content duplication — one log per channel per task. Current implementation covers persisted session/task metadata, PA transcript persistence, compact channel logs, token aggregation, and agent indices, but broader specialist-agent runtime coverage remains incomplete.'
       - id: 'FAITH-047'
         name: 'Token & Cost Log'
         complexity: 'S'
@@ -672,16 +672,16 @@ phases:
         task_doc: 'tasks/FAITH-047-token-cost-log.md'
         dependencies: ['FAITH-013', 'FAITH-030']
         frs_reference: 'Section 8.5'
-        summary: 'Log every LLM API call to `logs/tokens.log` as JSON lines: timestamp, session_id, task_id, agent, model, input_tokens, output_tokens, estimated_cost (via Pricing tool), price_source, price_age_days. Implement proactive cost warning: when session cost crosses threshold (default $1.00), surface warning in Web UI. Current implementation now covers the Project Agent chat loop and persisted token accounting, but broader pricing-tool/runtime status integration remains incomplete.'
+        summary: 'Log every LLM API call to `logs/tokens.log` as JSON lines: timestamp, session_id, task_id, agent, model, input_tokens, output_tokens, estimated_cost (via Pricing tool), price_source, price_age_days. Implement proactive cost warning: when session cost crosses threshold (default $1.00), surface warning in Web UI. Current implementation now covers the Project Agent chat loop, base-agent token logging hooks, and persisted token accounting, but broader pricing-tool/runtime status integration remains incomplete.'
       - id: 'FAITH-048'
         name: 'Log Retention & Rotation'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-048-log-retention-rotation.md'
         dependencies: ['FAITH-021', 'FAITH-045', 'FAITH-047']
         frs_reference: 'Section 8.6'
-        summary: 'Implement log rotation per `.faith/system.yaml` settings. Audit/event/token logs: archive after `log_retention_days` (default 90). Session logs: archive after `session_retention_days` (default 365). Move to `logs/archive/`, never auto-delete. Notify user when archive exceeds configurable size threshold (default 1GB).'
+        summary: 'Implement log rotation per `.faith/system.yaml` settings. Audit/event/token logs: archive after `log_retention_days` (default 90). Session logs: archive after `session_retention_days` (default 365). Move to `logs/archive/`, never auto-delete. Notify user when archive exceeds configurable size threshold (default 1GB). The PA runtime now performs rotation checks and archive-threshold warning detection against persisted logs and session history.'
   - id: 10
     title: 'First-Run Wizard & Setup'
     status: 'TODO'

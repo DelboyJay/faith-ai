@@ -16,6 +16,7 @@ import pytest
 
 from faith_pa.agent import AgentMessage, BaseAgent
 from faith_pa.config.models import AgentConfig, SystemConfig
+from faith_pa.logging import TokenLogger
 from faith_pa.runtime_time_context import RuntimeTimeContextProvider
 from faith_pa.utils.tokens import (
     FALLBACK_CHARS_PER_TOKEN,
@@ -787,3 +788,37 @@ async def test_base_agent_run_subscribes_personal_channel_and_shuts_down_cleanly
     assert "pa-agent-run" in redis._pubsub.subscribed
     assert "pa-agent-run" in redis._pubsub.unsubscribed
     assert redis._pubsub.closed is True
+
+
+@pytest.mark.asyncio
+async def test_base_agent_logs_token_usage_for_llm_calls(tmp_path):
+    """Description:
+    Verify the base agent logs token usage for every LLM call.
+
+    Requirements:
+        - This test is needed to prove token and cost logging applies to specialist agents, not just the Project Agent chat path.
+        - Verify the written token log entry preserves session, task, agent, and model identity.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    token_logger = TokenLogger(logs_dir=tmp_path / "logs")
+    token_logger.set_pricing_data("gpt-5.4-mini", 0.001, "cache", 1)
+    agent = BaseAgent(
+        agent_id="agent-token-log",
+        config=build_agent_config(),
+        system_config=build_system_config(default_agent_model="gpt-5.4-mini"),
+        prompt_text="Prompt",
+        llm_client=FakeLLMClient(content="Done."),
+        token_logger=token_logger,
+        session_id="sess-0042",
+        task_id="task-001-143201.456",
+    )
+
+    await agent._call_llm("Implement the auth refresh endpoint.")
+
+    entries = token_logger.query_session("sess-0042")
+    assert len(entries) == 1
+    assert entries[0].agent == "software-developer"
+    assert entries[0].task_id == "task-001-143201.456"
+    assert entries[0].model == "gpt-5.4-mini"

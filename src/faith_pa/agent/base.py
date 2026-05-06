@@ -24,6 +24,7 @@ from faith_pa.agent.cag import CAGManager, CAGValidationResult
 from faith_pa.agent.llm_client import LLMClient
 from faith_pa.agent.summariser import ContextSummariser
 from faith_pa.config.models import AgentConfig, SystemConfig
+from faith_pa.logging import TokenLogger
 from faith_pa.runtime_time_context import RuntimeTimeContextProvider, RuntimeUserContextProvider
 from faith_pa.utils.tokens import (
     context_threshold,
@@ -144,6 +145,9 @@ class BaseAgent:
     :param context_window_tokens: Total context window available to the model.
     :param redis_client: Optional Redis client used for channel subscriptions and event publishing.
     :param llm_client: Optional LLM client override used for chat completions.
+    :param token_logger: Optional shared token logger used for model-usage accounting.
+    :param session_id: Optional session identifier used for token-log entries.
+    :param task_id: Optional task identifier used for token-log entries.
     :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
     :param user_context_provider: Optional runtime user-context provider used for prompt assembly.
     """
@@ -160,6 +164,9 @@ class BaseAgent:
         context_window_tokens: int = DEFAULT_CONTEXT_WINDOW,
         redis_client: Any | None = None,
         llm_client: Any | None = None,
+        token_logger: TokenLogger | None = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
         time_context_provider: RuntimeTimeContextProvider | None = None,
         user_context_provider: RuntimeUserContextProvider | None = None,
     ) -> None:
@@ -179,6 +186,9 @@ class BaseAgent:
         :param context_window_tokens: Total context window available to the model.
         :param redis_client: Optional Redis client used for channel subscriptions and event publishing.
         :param llm_client: Optional LLM client override used for chat completions.
+        :param token_logger: Optional shared token logger used for model-usage accounting.
+        :param session_id: Optional session identifier used for token-log entries.
+        :param task_id: Optional task identifier used for token-log entries.
         :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
         :param user_context_provider: Optional runtime user-context provider used for prompt assembly.
         """
@@ -191,6 +201,9 @@ class BaseAgent:
         self.context_window_tokens = context_window_tokens
         self.recent_messages: list[AgentMessage] = []
         self.redis = redis_client
+        self.token_logger = token_logger
+        self.session_id = session_id
+        self.task_id = task_id
 
         faith_dir = (self.project_root / ".faith") if self.project_root else Path(".faith")
         self.summariser = ContextSummariser(
@@ -570,6 +583,15 @@ class BaseAgent:
             cag_present=bool(self.cag_manager.documents),
         )
         response = await self.llm_client.chat(cached_messages, temperature=temperature)
+        if self.token_logger is not None and self.session_id and self.task_id:
+            self.token_logger.log_api_call(
+                session_id=self.session_id,
+                task_id=self.task_id,
+                agent=self.config.role,
+                model=self.model_name,
+                input_tokens=response.input_tokens,
+                output_tokens=response.output_tokens,
+            )
         return AgentResponse(
             content=response.content,
             raw_response=response,
