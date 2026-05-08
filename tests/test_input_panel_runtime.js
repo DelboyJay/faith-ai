@@ -151,14 +151,42 @@ vm.runInThisContext(panelSource, { filename: "input-panel.js" });
   const textarea = findByTag(target, "textarea");
   const wrapper = target.children[0];
   const sendButton = findByText(target, "Send");
+  const helperText = findByText(target, "Enter to send. Alt+Enter for a newline.");
 
   assert(sendButton.disabled === true, "Expected Send to start disabled while the message is empty.");
+  assert(helperText, "Expected the input panel to render the keyboard shortcut helper text.");
   textarea.value = "click send from browser";
   textarea.dispatch("input");
   assert(sendButton.disabled === false, "Expected typing in the textarea to enable Send.");
-  sendButton.click();
+  let enterPrevented = false;
+  textarea.dispatch("keydown", {
+    key: "Enter",
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    preventDefault() {
+      enterPrevented = true;
+    },
+  });
   await flushAsyncTasks();
-  assert(fetchCalls[0].url === "/input", "Expected clicking the enabled Send button to post to /input.");
+  assert(enterPrevented === true, "Expected Enter send to prevent the browser default newline action.");
+  assert(fetchCalls[0].url === "/input", "Expected pressing Enter to post to /input.");
+
+  let altEnterPrevented = false;
+  const fetchCountAfterEnter = fetchCalls.length;
+  textarea.value = "draft line";
+  textarea.dispatch("keydown", {
+    key: "Enter",
+    altKey: true,
+    ctrlKey: false,
+    metaKey: false,
+    preventDefault() {
+      altEnterPrevented = true;
+    },
+  });
+  await flushAsyncTasks();
+  assert(altEnterPrevented === false, "Expected Alt+Enter to preserve the browser newline behaviour.");
+  assert(fetchCalls.length === fetchCountAfterEnter, "Expected Alt+Enter not to trigger a send.");
 
   textarea.value = "hello from user";
   await panel.submit();

@@ -93,6 +93,10 @@
     textarea.rows = 6;
     textarea.placeholder = "Ask the Project Agent something...";
 
+    const helperText = document.createElement("p");
+    helperText.className = "faith-input-panel__hint";
+    helperText.textContent = "Enter to send. Alt+Enter for a newline.";
+
     const queue = document.createElement("ul");
     queue.className = "faith-input-panel__attachments";
 
@@ -118,6 +122,7 @@
 
     wrapper.appendChild(errorBanner);
     wrapper.appendChild(textarea);
+    wrapper.appendChild(helperText);
     wrapper.appendChild(queue);
     wrapper.appendChild(controls);
     wrapper.appendChild(attachInput);
@@ -300,7 +305,7 @@
     });
 
     textarea.addEventListener("keydown", function onTextareaKeydown(event) {
-      if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      if (event.key === "Enter" && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
         event.preventDefault();
         void submit();
       }

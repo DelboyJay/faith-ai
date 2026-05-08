@@ -656,6 +656,12 @@ pre {
   font: inherit;
 }
 
+.faith-input-panel__hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
 .faith-input-panel__error {
   margin: 0;
   color: #f85149;

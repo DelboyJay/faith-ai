@@ -91,7 +91,7 @@
 | FAITH-082 | Project Agent Transcript Rehydration on Restart | 8 (Web UI) | DONE | FAITH-015, FAITH-038, FAITH-046, FAITH-074 | S | Sonnet / GPT-5.4 |
 | FAITH-083 | User Timezone Preference Resolution & Persistence | 10 (First Run) | IN PROGRESS | FAITH-003, FAITH-049, FAITH-073 | S | Sonnet / GPT-5.4 |
 | FAITH-084 | User Settings Window & Profile Preferences | 8 (Web UI) | DONE | FAITH-003, FAITH-004, FAITH-049, FAITH-074, FAITH-078, FAITH-083 | M | Sonnet / GPT-5.4 |
-| FAITH-085 | Input Panel Enter-to-Send & Newline Hint | 8 (Web UI) | TODO | FAITH-041, FAITH-074, FAITH-078 | S | Haiku / GPT-5.4-mini |
+| FAITH-085 | Input Panel Enter-to-Send & Newline Hint | 8 (Web UI) | DONE | FAITH-041, FAITH-074, FAITH-078 | S | Haiku / GPT-5.4-mini |
 | FAITH-086 | Host-Backed Web UI Saved State Persistence | 8 (Web UI) | DONE | FAITH-015, FAITH-071, FAITH-084 | S | Sonnet / GPT-5.4 |
 | FAITH-087 | Locale & Timezone Fixed-Option Selectors | 8 (Web UI) | DONE | FAITH-083, FAITH-084 | S | Sonnet / GPT-5.4 |
 | FAITH-088 | Runtime Specialist-Agent Materialisation & Lifecycle | 14 (Specialist-Agent Delegation from PA Chat) | TODO | FAITH-014, FAITH-015, FAITH-049 | L | Opus / GPT-5.4 high reasoning |
@@ -184,7 +184,7 @@ flowchart TD
     FAITH-080["FAITH-080<br/>Speech-to-Text Dictation Input<br/>Phase 8 | TODO | M"]
     FAITH-082["FAITH-082<br/>Project Agent Transcript Rehydration on Restart<br/>Phase 8 | DONE | S"]
     FAITH-084["FAITH-084<br/>User Settings Window & Profile Preferences<br/>Phase 8 | DONE | M"]
-    FAITH-085["FAITH-085<br/>Input Panel Enter-to-Send & Newline Hint<br/>Phase 8 | TODO | S"]
+    FAITH-085["FAITH-085<br/>Input Panel Enter-to-Send & Newline Hint<br/>Phase 8 | DONE | S"]
     FAITH-086["FAITH-086<br/>Host-Backed Web UI Saved State Persistence<br/>Phase 8 | DONE | S"]
     FAITH-087["FAITH-087<br/>Locale & Timezone Fixed-Option Selectors<br/>Phase 8 | DONE | S"]
 
@@ -685,7 +685,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-071 | PA System Prompt Editor Panel | 8 (Web UI) | DONE | M |
 | FAITH-079 | Runtime Badge & Container Status Sync | 8 (Web UI) | DONE | S |
 | FAITH-080 | Speech-to-Text Dictation Input | 8 (Web UI) | TODO | M |
-| FAITH-085 | Input Panel Enter-to-Send & Newline Hint | 8 (Web UI) | TODO | S |
+| FAITH-085 | Input Panel Enter-to-Send & Newline Hint | 8 (Web UI) | DONE | S |
 | FAITH-088 | Runtime Specialist-Agent Materialisation & Lifecycle | 14 (Specialist-Agent Delegation from PA Chat) | TODO | L |
 
 ### Wave 9

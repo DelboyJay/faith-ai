@@ -51,6 +51,8 @@ def test_input_panel_asset_targets_input_and_upload_routes() -> None:
     assert '"/upload"' in response.text
     assert "drop" in response.text
     assert "paste" in response.text
+    assert "Enter to send" in response.text
+    assert "Alt+Enter" in response.text
 
 
 def test_input_panel_runtime_behaviour() -> None:

@@ -3,7 +3,7 @@
 **Phase:** 8 — Web UI
 **Complexity:** S
 **Model:** Haiku / GPT-5.4-mini
-**Status:** TODO
+**Status:** DONE
 **Dependencies:** FAITH-041, FAITH-074, FAITH-078
 **FRS Reference:** Section 6.4.2
 

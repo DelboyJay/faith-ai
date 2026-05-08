@@ -608,7 +608,7 @@ phases:
         name: 'Input Panel Enter-to-Send & Newline Hint'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-085-input-panel-enter-send-newline-hint.md'
         dependencies: ['FAITH-041', 'FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.2'
