@@ -2,7 +2,7 @@
 
 **Phase:** 7 — CAG & External MCP Integration
 **Priority:** Medium
-**Status:** TODO
+**Status:** DONE
 **Dependencies:** FAITH-034, FAITH-022
 **FRS Reference:** Section 4.10.3.2, Section 4.10.4, Section 9.3.5
 

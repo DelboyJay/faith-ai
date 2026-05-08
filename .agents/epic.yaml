@@ -255,8 +255,8 @@ phases:
         summary: 'Implement the append-only audit log (`logs/audit.log`). JSON lines format. Log all tool operations (filesystem read/write, DB queries, Python execution, browser actions), all approval decisions, all container lifecycle events, file history restorations. Include: timestamp, agent, tool, action, target, approval tier, rule matched, decision, channel, msg_id, audit_id. PA is the sole writer. Log rotation configurable via `.faith/system.yaml` (default 90 days, archive not delete).'
   - id: 6
     title: 'MCP Tool Servers'
-    status: 'TODO'
-    summary: 'FAITH-owned MCP tools run as dedicated project-scoped containers. External v1 MCP servers are registry-backed npm `stdio` servers launched inside the project-scoped `mcp-runtime` container managed by the PA. Each FAITH-owned MCP server lives as a subpackage under `src/faith_mcp/`. Ownership note: - Mandatory FAITH-owned MCP tools in v1: `FAITH-022`, `FAITH-023`, `FAITH-024`, `FAITH-027`, `FAITH-031`, `FAITH-032`, `FAITH-033` - `FAITH-034` is FAITH-owned, but it is a PA/runtime feature rather than an MCP server - `FAITH-025`, `FAITH-026`, `FAITH-028`, `FAITH-029`, and `FAITH-030` should be treated as external-registry candidates or optional future work unless a public MCP server fails to meet FAITH requirements'
+    status: 'DONE'
+    summary: 'Filesystem, Ollama, Python execution, browser automation, code index, external PostgreSQL/Git/Tavily integration, optional external RAG/Pricing registration support, full-text search, and the session-scoped key-value store are implemented and host-verified. The Code Index tool now uses the FRS-required `tree-sitter` parser backend and tolerates recoverable syntax errors while continuing to expose deterministic symbol navigation.'
     task_count: 12
     tasks:
       - id: 'FAITH-022'
@@ -281,7 +281,7 @@ phases:
         name: 'Python Execution MCP Server'
         complexity: 'M'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-024-python-execution-mcp.md'
         dependencies: ['FAITH-003', 'FAITH-008', 'FAITH-057']
         frs_reference: 'Section 4.2'
@@ -290,7 +290,7 @@ phases:
         name: 'PostgreSQL Database MCP Server'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-025-database-mcp-server.md'
         dependencies: ['FAITH-003', 'FAITH-008']
         frs_reference: 'Section 4.4'
@@ -299,7 +299,7 @@ phases:
         name: 'Browser Automation MCP Server (Playwright)'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-026-browser-automation-mcp.md'
         dependencies: ['FAITH-003', 'FAITH-008', 'FAITH-035']
         frs_reference: 'Section 4.5'
@@ -308,7 +308,7 @@ phases:
         name: 'Code Index MCP Server (tree-sitter)'
         complexity: 'L'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-027-code-index-mcp.md'
         dependencies: ['FAITH-022']
         frs_reference: 'Section 4.8'
@@ -317,7 +317,7 @@ phases:
         name: 'RAG / ChromaDB MCP Server'
         complexity: 'L'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-028-rag-chromadb-mcp.md'
         dependencies: ['FAITH-002', 'FAITH-022']
         frs_reference: 'Section 4.7'
@@ -326,7 +326,7 @@ phases:
         name: 'Git MCP Server'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-029-git-mcp-server.md'
         dependencies: ['FAITH-019']
         frs_reference: 'Section 4.12'
@@ -335,7 +335,7 @@ phases:
         name: 'Pricing MCP Server'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-030-pricing-mcp-server.md'
         dependencies: ['FAITH-026', 'FAITH-008']
         frs_reference: 'Section 4.9'
@@ -344,7 +344,7 @@ phases:
         name: 'Web Search MCP Server'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-031-web-search-mcp.md'
         dependencies: ['FAITH-003', 'FAITH-035']
         frs_reference: 'Section 4.15'
@@ -353,7 +353,7 @@ phases:
         name: 'Full-Text Search MCP Server'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-032-fulltext-search-mcp.md'
         dependencies: ['FAITH-022']
         frs_reference: 'Section 4.14'
@@ -362,15 +362,15 @@ phases:
         name: 'Key-Value Store MCP Server'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-033-kv-store-mcp.md'
         dependencies: ['FAITH-002']
         frs_reference: 'Section 4.13'
         summary: 'Redis-backed. Keys namespaced per session (`sess-{id}:{key}`). MCP commands: `set(key, value, ttl?)`, `get(key)`, `delete(key)`, `list(prefix?)`, `exists(key)`. Keys expire on session close unless marked persistent.'
   - id: 7
     title: 'CAG & External MCP Integration'
-    status: 'IN PROGRESS'
-    summary: ''
+    status: 'DONE'
+    summary: 'CAG loading, project cag/ auto-discovery, external MCP lifecycle, PA chat tool-loop exposure, deterministic inventory grounding, and canonical MCP registry propagation are implemented and verified.'
     task_count: 6
     tasks:
       - id: 'FAITH-034'
@@ -422,7 +422,7 @@ phases:
         name: 'Canonical MCP Registry & Agent Tool Manifest Propagation'
         complexity: 'L'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-081-canonical-mcp-registry-agent-manifest-propagation.md'
         dependencies: ['FAITH-012', 'FAITH-014', 'FAITH-035']
         frs_reference: 'Section 4.1.1, 4.1.2, 4.11'
@@ -446,7 +446,7 @@ phases:
         name: 'Agent Panel Component (xterm.js + React)'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-038-agent-panel-component.md'
         dependencies: ['FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.2'
@@ -455,7 +455,7 @@ phases:
         name: 'Approval Panel Component'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-039-approval-panel-component.md'
         dependencies: ['FAITH-020', 'FAITH-074']
         frs_reference: 'Section 5.6, 6.4.2'
@@ -464,7 +464,7 @@ phases:
         name: 'System Status Panel & Health Summary'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-040-status-health-panel.md'
         dependencies: ['FAITH-036', 'FAITH-074']
         frs_reference: 'Section 6.4.2'
@@ -473,7 +473,7 @@ phases:
         name: 'Docker Runtime & Image Panel'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-058-docker-runtime-image-panel.md'
         dependencies: ['FAITH-014', 'FAITH-036', 'FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.2, 6.5'
@@ -482,7 +482,7 @@ phases:
         name: 'Input Panel & File Upload'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-041-input-panel-upload.md'
         dependencies: ['FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.2'
@@ -491,7 +491,7 @@ phases:
         name: 'Shared Web UI Theme System'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-042-terminal-dark-theme.md'
         dependencies: ['FAITH-074', 'FAITH-077']
         frs_reference: 'Section 6.6'
@@ -500,7 +500,7 @@ phases:
         name: 'Project Switcher UI'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-043-project-switcher-ui.md'
         dependencies: ['FAITH-015', 'FAITH-074']
         frs_reference: 'Section 6.9, 2.5'
@@ -518,7 +518,7 @@ phases:
         name: 'Runtime Status Cards'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'IN PROGRESS'
         task_doc: 'tasks/FAITH-061-runtime-status-cards.md'
         dependencies: ['FAITH-040', 'FAITH-058', 'FAITH-074', 'FAITH-079']
         frs_reference: 'Section 6.4.2'
@@ -527,7 +527,7 @@ phases:
         name: 'Panel Lifecycle & Deduping'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-062-panel-lifecycle-deduping.md'
         dependencies: ['FAITH-074', 'FAITH-075', 'FAITH-061']
         frs_reference: 'Section 6.4.1, 6.10'
@@ -536,7 +536,7 @@ phases:
         name: 'Panel Title-Bar Actions'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-064-panel-titlebar-actions.md'
         dependencies: ['FAITH-074', 'FAITH-062']
         frs_reference: 'Section 6.4.1, 6.10'
@@ -554,7 +554,7 @@ phases:
         name: 'PA System Prompt Editor Panel'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-071-pa-system-prompt-editor-panel.md'
         dependencies: ['FAITH-036', 'FAITH-038', 'FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.3, 6.4.2, 7.3'
@@ -581,7 +581,7 @@ phases:
         name: 'Runtime Badge & Container Status Sync'
         complexity: 'S'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-079-runtime-badge-container-status-sync.md'
         dependencies: ['FAITH-038', 'FAITH-040', 'FAITH-058', 'FAITH-074']
         frs_reference: 'Section 6.4.2, 6.5'

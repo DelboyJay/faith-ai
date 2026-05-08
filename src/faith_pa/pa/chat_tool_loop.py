@@ -18,13 +18,18 @@ from typing import Any
 
 from faith_mcp.filesystem import FilesystemServer
 from faith_mcp.python_exec.server import load_server_from_faith_dir
+from faith_pa.agent.tool_manifest import build_agent_tool_manifest_prompt
 from faith_pa.config import (
     ConfigLoadError,
     load_agent_config,
+    load_system_config,
     load_tool_config,
     project_config_dir,
     project_root,
 )
+from faith_pa.mcp_registry import MCPToolDescriptor, get_canonical_mcp_registry
+from faith_pa.pa.mcp_inventory import MCPInventoryAdapter
+from faith_shared.config.models import PrivacyProfile
 
 TOOL_CALL_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
 INVENTORY_QUESTION_PATTERN = re.compile(
@@ -53,86 +58,6 @@ class ChatToolCall:
     args: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(frozen=True, slots=True)
-class MCPToolDescriptor:
-    """Description:
-        Describe one PA-visible MCP tool surface.
-
-    Requirements:
-        - Preserve the server name, action name, and user-facing description
-          used by deterministic inventory answers and tool manifests.
-
-    :param server: MCP server or tool family name.
-    :param action: Action exposed by the server.
-    :param description: Human-readable action description.
-    :param args_example: Example JSON args payload shown in the manifest.
-    """
-
-    server: str
-    action: str
-    description: str
-    args_example: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def name(self) -> str:
-        """Description:
-            Return the compact tool action name.
-
-        Requirements:
-            - Join server and action names using the compact manifest format.
-
-        :returns: Compact tool action name.
-        """
-
-        return f"{self.server}.{self.action}"
-
-
-DEFAULT_CHAT_MCP_TOOLS: tuple[MCPToolDescriptor, ...] = (
-    MCPToolDescriptor(
-        server="mcp",
-        action="list_tools",
-        description="List the FAITH MCP tools exposed to the Project Agent chat loop.",
-        args_example={},
-    ),
-    MCPToolDescriptor(
-        server="filesystem",
-        action="read",
-        description="Read a file from an allowed project mount.",
-        args_example={"mount": "project", "path": "relative/path"},
-    ),
-    MCPToolDescriptor(
-        server="filesystem",
-        action="list",
-        description="List files and directories from an allowed project mount.",
-        args_example={"mount": "project", "path": "relative/path"},
-    ),
-    MCPToolDescriptor(
-        server="filesystem",
-        action="stat",
-        description="Return metadata for a file or directory on an allowed project mount.",
-        args_example={"mount": "project", "path": "relative/path"},
-    ),
-    MCPToolDescriptor(
-        server="python",
-        action="execute_python",
-        description="Execute Python code inside the allowed FAITH workspace sandbox.",
-        args_example={"code": "from datetime import datetime\nprint(datetime.now())"},
-    ),
-    MCPToolDescriptor(
-        server="python",
-        action="pip_install",
-        description="Install Python packages for the active FAITH Python environment.",
-        args_example={"packages": ["requests"]},
-    ),
-    MCPToolDescriptor(
-        server="python",
-        action="os_package_install",
-        description="Install OS packages for the active FAITH Python environment.",
-        args_example={"packages": ["git"]},
-    ),
-)
-
-
 def list_available_chat_mcp_tools() -> tuple[MCPToolDescriptor, ...]:
     """Description:
         Return the canonical chat-visible MCP inventory for the Project Agent.
@@ -145,7 +70,13 @@ def list_available_chat_mcp_tools() -> tuple[MCPToolDescriptor, ...]:
     :returns: Canonical tuple of chat-visible MCP tool descriptors.
     """
 
-    return DEFAULT_CHAT_MCP_TOOLS
+    privacy_profile = PrivacyProfile.INTERNAL
+    try:
+        privacy_profile = load_system_config().privacy_profile
+    except ConfigLoadError:
+        pass
+    adapter = MCPInventoryAdapter(get_canonical_mcp_registry())
+    return adapter.project_agent_tools(privacy_profile=privacy_profile)
 
 
 def build_tool_manifest_prompt() -> str:
@@ -159,20 +90,16 @@ def build_tool_manifest_prompt() -> str:
     :returns: Tool manifest prompt text.
     """
 
-    tool_lines = "\n".join(
-        f"- {tool.name} args: {json.dumps(tool.args_example, sort_keys=True)}"
-        for tool in list_available_chat_mcp_tools()
-    )
-    return (
-        "In FAITH, MCP always means Model Context Protocol.\n"
-        "Never interpret MCP as Microsoft Configuration Manager.\n\n"
-        "You can use FAITH MCP tools when needed.\n\n"
-        "Available MCP tools:\n"
-        f"{tool_lines}\n\n"
-        "When a tool is needed, reply with only one JSON object in this exact shape:\n"
-        '{"type": "tool_call", "tool": "filesystem", "action": "read", '
-        '"args": {"mount": "project", "path": "README.md"}}\n\n'
-        "After FAITH returns a tool result, answer the user normally using that result."
+    privacy_profile = PrivacyProfile.INTERNAL
+    try:
+        privacy_profile = load_system_config().privacy_profile
+    except ConfigLoadError:
+        pass
+    return build_agent_tool_manifest_prompt(
+        agent_id="project-agent",
+        permissions=(),
+        privacy_profile=privacy_profile,
+        registry=get_canonical_mcp_registry(),
     )
 
 
@@ -290,6 +217,7 @@ class ProjectAgentMCPToolExecutor:
         """
 
         self.root = (root or project_root()).resolve()
+        self._inventory = MCPInventoryAdapter(get_canonical_mcp_registry())
         self._filesystem_server: FilesystemServer | None = None
         self._filesystem_agent_mounts: dict[str, str] | None = None
         self._python_server: Any | None = None
@@ -306,7 +234,9 @@ class ProjectAgentMCPToolExecutor:
         :returns: Canonical tuple of chat-visible MCP tool descriptors.
         """
 
-        return list_available_chat_mcp_tools()
+        return self._inventory.project_agent_tools(
+            privacy_profile=self._load_privacy_profile(),
+        )
 
     async def execute(self, request: ChatToolCall) -> dict[str, Any]:
         """Description:
@@ -483,3 +413,19 @@ class ProjectAgentMCPToolExecutor:
                 allowed_paths=[self.root],
             )
         return self._python_server
+
+    def _load_privacy_profile(self) -> PrivacyProfile:
+        """Description:
+            Return the active privacy profile for PA chat-time inventory filtering.
+
+        Requirements:
+            - Prefer the validated system configuration when available.
+            - Fall back to the default internal profile during bootstrap.
+
+        :returns: Active project privacy profile.
+        """
+
+        try:
+            return load_system_config().privacy_profile
+        except ConfigLoadError:
+            return PrivacyProfile.INTERNAL

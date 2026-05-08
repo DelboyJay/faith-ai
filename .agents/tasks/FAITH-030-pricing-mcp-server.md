@@ -3,7 +3,7 @@
 **Phase:** 6 — MCP Tool Servers
 **Complexity:** M
 **Model:** Sonnet / GPT-5.4
-**Status:** TODO
+**Status:** DONE
 **Dependencies:** FAITH-026 (Browser Automation / Playwright), FAITH-008 (Event System)
 **FRS Reference:** Section 4.9
 

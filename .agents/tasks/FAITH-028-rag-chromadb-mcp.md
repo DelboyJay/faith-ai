@@ -3,7 +3,7 @@
 **Phase:** 6 — Tool Servers
 **Complexity:** L
 **Model:** Sonnet / GPT-5.4
-**Status:** TODO
+**Status:** DONE
 **Dependencies:** FAITH-002, FAITH-022
 **FRS Reference:** Section 4.7
 

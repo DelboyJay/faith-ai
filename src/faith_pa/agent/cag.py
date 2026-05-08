@@ -13,6 +13,10 @@ import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from faith_pa.pa.cag_auto_load import (
+    format_project_cag_budget_guidance,
+    merge_project_cag_document_paths,
+)
 from faith_pa.utils.tokens import count_text_tokens
 
 
@@ -219,32 +223,34 @@ class CAGManager:
         :returns: Aggregate validation result for the configured documents.
         """
 
-        self.documents = [self._load_single(path_str) for path_str in self.document_paths]
+        effective_document_paths = merge_project_cag_document_paths(
+            self.document_paths,
+            self.project_root,
+        )
+        self.documents = [self._load_single(path_str) for path_str in effective_document_paths]
         errors = [doc.error for doc in self.documents if not doc.loaded and doc.error]
         total_tokens = sum(doc.token_count for doc in self.documents if doc.loaded)
         warnings: list[str] = []
 
         if total_tokens > self.max_tokens:
-            largest = max(
-                (doc for doc in self.documents if doc.loaded),
-                key=lambda item: item.token_count,
-                default=None,
+            loaded_documents = [
+                (document.relative_path, document.token_count)
+                for document in self.documents
+                if document.loaded
+            ]
+            warnings.append(
+                format_project_cag_budget_guidance(
+                    loaded_documents,
+                    total_tokens,
+                    self.max_tokens,
+                )
             )
-            if largest is None:
-                warnings.append(
-                    f"CAG token budget exceeded: {total_tokens}/{self.max_tokens} tokens."
-                )
-            else:
-                warnings.append(
-                    f"CAG token budget exceeded: {total_tokens}/{self.max_tokens} tokens. "
-                    f"Consider moving '{largest.relative_path}' ({largest.token_count} tokens) to RAG."
-                )
 
         return CAGValidationResult(
             success=not errors and total_tokens <= self.max_tokens,
             total_tokens=total_tokens,
             max_tokens=self.max_tokens,
-            document_count=len(self.document_paths),
+            document_count=len(effective_document_paths),
             loaded_count=sum(1 for doc in self.documents if doc.loaded),
             errors=errors,
             warnings=warnings,

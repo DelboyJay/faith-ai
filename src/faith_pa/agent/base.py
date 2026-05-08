@@ -23,8 +23,10 @@ from faith_pa.agent.caching import apply_cache_hints, detect_provider
 from faith_pa.agent.cag import CAGManager, CAGValidationResult
 from faith_pa.agent.llm_client import LLMClient
 from faith_pa.agent.summariser import ContextSummariser
+from faith_pa.agent.tool_manifest import build_agent_tool_manifest_prompt
 from faith_pa.config.models import AgentConfig, SystemConfig
 from faith_pa.logging import TokenLogger
+from faith_pa.mcp_registry import CanonicalMCPRegistry, get_canonical_mcp_registry
 from faith_pa.runtime_time_context import RuntimeTimeContextProvider, RuntimeUserContextProvider
 from faith_pa.utils.tokens import (
     context_threshold,
@@ -146,6 +148,7 @@ class BaseAgent:
     :param redis_client: Optional Redis client used for channel subscriptions and event publishing.
     :param llm_client: Optional LLM client override used for chat completions.
     :param token_logger: Optional shared token logger used for model-usage accounting.
+    :param mcp_registry: Optional canonical MCP registry used to render the agent tool manifest.
     :param session_id: Optional session identifier used for token-log entries.
     :param task_id: Optional task identifier used for token-log entries.
     :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
@@ -165,6 +168,7 @@ class BaseAgent:
         redis_client: Any | None = None,
         llm_client: Any | None = None,
         token_logger: TokenLogger | None = None,
+        mcp_registry: CanonicalMCPRegistry | None = None,
         session_id: str | None = None,
         task_id: str | None = None,
         time_context_provider: RuntimeTimeContextProvider | None = None,
@@ -187,6 +191,7 @@ class BaseAgent:
         :param redis_client: Optional Redis client used for channel subscriptions and event publishing.
         :param llm_client: Optional LLM client override used for chat completions.
         :param token_logger: Optional shared token logger used for model-usage accounting.
+        :param mcp_registry: Optional canonical MCP registry used to render the agent tool manifest.
         :param session_id: Optional session identifier used for token-log entries.
         :param task_id: Optional task identifier used for token-log entries.
         :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
@@ -229,6 +234,7 @@ class BaseAgent:
             if self.system_config.ollama.enabled
             else None,
         )
+        self.mcp_registry = mcp_registry or get_canonical_mcp_registry()
         self.cag_manager = CAGManager(
             project_root=self.project_root,
             model_name=self.model_name,
@@ -463,10 +469,19 @@ class BaseAgent:
         if role_reminder:
             parts.append(role_reminder)
 
+        tool_manifest = build_agent_tool_manifest_prompt(
+            agent_id=self.agent_id,
+            permissions=self.config.tools,
+            privacy_profile=self.system_config.privacy_profile,
+            registry=self.mcp_registry,
+        )
+        if tool_manifest:
+            parts.append(tool_manifest)
+
         if self.context_summary:
             parts.append(f"Context Summary:\n{self.context_summary}")
 
-        if self.config.cag_documents and not self.cag_manager.documents:
+        if not self.cag_manager.documents:
             self.load_cag_documents()
         formatted_cag = self.cag_manager.format_for_context()
         if formatted_cag:

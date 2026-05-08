@@ -3,7 +3,7 @@
 **Phase:** 6 - MCP Tool Servers
 **Complexity:** M
 **Model:** Sonnet / GPT-5.4
-**Status:** TODO
+**Status:** DONE
 **Dependencies:** FAITH-003, FAITH-008, FAITH-035
 **FRS Reference:** Section 4.5
 

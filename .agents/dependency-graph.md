@@ -1,7 +1,7 @@
 # FAITH Epic — Dependency Graph & Implementation Schedule
 
 **Generated from:** `epic.yaml`
-**Date:** 2026-05-06
+**Date:** 2026-05-08
 
 ---
 
@@ -32,25 +32,25 @@
 | FAITH-021 | Audit Log System | 5 (Security) | DONE | FAITH-008 | M | Sonnet / GPT-5.4 |
 | FAITH-022 | Filesystem MCP Server | 6 (Tool Servers) | DONE | FAITH-003, FAITH-008, FAITH-057 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-023 | Filesystem File History | 6 (Tool Servers) | DONE | FAITH-022 | M | Sonnet / GPT-5.4 |
-| FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | IN PROGRESS | FAITH-003, FAITH-008, FAITH-057 | M | Opus / GPT-5.4 high reasoning |
-| FAITH-025 | PostgreSQL Database MCP Server | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008 | M | Sonnet / GPT-5.4 |
-| FAITH-026 | Browser Automation MCP Server (Playwright) | 6 (Tool Servers) | TODO | FAITH-003, FAITH-008, FAITH-035 | M | Sonnet / GPT-5.4 |
-| FAITH-027 | Code Index MCP Server (tree-sitter) | 6 (Tool Servers) | TODO | FAITH-022 | L | Opus / GPT-5.4 high reasoning |
-| FAITH-028 | RAG / ChromaDB MCP Server | 6 (Tool Servers) | TODO | FAITH-002, FAITH-022 | L | Sonnet / GPT-5.4 |
-| FAITH-029 | Git MCP Server | 6 (Tool Servers) | TODO | FAITH-019 | M | Sonnet / GPT-5.4 |
-| FAITH-030 | Pricing MCP Server | 6 (Tool Servers) | TODO | FAITH-026, FAITH-008 | M | Sonnet / GPT-5.4 |
-| FAITH-031 | Web Search MCP Server | 6 (Tool Servers) | TODO | FAITH-003, FAITH-035 | M | Sonnet / GPT-5.4 |
-| FAITH-032 | Full-Text Search MCP Server | 6 (Tool Servers) | TODO | FAITH-022 | S | Haiku / GPT-5.4-mini |
-| FAITH-033 | Key-Value Store MCP Server | 6 (Tool Servers) | TODO | FAITH-002 | S | Haiku / GPT-5.4-mini |
+| FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | DONE | FAITH-003, FAITH-008, FAITH-057 | M | Opus / GPT-5.4 high reasoning |
+| FAITH-025 | PostgreSQL Database MCP Server | 6 (Tool Servers) | DONE | FAITH-003, FAITH-008 | M | Sonnet / GPT-5.4 |
+| FAITH-026 | Browser Automation MCP Server (Playwright) | 6 (Tool Servers) | DONE | FAITH-003, FAITH-008, FAITH-035 | M | Sonnet / GPT-5.4 |
+| FAITH-027 | Code Index MCP Server (tree-sitter) | 6 (Tool Servers) | DONE | FAITH-022 | L | Opus / GPT-5.4 high reasoning |
+| FAITH-028 | RAG / ChromaDB MCP Server | 6 (Tool Servers) | DONE | FAITH-002, FAITH-022 | L | Sonnet / GPT-5.4 |
+| FAITH-029 | Git MCP Server | 6 (Tool Servers) | DONE | FAITH-019 | M | Sonnet / GPT-5.4 |
+| FAITH-030 | Pricing MCP Server | 6 (Tool Servers) | DONE | FAITH-026, FAITH-008 | M | Sonnet / GPT-5.4 |
+| FAITH-031 | Web Search MCP Server | 6 (Tool Servers) | DONE | FAITH-003, FAITH-035 | M | Sonnet / GPT-5.4 |
+| FAITH-032 | Full-Text Search MCP Server | 6 (Tool Servers) | DONE | FAITH-022 | S | Haiku / GPT-5.4-mini |
+| FAITH-033 | Key-Value Store MCP Server | 6 (Tool Servers) | DONE | FAITH-002 | S | Haiku / GPT-5.4-mini |
 | FAITH-034 | CAG Implementation | 7 (CAG & External MCP) | DONE | FAITH-010, FAITH-022 | M | Sonnet / GPT-5.4 |
 | FAITH-035 | External MCP Server Registration & Lifecycle | 7 (CAG & External MCP) | DONE | FAITH-014, FAITH-003 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-036 | FastAPI Server Setup & WebSocket Endpoints | 8 (Web UI) | DONE | FAITH-002, FAITH-008 | M | Sonnet / GPT-5.4 |
-| FAITH-038 | Agent Panel Component (xterm.js + React) | 8 (Web UI) | TODO | FAITH-074, FAITH-078 | M | Sonnet / GPT-5.4 |
-| FAITH-039 | Approval Panel Component | 8 (Web UI) | TODO | FAITH-020, FAITH-074 | M | Sonnet / GPT-5.4 |
-| FAITH-040 | System Status Panel & Health Summary | 8 (Web UI) | TODO | FAITH-036, FAITH-074 | S | Haiku / GPT-5.4-mini |
-| FAITH-041 | Input Panel & File Upload | 8 (Web UI) | TODO | FAITH-074, FAITH-078 | S | Haiku / GPT-5.4-mini |
-| FAITH-042 | Shared Web UI Theme System | 8 (Web UI) | TODO | FAITH-074, FAITH-077 | S | Haiku / GPT-5.4-mini |
-| FAITH-043 | Project Switcher UI | 8 (Web UI) | TODO | FAITH-015, FAITH-074 | S | Haiku / GPT-5.4-mini |
+| FAITH-038 | Agent Panel Component (xterm.js + React) | 8 (Web UI) | IN PROGRESS | FAITH-074, FAITH-078 | M | Sonnet / GPT-5.4 |
+| FAITH-039 | Approval Panel Component | 8 (Web UI) | DONE | FAITH-020, FAITH-074 | M | Sonnet / GPT-5.4 |
+| FAITH-040 | System Status Panel & Health Summary | 8 (Web UI) | DONE | FAITH-036, FAITH-074 | S | Haiku / GPT-5.4-mini |
+| FAITH-041 | Input Panel & File Upload | 8 (Web UI) | DONE | FAITH-074, FAITH-078 | S | Haiku / GPT-5.4-mini |
+| FAITH-042 | Shared Web UI Theme System | 8 (Web UI) | DONE | FAITH-074, FAITH-077 | S | Haiku / GPT-5.4-mini |
+| FAITH-043 | Project Switcher UI | 8 (Web UI) | DONE | FAITH-015, FAITH-074 | S | Haiku / GPT-5.4-mini |
 | FAITH-044 | Web UI Log Views | 8 (Web UI) | IN PROGRESS | FAITH-021, FAITH-074 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-045 | Event Log Writer | 9 (Logging) | DONE | FAITH-009 | S | Haiku / GPT-5.4-mini |
 | FAITH-046 | Session & Task Log Writer | 9 (Logging) | DONE | FAITH-015 | M | Sonnet / GPT-5.4 |
@@ -65,19 +65,19 @@
 | FAITH-055 | Skill Definitions & Unattended Execution | 11 (CLI & Skills) | TODO | FAITH-054, FAITH-019 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-056 | Built-in Skill Scheduler | 11 (CLI & Skills) | TODO | FAITH-055, FAITH-004 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-057 | Disposable Sandbox Lifecycle & Scheduling | 4 (PA Core) | DONE | FAITH-014 | L | Opus / GPT-5.4 high reasoning |
-| FAITH-058 | Docker Runtime & Image Panel | 8 (Web UI) | TODO | FAITH-014, FAITH-036, FAITH-074, FAITH-078 | M | Sonnet / GPT-5.4 |
+| FAITH-058 | Docker Runtime & Image Panel | 8 (Web UI) | DONE | FAITH-014, FAITH-036, FAITH-074, FAITH-078 | M | Sonnet / GPT-5.4 |
 | FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | DONE | FAITH-005, FAITH-036 | S | Sonnet / GPT-5.4 |
-| FAITH-061 | Runtime Status Cards | 8 (Web UI) | TODO | FAITH-040, FAITH-058, FAITH-074, FAITH-079 | M | Sonnet / GPT-5.4 |
-| FAITH-062 | Panel Lifecycle & Deduping | 8 (Web UI) | TODO | FAITH-074, FAITH-075, FAITH-061 | S | Haiku / GPT-5.4-mini |
+| FAITH-061 | Runtime Status Cards | 8 (Web UI) | IN PROGRESS | FAITH-040, FAITH-058, FAITH-074, FAITH-079 | M | Sonnet / GPT-5.4 |
+| FAITH-062 | Panel Lifecycle & Deduping | 8 (Web UI) | DONE | FAITH-074, FAITH-075, FAITH-061 | S | Haiku / GPT-5.4-mini |
 | FAITH-063 | Snap-Grid Panel Layout Refinement | 13 (Web UI Workspace Migration) | DONE | FAITH-062, FAITH-074, FAITH-075 | M | Sonnet / GPT-5.4 |
-| FAITH-064 | Panel Title-Bar Actions | 8 (Web UI) | TODO | FAITH-074, FAITH-062 | S | Haiku / GPT-5.4-mini |
+| FAITH-064 | Panel Title-Bar Actions | 8 (Web UI) | DONE | FAITH-074, FAITH-062 | S | Haiku / GPT-5.4-mini |
 | FAITH-065 | Docker Daemon Not Running Guidance | 10 (First Run) | TODO | FAITH-005 | S | Haiku / GPT-5.4-mini |
 | FAITH-066 | Project `cag/` Auto-Loading & Budget Guidance | 7 (CAG & External MCP) | DONE | FAITH-034, FAITH-022 | M | Sonnet / GPT-5.4 |
 | FAITH-067 | Ollama Management MCP Server | 10 (First Run) | DONE | FAITH-004, FAITH-013, FAITH-019, FAITH-051 | M | Sonnet / GPT-5.4 |
 | FAITH-068 | PA Chat MCP Tool-Calling Loop | 7 (CAG & External MCP) | DONE | FAITH-012, FAITH-016, FAITH-022, FAITH-036, FAITH-038, FAITH-081 | M | Sonnet / GPT-5.4 |
 | FAITH-069 | PA MCP Inventory Grounding | 7 (CAG & External MCP) | DONE | FAITH-068, FAITH-081 | S | Haiku / GPT-5.4-mini |
 | FAITH-070 | Theme-Aware Chat Transcript Bubbles | 8 (Web UI) | TODO | FAITH-038, FAITH-041, FAITH-064, FAITH-069 | M | Sonnet / GPT-5.4 |
-| FAITH-071 | PA System Prompt Editor Panel | 8 (Web UI) | TODO | FAITH-036, FAITH-038, FAITH-074, FAITH-078 | M | Sonnet / GPT-5.4 |
+| FAITH-071 | PA System Prompt Editor Panel | 8 (Web UI) | DONE | FAITH-036, FAITH-038, FAITH-074, FAITH-078 | M | Sonnet / GPT-5.4 |
 | FAITH-072 | PA Transcript Scroll Containment | 8 (Web UI) | DONE | FAITH-038, FAITH-070 | S | Haiku / GPT-5.4-mini |
 | FAITH-073 | Agent Runtime Date Time Prompt Injection | 8 (Web UI) | DONE | FAITH-010, FAITH-038, FAITH-071 | S | Haiku / GPT-5.4-mini |
 | FAITH-074 | React + Dockview Workspace Shell Migration | 13 (Web UI Workspace Migration) | DONE | FAITH-036, FAITH-078 | L | Sonnet / GPT-5.4 |
@@ -85,9 +85,9 @@
 | FAITH-076 | Minimized Panel Tray for Dockview | 13 (Web UI Workspace Migration) | DONE | FAITH-074 | M | Sonnet / GPT-5.4 |
 | FAITH-077 | Radix UI Menubar & Context Menu Integration | 13 (Web UI Workspace Migration) | DONE | FAITH-074 | M | Sonnet / GPT-5.4 |
 | FAITH-078 | Frontend Build Pipeline & Bundled Asset Integration | 13 (Web UI Workspace Migration) | DONE | FAITH-036 | M | Sonnet / GPT-5.4 |
-| FAITH-079 | Runtime Badge & Container Status Sync | 8 (Web UI) | TODO | FAITH-038, FAITH-040, FAITH-058, FAITH-074 | S | Sonnet / GPT-5.4 |
+| FAITH-079 | Runtime Badge & Container Status Sync | 8 (Web UI) | DONE | FAITH-038, FAITH-040, FAITH-058, FAITH-074 | S | Sonnet / GPT-5.4 |
 | FAITH-080 | Speech-to-Text Dictation Input | 8 (Web UI) | TODO | FAITH-041, FAITH-074, FAITH-078 | M | Sonnet / GPT-5.4 |
-| FAITH-081 | Canonical MCP Registry & Agent Tool Manifest Propagation | 7 (CAG & External MCP) | TODO | FAITH-012, FAITH-014, FAITH-035 | L | Opus / GPT-5.4 high reasoning |
+| FAITH-081 | Canonical MCP Registry & Agent Tool Manifest Propagation | 7 (CAG & External MCP) | DONE | FAITH-012, FAITH-014, FAITH-035 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-082 | Project Agent Transcript Rehydration on Restart | 8 (Web UI) | DONE | FAITH-015, FAITH-038, FAITH-046, FAITH-074 | S | Sonnet / GPT-5.4 |
 | FAITH-083 | User Timezone Preference Resolution & Persistence | 10 (First Run) | IN PROGRESS | FAITH-003, FAITH-049, FAITH-073 | S | Sonnet / GPT-5.4 |
 | FAITH-084 | User Settings Window & Profile Preferences | 8 (Web UI) | DONE | FAITH-003, FAITH-004, FAITH-049, FAITH-074, FAITH-078, FAITH-083 | M | Sonnet / GPT-5.4 |
@@ -144,16 +144,16 @@ flowchart TD
     %% ── Phase 6: Tool Servers ──
     FAITH-022["FAITH-022<br/>Filesystem MCP Server<br/>Phase 6 | DONE | L"]
     FAITH-023["FAITH-023<br/>Filesystem File History<br/>Phase 6 | DONE | M"]
-    FAITH-024["FAITH-024<br/>Python Execution MCP Server<br/>Phase 6 | IN PROGRESS | M"]
-    FAITH-025["FAITH-025<br/>PostgreSQL Database MCP Server<br/>Phase 6 | TODO | M"]
-    FAITH-026["FAITH-026<br/>Browser Automation MCP Server (Playwright)<br/>Phase 6 | TODO | M"]
-    FAITH-027["FAITH-027<br/>Code Index MCP Server (tree-sitter)<br/>Phase 6 | TODO | L"]
-    FAITH-028["FAITH-028<br/>RAG / ChromaDB MCP Server<br/>Phase 6 | TODO | L"]
-    FAITH-029["FAITH-029<br/>Git MCP Server<br/>Phase 6 | TODO | M"]
-    FAITH-030["FAITH-030<br/>Pricing MCP Server<br/>Phase 6 | TODO | M"]
-    FAITH-031["FAITH-031<br/>Web Search MCP Server<br/>Phase 6 | TODO | M"]
-    FAITH-032["FAITH-032<br/>Full-Text Search MCP Server<br/>Phase 6 | TODO | S"]
-    FAITH-033["FAITH-033<br/>Key-Value Store MCP Server<br/>Phase 6 | TODO | S"]
+    FAITH-024["FAITH-024<br/>Python Execution MCP Server<br/>Phase 6 | DONE | M"]
+    FAITH-025["FAITH-025<br/>PostgreSQL Database MCP Server<br/>Phase 6 | DONE | M"]
+    FAITH-026["FAITH-026<br/>Browser Automation MCP Server (Playwright)<br/>Phase 6 | DONE | M"]
+    FAITH-027["FAITH-027<br/>Code Index MCP Server (tree-sitter)<br/>Phase 6 | DONE | L"]
+    FAITH-028["FAITH-028<br/>RAG / ChromaDB MCP Server<br/>Phase 6 | DONE | L"]
+    FAITH-029["FAITH-029<br/>Git MCP Server<br/>Phase 6 | DONE | M"]
+    FAITH-030["FAITH-030<br/>Pricing MCP Server<br/>Phase 6 | DONE | M"]
+    FAITH-031["FAITH-031<br/>Web Search MCP Server<br/>Phase 6 | DONE | M"]
+    FAITH-032["FAITH-032<br/>Full-Text Search MCP Server<br/>Phase 6 | DONE | S"]
+    FAITH-033["FAITH-033<br/>Key-Value Store MCP Server<br/>Phase 6 | DONE | S"]
 
     %% ── Phase 7: CAG & External MCP ──
     FAITH-034["FAITH-034<br/>CAG Implementation<br/>Phase 7 | DONE | M"]
@@ -161,26 +161,26 @@ flowchart TD
     FAITH-066["FAITH-066<br/>Project `cag/` Auto-Loading & Budget Guidance<br/>Phase 7 | DONE | M"]
     FAITH-068["FAITH-068<br/>PA Chat MCP Tool-Calling Loop<br/>Phase 7 | DONE | M"]
     FAITH-069["FAITH-069<br/>PA MCP Inventory Grounding<br/>Phase 7 | DONE | S"]
-    FAITH-081["FAITH-081<br/>Canonical MCP Registry & Agent Tool Manifest Propagation<br/>Phase 7 | TODO | L"]
+    FAITH-081["FAITH-081<br/>Canonical MCP Registry & Agent Tool Manifest Propagation<br/>Phase 7 | DONE | L"]
 
     %% ── Phase 8: Web UI ──
     FAITH-036["FAITH-036<br/>FastAPI Server Setup & WebSocket Endpoints<br/>Phase 8 | DONE | M"]
-    FAITH-038["FAITH-038<br/>Agent Panel Component (xterm.js + React)<br/>Phase 8 | TODO | M"]
-    FAITH-039["FAITH-039<br/>Approval Panel Component<br/>Phase 8 | TODO | M"]
-    FAITH-040["FAITH-040<br/>System Status Panel & Health Summary<br/>Phase 8 | TODO | S"]
-    FAITH-041["FAITH-041<br/>Input Panel & File Upload<br/>Phase 8 | TODO | S"]
-    FAITH-042["FAITH-042<br/>Shared Web UI Theme System<br/>Phase 8 | TODO | S"]
-    FAITH-043["FAITH-043<br/>Project Switcher UI<br/>Phase 8 | TODO | S"]
+    FAITH-038["FAITH-038<br/>Agent Panel Component (xterm.js + React)<br/>Phase 8 | IN PROGRESS | M"]
+    FAITH-039["FAITH-039<br/>Approval Panel Component<br/>Phase 8 | DONE | M"]
+    FAITH-040["FAITH-040<br/>System Status Panel & Health Summary<br/>Phase 8 | DONE | S"]
+    FAITH-041["FAITH-041<br/>Input Panel & File Upload<br/>Phase 8 | DONE | S"]
+    FAITH-042["FAITH-042<br/>Shared Web UI Theme System<br/>Phase 8 | DONE | S"]
+    FAITH-043["FAITH-043<br/>Project Switcher UI<br/>Phase 8 | DONE | S"]
     FAITH-044["FAITH-044<br/>Web UI Log Views<br/>Phase 8 | IN PROGRESS | M"]
-    FAITH-058["FAITH-058<br/>Docker Runtime & Image Panel<br/>Phase 8 | TODO | M"]
-    FAITH-061["FAITH-061<br/>Runtime Status Cards<br/>Phase 8 | TODO | M"]
-    FAITH-062["FAITH-062<br/>Panel Lifecycle & Deduping<br/>Phase 8 | TODO | S"]
-    FAITH-064["FAITH-064<br/>Panel Title-Bar Actions<br/>Phase 8 | TODO | S"]
+    FAITH-058["FAITH-058<br/>Docker Runtime & Image Panel<br/>Phase 8 | DONE | M"]
+    FAITH-061["FAITH-061<br/>Runtime Status Cards<br/>Phase 8 | IN PROGRESS | M"]
+    FAITH-062["FAITH-062<br/>Panel Lifecycle & Deduping<br/>Phase 8 | DONE | S"]
+    FAITH-064["FAITH-064<br/>Panel Title-Bar Actions<br/>Phase 8 | DONE | S"]
     FAITH-070["FAITH-070<br/>Theme-Aware Chat Transcript Bubbles<br/>Phase 8 | TODO | M"]
-    FAITH-071["FAITH-071<br/>PA System Prompt Editor Panel<br/>Phase 8 | TODO | M"]
+    FAITH-071["FAITH-071<br/>PA System Prompt Editor Panel<br/>Phase 8 | DONE | M"]
     FAITH-072["FAITH-072<br/>PA Transcript Scroll Containment<br/>Phase 8 | DONE | S"]
     FAITH-073["FAITH-073<br/>Agent Runtime Date Time Prompt Injection<br/>Phase 8 | DONE | S"]
-    FAITH-079["FAITH-079<br/>Runtime Badge & Container Status Sync<br/>Phase 8 | TODO | S"]
+    FAITH-079["FAITH-079<br/>Runtime Badge & Container Status Sync<br/>Phase 8 | DONE | S"]
     FAITH-080["FAITH-080<br/>Speech-to-Text Dictation Input<br/>Phase 8 | TODO | M"]
     FAITH-082["FAITH-082<br/>Project Agent Transcript Rehydration on Restart<br/>Phase 8 | DONE | S"]
     FAITH-084["FAITH-084<br/>User Settings Window & Profile Preferences<br/>Phase 8 | DONE | M"]
@@ -613,7 +613,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-007 | Compact Protocol Data Models & Serialisation | 2 (Protocol & Events) | DONE | M |
 | FAITH-008 | Event System Data Models & Publisher | 2 (Protocol & Events) | DONE | M |
 | FAITH-019 | Security YAML Schema & Regex Approval Engine | 5 (Security) | DONE | M |
-| FAITH-033 | Key-Value Store MCP Server | 6 (Tool Servers) | TODO | S |
+| FAITH-033 | Key-Value Store MCP Server | 6 (Tool Servers) | DONE | S |
 
 ### Wave 4
 | Task | Name | Phase | Status | Complexity |
@@ -622,8 +622,8 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-010 | Base Agent Class | 3 (Agent Runtime) | DONE | L |
 | FAITH-020 | Approval Request/Response Flow | 5 (Security) | DONE | M |
 | FAITH-021 | Audit Log System | 5 (Security) | DONE | M |
-| FAITH-025 | PostgreSQL Database MCP Server | 6 (Tool Servers) | TODO | M |
-| FAITH-029 | Git MCP Server | 6 (Tool Servers) | TODO | M |
+| FAITH-025 | PostgreSQL Database MCP Server | 6 (Tool Servers) | DONE | M |
+| FAITH-029 | Git MCP Server | 6 (Tool Servers) | DONE | M |
 | FAITH-036 | FastAPI Server Setup & WebSocket Endpoints | 8 (Web UI) | DONE | M |
 | FAITH-065 | Docker Daemon Not Running Guidance | 10 (First Run) | TODO | S |
 
@@ -650,19 +650,19 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 |------|------|-------|--------|------------|
 | FAITH-015 | PA Session & Task Management | 4 (PA Core) | DONE | L |
 | FAITH-022 | Filesystem MCP Server | 6 (Tool Servers) | DONE | L |
-| FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | IN PROGRESS | M |
-| FAITH-026 | Browser Automation MCP Server (Playwright) | 6 (Tool Servers) | TODO | M |
-| FAITH-031 | Web Search MCP Server | 6 (Tool Servers) | TODO | M |
-| FAITH-038 | Agent Panel Component (xterm.js + React) | 8 (Web UI) | TODO | M |
-| FAITH-039 | Approval Panel Component | 8 (Web UI) | TODO | M |
-| FAITH-040 | System Status Panel & Health Summary | 8 (Web UI) | TODO | S |
-| FAITH-041 | Input Panel & File Upload | 8 (Web UI) | TODO | S |
+| FAITH-024 | Python Execution MCP Server | 6 (Tool Servers) | DONE | M |
+| FAITH-026 | Browser Automation MCP Server (Playwright) | 6 (Tool Servers) | DONE | M |
+| FAITH-031 | Web Search MCP Server | 6 (Tool Servers) | DONE | M |
+| FAITH-038 | Agent Panel Component (xterm.js + React) | 8 (Web UI) | IN PROGRESS | M |
+| FAITH-039 | Approval Panel Component | 8 (Web UI) | DONE | M |
+| FAITH-040 | System Status Panel & Health Summary | 8 (Web UI) | DONE | S |
+| FAITH-041 | Input Panel & File Upload | 8 (Web UI) | DONE | S |
 | FAITH-044 | Web UI Log Views | 8 (Web UI) | IN PROGRESS | M |
 | FAITH-049 | First-Run Wizard: Multi-Step UI | 10 (First Run) | IN PROGRESS | L |
-| FAITH-058 | Docker Runtime & Image Panel | 8 (Web UI) | TODO | M |
+| FAITH-058 | Docker Runtime & Image Panel | 8 (Web UI) | DONE | M |
 | FAITH-076 | Minimized Panel Tray for Dockview | 13 (Web UI Workspace Migration) | DONE | M |
 | FAITH-077 | Radix UI Menubar & Context Menu Integration | 13 (Web UI Workspace Migration) | DONE | M |
-| FAITH-081 | Canonical MCP Registry & Agent Tool Manifest Propagation | 7 (CAG & External MCP) | TODO | L |
+| FAITH-081 | Canonical MCP Registry & Agent Tool Manifest Propagation | 7 (CAG & External MCP) | DONE | L |
 
 ### Wave 8
 | Task | Name | Phase | Status | Complexity |
@@ -670,20 +670,20 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-016 | PA Event Dispatcher & Intervention Logic | 4 (PA Core) | DONE | L |
 | FAITH-018 | Living FRS Management | 4 (PA Core) | DONE | M |
 | FAITH-023 | Filesystem File History | 6 (Tool Servers) | DONE | M |
-| FAITH-027 | Code Index MCP Server (tree-sitter) | 6 (Tool Servers) | TODO | L |
-| FAITH-028 | RAG / ChromaDB MCP Server | 6 (Tool Servers) | TODO | L |
-| FAITH-030 | Pricing MCP Server | 6 (Tool Servers) | TODO | M |
-| FAITH-032 | Full-Text Search MCP Server | 6 (Tool Servers) | TODO | S |
+| FAITH-027 | Code Index MCP Server (tree-sitter) | 6 (Tool Servers) | DONE | L |
+| FAITH-028 | RAG / ChromaDB MCP Server | 6 (Tool Servers) | DONE | L |
+| FAITH-030 | Pricing MCP Server | 6 (Tool Servers) | DONE | M |
+| FAITH-032 | Full-Text Search MCP Server | 6 (Tool Servers) | DONE | S |
 | FAITH-034 | CAG Implementation | 7 (CAG & External MCP) | DONE | M |
-| FAITH-042 | Shared Web UI Theme System | 8 (Web UI) | TODO | S |
-| FAITH-043 | Project Switcher UI | 8 (Web UI) | TODO | S |
+| FAITH-042 | Shared Web UI Theme System | 8 (Web UI) | DONE | S |
+| FAITH-043 | Project Switcher UI | 8 (Web UI) | DONE | S |
 | FAITH-046 | Session & Task Log Writer | 9 (Logging) | DONE | M |
 | FAITH-050 | Privacy Profile Enforcement & Provider Knowledge Base | 10 (First Run) | TODO | M |
 | FAITH-051 | Ollama Model Download Integration | 10 (First Run) | DONE | S |
 | FAITH-053 | First-Run Wizard: Detailed Specification | 10 (First Run) | TODO | M |
 | FAITH-054 | `faith run` Command & Task API | 11 (CLI & Skills) | TODO | M |
-| FAITH-071 | PA System Prompt Editor Panel | 8 (Web UI) | TODO | M |
-| FAITH-079 | Runtime Badge & Container Status Sync | 8 (Web UI) | TODO | S |
+| FAITH-071 | PA System Prompt Editor Panel | 8 (Web UI) | DONE | M |
+| FAITH-079 | Runtime Badge & Container Status Sync | 8 (Web UI) | DONE | S |
 | FAITH-080 | Speech-to-Text Dictation Input | 8 (Web UI) | TODO | M |
 | FAITH-085 | Input Panel Enter-to-Send & Newline Hint | 8 (Web UI) | TODO | S |
 | FAITH-088 | Runtime Specialist-Agent Materialisation & Lifecycle | 14 (Specialist-Agent Delegation from PA Chat) | TODO | L |
@@ -694,7 +694,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-017 | Loop Detection | 4 (PA Core) | DONE | M |
 | FAITH-047 | Token & Cost Log | 9 (Logging) | DONE | S |
 | FAITH-055 | Skill Definitions & Unattended Execution | 11 (CLI & Skills) | TODO | M |
-| FAITH-061 | Runtime Status Cards | 8 (Web UI) | TODO | M |
+| FAITH-061 | Runtime Status Cards | 8 (Web UI) | IN PROGRESS | M |
 | FAITH-066 | Project `cag/` Auto-Loading & Budget Guidance | 7 (CAG & External MCP) | DONE | M |
 | FAITH-067 | Ollama Management MCP Server | 10 (First Run) | DONE | M |
 | FAITH-068 | PA Chat MCP Tool-Calling Loop | 7 (CAG & External MCP) | DONE | M |
@@ -728,14 +728,14 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 ### Wave 13
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
-| FAITH-062 | Panel Lifecycle & Deduping | 8 (Web UI) | TODO | S |
+| FAITH-062 | Panel Lifecycle & Deduping | 8 (Web UI) | DONE | S |
 | FAITH-092 | Containerised Avatar Runtime & Service Contract | 15 (Optional Voice & Avatar Experience) | TODO | L |
 
 ### Wave 14
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
 | FAITH-063 | Snap-Grid Panel Layout Refinement | 13 (Web UI Workspace Migration) | DONE | M |
-| FAITH-064 | Panel Title-Bar Actions | 8 (Web UI) | TODO | S |
+| FAITH-064 | Panel Title-Bar Actions | 8 (Web UI) | DONE | S |
 | FAITH-093 | Avatar Panel, Speech Playback, and Voice Chat Integration | 15 (Optional Voice & Avatar Experience) | TODO | L |
 | FAITH-094 | Avatar Runtime Install, Removal, and Preference Management | 15 (Optional Voice & Avatar Experience) | TODO | M |
 

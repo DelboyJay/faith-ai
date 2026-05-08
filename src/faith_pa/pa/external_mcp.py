@@ -11,7 +11,9 @@ Requirements:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -23,9 +25,221 @@ from faith_shared.config.models import ExternalMCPToolConfig, PrivacyProfile
 
 DEFAULT_MCP_RUNTIME_NAME = "faith-mcp-runtime"
 DEFAULT_REGISTRY_URL = "http://mcp-registry:8080"
+DEFAULT_GIT_MCP_PACKAGE = "@cyanheads/git-mcp-server"
+DEFAULT_GIT_MCP_VERSION = "2.3.3"
+DEFAULT_POSTGRES_MCP_PACKAGE = "mcp-postgres-server"
+DEFAULT_POSTGRES_MCP_VERSION = "0.1.3"
 DEFAULT_PLAYWRIGHT_MCP_PACKAGE = "@playwright/mcp"
 DEFAULT_PLAYWRIGHT_MCP_VERSION = "0.0.36"
+DEFAULT_TAVILY_MCP_PACKAGE = "@tavily/mcp"
+DEFAULT_TAVILY_MCP_VERSION = "0.2.9"
 PROJECT_AGENT_IDS = {"pa", "project-agent", "project_agent"}
+_RUNTIME_PLACEHOLDER_PATTERN = re.compile(r"\$\{([^}]+)\}")
+
+logger = logging.getLogger(__name__)
+
+
+def build_external_mcp_registration(
+    *,
+    registry_ref: str,
+    package_version: str,
+    enabled: bool = True,
+    privacy_tier: PrivacyProfile = PrivacyProfile.INTERNAL,
+    agents: list[str] | tuple[str, ...] = (),
+    args: list[str] | tuple[str, ...] = (),
+    env: dict[str, str] | None = None,
+    env_secret_refs: dict[str, str] | None = None,
+    transport: str = "stdio",
+) -> dict[str, Any]:
+    """Description:
+        Build a generic external MCP registration payload.
+
+    Requirements:
+        - Keep external MCP registrations registry-backed and version-pinned.
+        - Allow future optional services such as RAG and pricing to be enabled
+          through the same external-first flow without FAITH-owned server code.
+
+    :param registry_ref: Registry reference for the external MCP package.
+    :param package_version: Version-pinned package version to launch.
+    :param enabled: Whether the generated registration is enabled.
+    :param privacy_tier: Minimum privacy tier required to use the server.
+    :param agents: Agent identifiers allowed to use the server.
+    :param args: Command-line arguments passed to the launched package.
+    :param env: Literal environment variables merged into the process env.
+    :param env_secret_refs: Secret references resolved through the PA secret resolver.
+    :param transport: MCP transport name for the registration.
+    :returns: External MCP registration payload suitable for `.faith/tools`.
+    """
+
+    return {
+        "schema_version": "1.0",
+        "source_type": "registry",
+        "registry_ref": registry_ref,
+        "package_version": package_version,
+        "transport": transport,
+        "args": list(args),
+        "env": dict(env or {}),
+        "env_secret_refs": dict(env_secret_refs or {}),
+        "privacy_tier": privacy_tier.value,
+        "agents": list(agents),
+        "enabled": enabled,
+    }
+
+
+def build_postgresql_mcp_registration(
+    *,
+    package_version: str = DEFAULT_POSTGRES_MCP_VERSION,
+    enabled: bool = True,
+    host: str = "localhost",
+    port: int = 5432,
+    database: str = "postgres",
+    user: str = "faith",
+    password_secret_ref: str = "postgres-password",
+    privacy_tier: PrivacyProfile = PrivacyProfile.INTERNAL,
+    agents: list[str] | tuple[str, ...] = ("software-developer", "fds-architect"),
+) -> dict[str, Any]:
+    """Description:
+        Build the default external PostgreSQL MCP registration payload.
+
+    Requirements:
+        - Keep PostgreSQL access external-first and version-pinned.
+        - Carry credentials through ``env_secret_refs`` instead of inline secrets.
+        - Restrict the default assignment to the database-focused specialist agents.
+
+    :param package_version: Version-pinned PostgreSQL MCP package version.
+    :param enabled: Whether the generated registration is enabled.
+    :param host: PostgreSQL host value passed to the server process.
+    :param port: PostgreSQL port value passed to the server process.
+    :param database: PostgreSQL database name.
+    :param user: PostgreSQL user name.
+    :param password_secret_ref: Secret reference used for the password.
+    :param privacy_tier: Minimum privacy tier required to use the server.
+    :param agents: Agent identifiers allowed to use the server.
+    :returns: External MCP registration payload suitable for `.faith/tools`.
+    """
+
+    return build_external_mcp_registration(
+        registry_ref=DEFAULT_POSTGRES_MCP_PACKAGE,
+        package_version=package_version,
+        enabled=enabled,
+        privacy_tier=privacy_tier,
+        agents=list(agents),
+        env={
+            "PG_HOST": host,
+            "PG_PORT": str(port),
+            "PG_DATABASE": database,
+            "PG_USER": user,
+        },
+        env_secret_refs={"PG_PASSWORD": password_secret_ref},
+    )
+
+
+def ensure_postgresql_mcp_registration(
+    faith_dir: Path,
+    *,
+    package_version: str = DEFAULT_POSTGRES_MCP_VERSION,
+    enabled: bool = True,
+) -> Path:
+    """Description:
+        Ensure the default PostgreSQL MCP registration exists on disk.
+
+    Requirements:
+        - Create `.faith/tools/external-postgres.yaml` only when it is absent.
+        - Preserve user-edited registrations rather than overwriting them.
+
+    :param faith_dir: Project `.faith` directory.
+    :param package_version: Version-pinned PostgreSQL MCP package version.
+    :param enabled: Whether a newly created registration is enabled.
+    :returns: Path to the PostgreSQL external MCP registration file.
+    """
+
+    tools_dir = Path(faith_dir) / "tools"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    path = tools_dir / "external-postgres.yaml"
+    if not path.exists():
+        path.write_text(
+            yaml.safe_dump(
+                build_postgresql_mcp_registration(
+                    package_version=package_version,
+                    enabled=enabled,
+                ),
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+    return path
+
+
+def build_git_mcp_registration(
+    *,
+    package_version: str = DEFAULT_GIT_MCP_VERSION,
+    enabled: bool = True,
+    privacy_tier: PrivacyProfile = PrivacyProfile.INTERNAL,
+    agents: list[str] | tuple[str, ...] = ("software-developer", "code-reviewer"),
+) -> dict[str, Any]:
+    """Description:
+        Build the default external Git MCP registration payload.
+
+    Requirements:
+        - Use an external local Git MCP server instead of a FAITH-owned fallback.
+        - Bind the server to the active workspace so it operates on the local repository on disk.
+        - Keep the default assignment narrow enough to preserve approval and audit visibility.
+
+    :param package_version: Version-pinned Git MCP package version.
+    :param enabled: Whether the generated registration is enabled.
+    :param privacy_tier: Minimum privacy tier required to use the server.
+    :param agents: Agent identifiers allowed to use the server.
+    :returns: External MCP registration payload suitable for `.faith/tools`.
+    """
+
+    return build_external_mcp_registration(
+        registry_ref=DEFAULT_GIT_MCP_PACKAGE,
+        package_version=package_version,
+        enabled=enabled,
+        privacy_tier=privacy_tier,
+        agents=list(agents),
+        env={
+            "GIT_BASE_DIR": "${FAITH_WORKSPACE_PATH}",
+            "MCP_LOG_LEVEL": "info",
+            "GIT_SIGN_COMMITS": "false",
+        },
+    )
+
+
+def ensure_git_mcp_registration(
+    faith_dir: Path,
+    *,
+    package_version: str = DEFAULT_GIT_MCP_VERSION,
+    enabled: bool = True,
+) -> Path:
+    """Description:
+        Ensure the default Git MCP registration exists on disk.
+
+    Requirements:
+        - Create `.faith/tools/external-git.yaml` only when it is absent.
+        - Preserve user-edited registrations rather than overwriting them.
+
+    :param faith_dir: Project `.faith` directory.
+    :param package_version: Version-pinned Git MCP package version.
+    :param enabled: Whether a newly created registration is enabled.
+    :returns: Path to the Git external MCP registration file.
+    """
+
+    tools_dir = Path(faith_dir) / "tools"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    path = tools_dir / "external-git.yaml"
+    if not path.exists():
+        path.write_text(
+            yaml.safe_dump(
+                build_git_mcp_registration(
+                    package_version=package_version,
+                    enabled=enabled,
+                ),
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+    return path
 
 
 def build_playwright_mcp_registration(
@@ -47,19 +261,13 @@ def build_playwright_mcp_registration(
     :returns: External MCP registration payload suitable for `.faith/tools`.
     """
 
-    return {
-        "schema_version": "1.0",
-        "source_type": "registry",
-        "registry_ref": DEFAULT_PLAYWRIGHT_MCP_PACKAGE,
-        "package_version": package_version,
-        "transport": "stdio",
-        "args": ["--headless", "--isolated"],
-        "env": {},
-        "env_secret_refs": {},
-        "privacy_tier": PrivacyProfile.INTERNAL.value,
-        "agents": ["qa-engineer", "security-expert"],
-        "enabled": enabled,
-    }
+    return build_external_mcp_registration(
+        registry_ref=DEFAULT_PLAYWRIGHT_MCP_PACKAGE,
+        package_version=package_version,
+        enabled=enabled,
+        agents=["qa-engineer", "security-expert"],
+        args=["--headless", "--isolated"],
+    )
 
 
 def ensure_playwright_mcp_registration(
@@ -89,6 +297,71 @@ def ensure_playwright_mcp_registration(
         path.write_text(
             yaml.safe_dump(
                 build_playwright_mcp_registration(
+                    package_version=package_version,
+                    enabled=enabled,
+                ),
+                sort_keys=False,
+            ),
+            encoding="utf-8",
+        )
+    return path
+
+
+def build_tavily_mcp_registration(
+    *,
+    package_version: str = DEFAULT_TAVILY_MCP_VERSION,
+    enabled: bool = True,
+) -> dict[str, Any]:
+    """Description:
+        Build the default external Tavily MCP registration payload.
+
+    Requirements:
+        - Use the official Tavily MCP npm package as the external server.
+        - Keep the API key secret-backed so no credentials are committed to YAML.
+        - Leave the privacy tier internal so public and internal projects can use it while confidential projects are blocked.
+
+    :param package_version: Version-pinned `@tavily/mcp` package version.
+    :param enabled: Whether the generated registration is enabled.
+    :returns: External MCP registration payload suitable for `.faith/tools`.
+    """
+
+    return build_external_mcp_registration(
+        registry_ref=DEFAULT_TAVILY_MCP_PACKAGE,
+        package_version=package_version,
+        enabled=enabled,
+        privacy_tier=PrivacyProfile.INTERNAL,
+        agents=["qa-engineer", "security-expert"],
+        env_secret_refs={"TAVILY_API_KEY": "tavily-api-key"},
+    )
+
+
+def ensure_tavily_mcp_registration(
+    faith_dir: Path,
+    *,
+    package_version: str = DEFAULT_TAVILY_MCP_VERSION,
+    enabled: bool = True,
+) -> Path:
+    """Description:
+        Ensure the default Tavily MCP registration exists on disk.
+
+    Requirements:
+        - Create `.faith/tools/external-tavily.yaml` only when it is absent.
+        - Preserve user-edited registrations rather than overwriting them.
+        - Use the same tested registration payload as the runtime manager.
+
+    :param faith_dir: Project `.faith` directory.
+    :param package_version: Version-pinned `@tavily/mcp` package version.
+    :param enabled: Whether a newly created registration is enabled.
+    :returns: Path to the Tavily external MCP registration file.
+    """
+
+    tools_dir = Path(faith_dir) / "tools"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    path = tools_dir / "external-tavily.yaml"
+    if not path.exists():
+        path.write_text(
+            yaml.safe_dump(
+                build_tavily_mcp_registration(
                     package_version=package_version,
                     enabled=enabled,
                 ),
@@ -178,7 +451,7 @@ class ExternalMCPServer:
         :returns: `True` when the subprocess is still active.
         """
 
-        return self.process is not None and getattr(self.process, "returncode", None) is None
+        return self.process is not None and (getattr(self.process, "returncode", None) is None)
 
     async def stop(self) -> None:
         """Description:
@@ -273,10 +546,21 @@ class ExternalMCPManager:
 
         loaded: dict[str, ExternalMCPServer] = {}
         for path in sorted((self.faith_dir / "tools").glob("external-*.yaml")):
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            config = ExternalMCPToolConfig.model_validate(data)
-            name = path.stem.removeprefix("external-")
-            loaded[name] = ExternalMCPServer(name=name, config=config, source_path=path)
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+                config = ExternalMCPToolConfig.model_validate(data)
+                name = path.stem.removeprefix("external-")
+                loaded[name] = ExternalMCPServer(
+                    name=name,
+                    config=config,
+                    source_path=path,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Skipping invalid external MCP config %s: %s",
+                    path.name,
+                    exc,
+                )
         self._servers = loaded
         return len(self._servers)
 
@@ -313,6 +597,36 @@ class ExternalMCPManager:
         """
 
         return self._servers.get(name)
+
+    def _substitute_runtime_placeholders(
+        self,
+        value: Any,
+        runtime_values: dict[str, str],
+    ) -> Any:
+        """Description:
+            Expand runtime-only placeholders such as the active workspace path.
+
+        Requirements:
+            - Leave unknown placeholders untouched so misconfiguration is visible in launch failures.
+
+        :param value: String, list, or mapping to substitute.
+        :param runtime_values: Runtime placeholder substitutions.
+        :returns: Value with placeholders expanded where possible.
+        """
+
+        if isinstance(value, str):
+            return _RUNTIME_PLACEHOLDER_PATTERN.sub(
+                lambda match: runtime_values.get(match.group(1), match.group(0)),
+                value,
+            )
+        if isinstance(value, list):
+            return [self._substitute_runtime_placeholders(item, runtime_values) for item in value]
+        if isinstance(value, dict):
+            return {
+                key: self._substitute_runtime_placeholders(item, runtime_values)
+                for key, item in value.items()
+            }
+        return value
 
     def _privacy_rank(self, profile: PrivacyProfile) -> int:
         """Description:
@@ -472,17 +786,24 @@ class ExternalMCPManager:
         )
         self._runtime_started = True
 
-    async def start_server(self, name: str, *, session_id: str) -> bool:
+    async def start_server(
+        self,
+        name: str,
+        *,
+        session_id: str,
+        workspace_path: Path | None = None,
+    ) -> bool:
         """Description:
             Start one external MCP stdio subprocess when policy permits it.
 
         Requirements:
             - Reject unknown, disabled, or privacy-blocked registrations.
-            - Resolve environment substitutions and secret references before launch.
+            - Resolve environment substitutions, secret references, and runtime workspace placeholders before launch.
             - Reuse already-running subprocesses without relaunching them.
 
         :param name: External MCP server name.
         :param session_id: Session taking ownership of the started server.
+        :param workspace_path: Optional project workspace path for local-repository servers.
         :returns: `True` when the server is running after the call.
         """
 
@@ -492,23 +813,51 @@ class ExternalMCPManager:
         if server.is_running:
             return True
 
-        resolved_env = self.secret_resolver.resolve_environment(
-            env=server.config.env,
-            env_secret_refs=server.config.env_secret_refs,
-        )
-        resolved_package = await self.registry_resolver(
-            server.config.registry_ref,
-            server.config.package_version,
-        )
-        process_env = dict(os.environ)
-        process_env.update(resolved_env)
-        process_env.setdefault("MCP_REGISTRY_URL", self.registry_url)
-        package_name = resolved_package.get("package", server.config.registry_ref)
-        package_spec = self._build_package_spec(package_name, server.config.package_version)
-        process = await self.launcher(
-            *self._build_command(package_spec, server.config.args),
-            env=process_env,
-        )
+        try:
+            runtime_values: dict[str, str] = {}
+            if workspace_path is not None:
+                runtime_values["FAITH_WORKSPACE_PATH"] = str(Path(workspace_path).resolve())
+            lookup = dict(self.secret_resolver.environment)
+            lookup.update(runtime_values)
+            resolved_env = {
+                key: _RUNTIME_PLACEHOLDER_PATTERN.sub(
+                    lambda match: lookup.get(match.group(1), match.group(0)),
+                    value,
+                )
+                for key, value in server.config.env.items()
+            }
+            for key, ref in server.config.env_secret_refs.items():
+                secret = self.secret_resolver.resolve_secret_ref(ref)
+                secret_value = (
+                    secret
+                    if not isinstance(secret, dict)
+                    else secret.get(
+                        "value",
+                        secret,
+                    )
+                )
+                resolved_env[key] = str(secret_value)
+            resolved_package = await self.registry_resolver(
+                server.config.registry_ref,
+                server.config.package_version,
+            )
+            process_env = dict(os.environ)
+            process_env.update(runtime_values)
+            process_env.update(resolved_env)
+            process_env.setdefault("MCP_REGISTRY_URL", self.registry_url)
+            package_name = resolved_package.get("package", server.config.registry_ref)
+            package_spec = self._build_package_spec(package_name, server.config.package_version)
+            process = await self.launcher(
+                *self._build_command(
+                    package_spec,
+                    self._substitute_runtime_placeholders(server.config.args, runtime_values),
+                ),
+                env=process_env,
+            )
+        except Exception as exc:
+            logger.warning("Failed to start external MCP server %s: %s", name, exc)
+            return False
+
         server.process = process
         server.resolved_env = process_env
         server.session_id = session_id
@@ -541,7 +890,11 @@ class ExternalMCPManager:
             await self._ensure_runtime(workspace_path)
         results: dict[str, bool] = {}
         for name in needed:
-            results[name] = await self.start_server(name, session_id=session_id)
+            results[name] = await self.start_server(
+                name,
+                session_id=session_id,
+                workspace_path=workspace_path,
+            )
         return results
 
     async def stop_server(self, name: str) -> bool:
@@ -629,6 +982,8 @@ class ExternalMCPManager:
                     "enabled": server.config.enabled,
                     "privacy_tier": server.config.privacy_tier.value,
                     "privacy_allowed": self.is_privacy_allowed(name),
+                    "transport": server.config.transport,
+                    "health": "healthy" if server.is_running else "stopped",
                     "agents": list(server.config.agents),
                     "env_keys": sorted(
                         server.config.env.keys() | server.config.env_secret_refs.keys()
@@ -643,12 +998,25 @@ class ExternalMCPManager:
 
 
 __all__ = [
+    "DEFAULT_GIT_MCP_PACKAGE",
+    "DEFAULT_GIT_MCP_VERSION",
     "DEFAULT_PLAYWRIGHT_MCP_PACKAGE",
     "DEFAULT_PLAYWRIGHT_MCP_VERSION",
+    "DEFAULT_TAVILY_MCP_PACKAGE",
+    "DEFAULT_TAVILY_MCP_VERSION",
     "DEFAULT_MCP_RUNTIME_NAME",
     "DEFAULT_REGISTRY_URL",
+    "DEFAULT_POSTGRES_MCP_PACKAGE",
+    "DEFAULT_POSTGRES_MCP_VERSION",
     "ExternalMCPManager",
     "ExternalMCPServer",
+    "build_external_mcp_registration",
+    "build_git_mcp_registration",
+    "build_postgresql_mcp_registration",
     "build_playwright_mcp_registration",
+    "build_tavily_mcp_registration",
+    "ensure_git_mcp_registration",
+    "ensure_postgresql_mcp_registration",
     "ensure_playwright_mcp_registration",
+    "ensure_tavily_mcp_registration",
 ]

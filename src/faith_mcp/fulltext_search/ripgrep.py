@@ -88,6 +88,7 @@ class RipgrepRunner:
         pattern: str,
         *,
         path: str | None = None,
+        file_glob: str | None = None,
         ignore_case: bool = False,
     ) -> SearchResult:
         """
@@ -103,11 +104,23 @@ class RipgrepRunner:
         :param ignore_case: Whether ripgrep should ignore case.
         :returns: Structured search result payload.
         """
-        target = self._validate_path(path)
-        args = [self.rg_binary, "--json", pattern, str(target)]
-        if ignore_case:
-            args.insert(1, "-i")
-        payload = await self._run_rg(args)
+        try:
+            target = self._validate_path(path)
+            args = [
+                self.rg_binary,
+                "--json",
+                "--max-count",
+                str(self.max_matches),
+                pattern,
+                str(target),
+            ]
+            if file_glob:
+                args[1:1] = ["--glob", file_glob]
+            if ignore_case:
+                args.insert(1, "-i")
+            payload = await self._run_rg(args)
+        except (ValueError, FileNotFoundError, TimeoutError, RuntimeError) as exc:
+            return SearchResult(error=str(exc))
         return self._parse_search_output(payload)
 
     async def search_literal(
@@ -115,6 +128,7 @@ class RipgrepRunner:
         text: str,
         *,
         path: str | None = None,
+        file_glob: str | None = None,
         ignore_case: bool = False,
     ) -> SearchResult:
         """
@@ -130,14 +144,32 @@ class RipgrepRunner:
         :param ignore_case: Whether ripgrep should ignore case.
         :returns: Structured search result payload.
         """
-        target = self._validate_path(path)
-        args = [self.rg_binary, "--json", "-F", text, str(target)]
-        if ignore_case:
-            args.insert(1, "-i")
-        payload = await self._run_rg(args)
+        try:
+            target = self._validate_path(path)
+            args = [
+                self.rg_binary,
+                "--json",
+                "--fixed-strings",
+                "--max-count",
+                str(self.max_matches),
+                text,
+                str(target),
+            ]
+            if file_glob:
+                args[1:1] = ["--glob", file_glob]
+            if ignore_case:
+                args.insert(1, "-i")
+            payload = await self._run_rg(args)
+        except (ValueError, FileNotFoundError, TimeoutError, RuntimeError) as exc:
+            return SearchResult(error=str(exc))
         return self._parse_search_output(payload)
 
-    async def search_files(self, pattern: str, *, path: str | None = None) -> SearchResult:
+    async def search_files(
+        self,
+        filename_pattern: str,
+        *,
+        path: str | None = None,
+    ) -> SearchResult:
         """
         Description:
             Search for matching file names under the workspace.
@@ -150,18 +182,24 @@ class RipgrepRunner:
         :param path: Optional relative path filter.
         :returns: Structured file-search result payload.
         """
-        target = self._validate_path(path)
-        args = [self.rg_binary, "--files", str(target)]
-        payload = await self._run_rg(args)
+        try:
+            target = self._validate_path(path)
+            args = [
+                self.rg_binary,
+                "--files",
+                "--glob",
+                filename_pattern,
+                str(target),
+            ]
+            payload = await self._run_rg(args)
+        except (ValueError, FileNotFoundError, TimeoutError, RuntimeError) as exc:
+            return SearchResult(error=str(exc))
         matches: list[FileMatch] = []
         for line in payload.splitlines():
             entry = line.strip()
             if not entry:
                 continue
-            entry_path = Path(entry)
-            name = entry_path.name
-            if pattern.lower() not in name.lower():
-                continue
+            entry_path = self._coerce_match_path(entry, target)
             size = entry_path.stat().st_size if entry_path.exists() else None
             matches.append(FileMatch(path=str(entry_path), size_bytes=size))
             if len(matches) >= self.max_matches:
@@ -182,12 +220,15 @@ class RipgrepRunner:
         :raises TimeoutError: If ripgrep exceeds the configured timeout.
         :raises RuntimeError: If ripgrep exits with an unexpected error.
         """
-        process = await asyncio.create_subprocess_exec(
-            *args,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(self.workspace_root),
-        )
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(self.workspace_root),
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError(f"ripgrep binary '{self.rg_binary}' was not found") from exc
         try:
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
@@ -226,13 +267,14 @@ class RipgrepRunner:
             data = record.get("data", {})
             path_text = data.get("path", {}).get("text", "")
             line_number = int(data.get("line_number", 0))
-            line_text = data.get("lines", {}).get("text", "").rstrip("\n")
+            line_text = data.get("lines", {}).get("text", "").strip()
             submatches = data.get("submatches", [])
             column_start = submatches[0].get("start") if submatches else None
             column_end = submatches[0].get("end") if submatches else None
+            absolute_path = self._coerce_match_path(path_text, self.workspace_root)
             matches.append(
                 SearchMatch(
-                    path=path_text,
+                    path=str(absolute_path),
                     line_number=line_number,
                     line_text=line_text,
                     column_start=column_start,
@@ -242,3 +284,21 @@ class RipgrepRunner:
             if len(matches) >= self.max_matches:
                 return SearchResult(matches=matches, truncated=True, match_count=len(matches))
         return SearchResult(matches=matches, truncated=False, match_count=len(matches))
+
+    def _coerce_match_path(self, raw_path: str, base_path: Path) -> Path:
+        """
+        Convert one ripgrep-reported path into an absolute workspace path.
+
+        Requirements:
+            - Preserve already-absolute paths unchanged.
+            - Resolve relative paths from the validated search target's root.
+
+        :param raw_path: Raw path string emitted by ripgrep.
+        :param base_path: Validated search target used to launch ripgrep.
+        :returns: Absolute path for the reported match.
+        """
+        candidate = Path(raw_path)
+        if candidate.is_absolute():
+            return candidate
+        anchor = base_path if base_path.is_dir() else base_path.parent
+        return (anchor / candidate).resolve()

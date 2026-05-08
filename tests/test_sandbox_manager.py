@@ -215,6 +215,35 @@ async def test_allocate_builds_hardened_runtime_spec() -> None:
 
 
 @pytest.mark.asyncio
+async def test_allocate_strips_docker_socket_mount_targets() -> None:
+    """Description:
+        Verify sandbox allocation rejects Docker socket access even when the socket appears as the container-side mount target.
+
+    Requirements:
+        - This test is needed to prove the sandbox policy does not allow a mount to land on ``/var/run/docker.sock`` by accident.
+        - Verify the resulting runtime spec contains no Docker socket mount on either side of the mapping.
+    """
+
+    runtime = FakeContainerManager()
+    manager = SandboxManager(runtime, quota=SandboxQuota(max_concurrent=2))
+
+    record = await manager.allocate(
+        SandboxRequest(
+            session_id="sess-1",
+            task_id="task-1",
+            agent_id="agent-a",
+            purpose="workspace-edit",
+            workspace="E:/project",
+            approved_mounts={"E:/project": "/var/run/docker.sock"},
+        )
+    )
+
+    created_spec = runtime.created[0]
+    assert created_spec.mounts == {}
+    assert record.policy.approved_mounts == {}
+
+
+@pytest.mark.asyncio
 async def test_reset_recreates_sandbox() -> None:
     """Description:
         Verify resetting a sandbox destroys and recreates its runtime.

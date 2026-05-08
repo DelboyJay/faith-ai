@@ -204,6 +204,7 @@ class SandboxManager:
 
         Requirements:
             - Allow approved mounts only.
+            - Reject any mount that could expose the Docker socket on either side of the mapping.
             - Never allow privileged mode, host networking, or Docker socket access.
             - Carry the quota-derived CPU, memory, and disk settings into the policy.
 
@@ -211,11 +212,13 @@ class SandboxManager:
         :returns: Hardened sandbox policy.
         """
 
-        cleaned_mounts = {
-            host_path: mount_path
-            for host_path, mount_path in request.approved_mounts.items()
-            if "docker.sock" not in host_path.lower()
-        }
+        cleaned_mounts = {}
+        for host_path, mount_path in request.approved_mounts.items():
+            if self._contains_docker_socket_path(host_path) or self._contains_docker_socket_path(
+                mount_path
+            ):
+                continue
+            cleaned_mounts[host_path] = mount_path
         return SandboxPolicy(
             approved_mounts=cleaned_mounts,
             network_mode="bridge",
@@ -258,6 +261,20 @@ class SandboxManager:
             await self.runtime.destroy(record.container_name)
         else:
             await self.runtime.destroy(record.sandbox_id)
+
+    @staticmethod
+    def _contains_docker_socket_path(path: str) -> bool:
+        """Description:
+            Report whether one mount path references the Docker socket.
+
+        Requirements:
+            - Treat any path containing ``docker.sock`` as unsafe for sandbox mounts.
+
+        :param path: Host or container mount path to inspect.
+        :returns: ``True`` when the path references the Docker socket.
+        """
+
+        return "docker.sock" in path.lower()
 
     async def allocate(self, request: SandboxRequest) -> SandboxRecord:
         """Description:

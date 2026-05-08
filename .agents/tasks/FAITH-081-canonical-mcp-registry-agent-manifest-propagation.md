@@ -1,6 +1,6 @@
 # FAITH-081 - Canonical MCP Registry & Agent Tool Manifest Propagation
 
-**Status:** TODO
+**Status:** DONE
 **Phase:** 7 - CAG & External MCP Integration
 **Complexity:** L
 **Model:** Opus / GPT-5.4 high reasoning

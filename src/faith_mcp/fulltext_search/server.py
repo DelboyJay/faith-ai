@@ -46,6 +46,7 @@ class FullTextSearchServer:
         pattern: str,
         *,
         path: str | None = None,
+        file_glob: str | None = None,
         ignore_case: bool = False,
     ) -> dict[str, Any]:
         """
@@ -61,13 +62,21 @@ class FullTextSearchServer:
         :param ignore_case: Whether ripgrep should ignore case.
         :returns: Structured search result payload.
         """
-        return (await self.runner.search(pattern, path=path, ignore_case=ignore_case)).to_dict()
+        return (
+            await self.runner.search(
+                pattern,
+                path=path,
+                file_glob=file_glob,
+                ignore_case=ignore_case,
+            )
+        ).to_dict()
 
     async def search_literal(
         self,
         text: str,
         *,
         path: str | None = None,
+        file_glob: str | None = None,
         ignore_case: bool = False,
     ) -> dict[str, Any]:
         """
@@ -84,10 +93,20 @@ class FullTextSearchServer:
         :returns: Structured search result payload.
         """
         return (
-            await self.runner.search_literal(text, path=path, ignore_case=ignore_case)
+            await self.runner.search_literal(
+                text,
+                path=path,
+                file_glob=file_glob,
+                ignore_case=ignore_case,
+            )
         ).to_dict()
 
-    async def search_files(self, pattern: str, *, path: str | None = None) -> dict[str, Any]:
+    async def search_files(
+        self,
+        filename_pattern: str,
+        *,
+        path: str | None = None,
+    ) -> dict[str, Any]:
         """
         Description:
             Search for matching file paths without inspecting file content.
@@ -96,8 +115,8 @@ class FullTextSearchServer:
             - Pass through the optional relative path filter.
             - Return the runner result as a plain dictionary.
 
-        :param pattern: File-name pattern to search for.
+        :param filename_pattern: File-name pattern to search for.
         :param path: Optional relative path filter.
         :returns: Structured file-search result payload.
         """
-        return (await self.runner.search_files(pattern, path=path)).to_dict()
+        return (await self.runner.search_files(filename_pattern, path=path)).to_dict()

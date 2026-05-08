@@ -3,7 +3,7 @@
 **Phase:** 6 — Tool Servers
 **Complexity:** S
 **Model:** Haiku / GPT-5.4-mini
-**Status:** TODO
+**Status:** DONE
 **Dependencies:** FAITH-002
 **FRS Reference:** Section 4.13
 

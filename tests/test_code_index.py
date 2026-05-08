@@ -1,188 +1,325 @@
 """
 Description:
-    Verify the FAITH code index builds, searches, and persists lightweight code
-    snapshots correctly.
+    Verify the code-index MCP package exposes AST-style symbol navigation for
+    the workspace.
 
 Requirements:
-    - Cover symbol extraction, search ranking, snapshot persistence, and server
-      facade behaviour.
-    - Verify ignored directories and binary files stay out of the index.
+    - Prove supported source files are indexed and skipped directories stay
+      out of the index.
+    - Verify file, symbol, function, search, and description queries return the
+      structured data needed by the task brief.
 """
 
 from __future__ import annotations
 
-import json
+import textwrap
 from pathlib import Path
 
-from faith_mcp.code_index import CodeIndex, CodeIndexServer
+import pytest
+
+from faith_mcp.code_index import CodeIndex, CodeIndexServer, FileWatcher
 
 
 def write_text(path: Path, content: str) -> Path:
     """
     Description:
-        Create a text file and any missing parent directories for code-index
-        tests.
+        Write a text file for code-index test fixtures.
 
     Requirements:
-        - Ensure parent directories exist before writing the file.
-        - Return the written path for convenience.
+        - Create parent directories before writing the file.
+        - Return the path so callers can chain fixture creation.
 
-    :param path: File path to create.
-    :param content: Text content to write to the file.
+    :param path: File path to write.
+    :param content: Text content to store in the file.
     :returns: Written file path.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_text(textwrap.dedent(content).strip() + "\n", encoding="utf-8")
     return path
 
 
-def test_build_index_extracts_symbols_and_ignores_generated_dirs(tmp_path) -> None:
+def build_workspace(tmp_path: Path) -> Path:
     """
     Description:
-        Verify the code index extracts Python symbols while skipping excluded
-        generated directories.
+        Create a workspace that exercises the supported language set.
 
     Requirements:
-        - This test is needed to prove indexing respects excluded directories
-          such as `.git`.
-        - Verify indexed Python files expose extracted class and function
-          symbols.
+        - Include Python, JavaScript, TypeScript, Java, and Go source files.
+        - Include an ignored directory so the skip logic is tested too.
 
     :param tmp_path: Temporary directory provided by pytest.
+    :returns: Workspace root containing fixture files.
     """
     project = tmp_path / "project"
+
     write_text(
-        project / "app.py",
+        project / "src" / "python" / "auth.py",
         """
-        class CodeIndexer:
-            def search(self):
-                return "ok"
+        class TokenManager:
+            \"\"\"Manage tokens for the session.\"\"\"
 
-        def helper_function():
-            return CodeIndexer()
-        """.strip(),
-    )
-    write_text(project / "notes.md", "Code index helps the PA find symbols and documentation.")
-    write_text(project / ".git" / "ignored.py", "def should_not_be_indexed():\n    pass\n")
-
-    index = CodeIndex.build(project)
-
-    assert index.root == str(project.resolve())
-    assert index.find("app.py") is not None
-    assert index.find("notes.md") is not None
-    assert index.find(".git/ignored.py") is None
-
-    app_doc = index.find("app.py")
-    assert app_doc is not None
-    assert [symbol.name for symbol in app_doc.symbols] == ["CodeIndexer", "helper_function"]
-    assert app_doc.language == "python"
+            def create_token(self, subject: str) -> str:
+                \"\"\"Create a compact token for one subject.\"\"\"
+                return subject.upper()
 
 
-def test_search_ranks_symbol_and_content_matches(tmp_path) -> None:
-    """
-    Description:
-        Verify code-index searches rank symbol and content matches sensibly.
-
-    Requirements:
-        - This test is needed to prove search results prioritise files that
-          match both symbol names and content.
-        - Verify the best hit points at the indexed implementation file.
-
-    :param tmp_path: Temporary directory provided by pytest.
-    """
-    project = tmp_path / "project"
-    write_text(
-        project / "faith" / "tools" / "code_index" / "index.py",
-        """
-        class CodeIndex:
-            def search(self, query):
-                return query
+        def hash_password(password: str) -> str:
+            \"\"\"Hash a password for storage.\"\"\"
+            return password[::-1]
         """.strip(),
     )
     write_text(
-        project / "docs" / "readme.md",
-        "The code index keeps a lightweight searchable catalog.",
+        project / "src" / "web" / "client.js",
+        """
+        export function formatDate(value) {
+            return value.toISOString();
+        }
+
+        class Logger {
+            log(message) {
+                console.log(message);
+            }
+        }
+        """.strip(),
+    )
+    write_text(
+        project / "src" / "web" / "view.tsx",
+        """
+        export function buildTitle(name: string) {
+            return name.trim();
+        }
+        """.strip(),
+    )
+    write_text(
+        project / "src" / "java" / "Main.java",
+        """
+        public class Main {
+            public static String greet(String name) {
+                return name.trim();
+            }
+        }
+        """.strip(),
+    )
+    write_text(
+        project / "src" / "go" / "service.go",
+        """
+        package service
+
+        type Cache struct {}
+
+        func (c *Cache) Put(key string) {}
+
+        func BuildName(value string) string {
+            return value
+        }
+        """.strip(),
+    )
+    write_text(project / "docs" / "notes.md", "The code index should ignore documentation.")
+    write_text(
+        project / "node_modules" / "ignored.js",
+        "function shouldNotAppear() { return true; }",
     )
 
-    index = CodeIndex.build(project)
-    hits = index.search("code index", limit=5)
-
-    assert hits
-    assert hits[0].relative_path.endswith("index.py")
-    assert any("symbol:code" in hit.matches or "symbol:index" in hit.matches for hit in hits)
-    assert any(
-        "content:searchable" in hit.matches or "content:index" in hit.matches for hit in hits
-    )
+    return project
 
 
-def test_save_and_load_round_trip(tmp_path) -> None:
+def test_code_index_supports_symbol_navigation(tmp_path: Path) -> None:
     """
     Description:
-        Verify saved code-index snapshots can be loaded back without losing
-        document data.
+        Verify the code index extracts symbols, supports file and directory
+        queries, and keeps ignored directories out of the result set.
 
     Requirements:
-        - This test is needed to prove persisted index snapshots are reusable.
-        - Verify the saved snapshot contains document data and supports search
-          after reload.
+        - This test is needed to prove the index can answer navigation queries
+          without loading whole files into context.
+        - Verify the returned symbols include signatures, docstrings, and line
+          ranges for the indexed file and module query.
+
+    :param tmp_path: Temporary directory provided by pytest.
+    """
+    project = build_workspace(tmp_path)
+    index = CodeIndex.build(project)
+
+    files = index.list_files()
+    paths = [item.path for item in files]
+    assert "node_modules/ignored.js" not in paths
+    assert "src/python/auth.py" in paths
+    assert "src/web/client.js" in paths
+
+    python_symbols = index.list_symbols("src/python/auth.py")
+    python_names = [symbol.name for symbol in python_symbols]
+    assert python_names[:2] == ["TokenManager", "create_token"]
+    assert "hash_password" in python_names
+
+    auth_class = next(symbol for symbol in python_symbols if symbol.name == "TokenManager")
+    assert auth_class.signature.startswith("class TokenManager")
+    assert "Manage tokens" in (auth_class.docstring or "")
+    assert auth_class.line_start <= auth_class.line_end
+
+    module_symbols = index.list_symbols("src")
+    module_names = {symbol.name for symbol in module_symbols}
+    assert {"TokenManager", "formatDate", "Main", "BuildName"}.issubset(module_names)
+
+    function = index.get_function("hash_password", "src/python/auth.py")
+    assert function is not None
+    assert function.symbol.name == "hash_password"
+    assert "return password[::-1]" in function.source
+
+    search_results = index.search_symbol("token")
+    search_names = [symbol.name for symbol in search_results]
+    assert "TokenManager" in search_names
+    assert "create_token" in search_names
+
+    description_results = index.describe_symbol("TokenManager")
+    assert description_results
+    assert description_results[0].docstring is not None
+
+
+def test_code_index_updates_and_removes_files(tmp_path: Path) -> None:
+    """
+    Description:
+        Verify the code index can refresh a single file and remove deleted
+        files from the in-memory index.
+
+    Requirements:
+        - This test is needed to prove the index stays aligned with workspace
+          changes after file writes and deletions.
+        - Verify an updated file exposes the new symbol and a removed file
+          disappears from the file list.
 
     :param tmp_path: Temporary directory provided by pytest.
     """
     project = tmp_path / "project"
-    write_text(project / "main.py", "def alpha():\n    return 1\n")
-    write_text(project / "README.md", "Alpha project")
-
+    auth_path = write_text(
+        project / "src" / "python" / "auth.py",
+        """
+        def first() -> str:
+            return "first"
+        """.strip(),
+    )
     index = CodeIndex.build(project)
-    snapshot = tmp_path / "index.json"
-    index.save(snapshot)
+    assert [symbol.name for symbol in index.list_symbols("src/python/auth.py")] == ["first"]
 
-    loaded = CodeIndex.load(snapshot)
-    assert loaded.root == index.root
-    assert loaded.documents[0].relative_path in {doc.relative_path for doc in index.documents}
-    assert json.loads(snapshot.read_text(encoding="utf-8"))["documents"]
-    assert loaded.search("alpha")
+    write_text(
+        auth_path,
+        """
+        def first() -> str:
+            return "first"
 
 
-def test_search_ignores_binary_and_empty_queries(tmp_path) -> None:
+        def second() -> str:
+            return "second"
+        """.strip(),
+    )
+    index.index_file(auth_path)
+    updated_names = [symbol.name for symbol in index.list_symbols("src/python/auth.py")]
+    assert updated_names == ["first", "second"]
+
+    index.remove_file(auth_path)
+    remaining_paths = [item.path for item in index.list_files()]
+    assert "src/python/auth.py" not in remaining_paths
+
+
+def test_code_index_recovers_symbols_from_syntax_errors(tmp_path: Path) -> None:
     """
     Description:
-        Verify the code index ignores binary files and returns no hits for empty
-        queries.
+        Verify the code index can still recover symbols from a malformed source
+        file instead of dropping the whole file on the floor.
 
     Requirements:
-        - This test is needed to prove binary files do not pollute the text
-          index.
-        - Verify empty queries return no results.
+        - This test is needed to prove the Code Index uses a tolerant parser
+          backend rather than a fail-fast whole-file AST parse.
+        - Verify a malformed Python file still exposes the valid earlier symbol
+          definitions that appear before the syntax error.
 
     :param tmp_path: Temporary directory provided by pytest.
     """
     project = tmp_path / "project"
-    write_text(project / "main.py", "def alpha():\n    return 1\n")
-    (project / "image.bin").parent.mkdir(parents=True, exist_ok=True)
-    (project / "image.bin").write_bytes(b"\x00\x01\x02")
+    write_text(
+        project / "broken.py",
+        """
+        def first() -> str:
+            return "first"
+
+
+        def broken(
+            return "broken"
+        """.strip(),
+    )
 
     index = CodeIndex.build(project)
-
-    assert index.search("") == []
-    assert index.find("image.bin") is None
-    assert index.search("alpha")
+    names = [symbol.name for symbol in index.list_symbols("broken.py")]
+    assert "first" in names
 
 
-def test_code_index_server_builds_and_searches(tmp_path) -> None:
+def test_code_index_server_facade_builds_on_demand(tmp_path: Path) -> None:
     """
     Description:
-        Verify the code-index server facade can build and search an index on
-        demand.
+        Verify the server facade can build an index lazily and serve symbol
+        queries from it.
 
     Requirements:
-        - This test is needed to prove the server facade lazily builds its index
-          when callers search before an explicit build.
-        - Verify the search returns the indexed application file.
+        - This test is needed to prove the public server wrapper is usable
+          without a separate manual build step.
+        - Verify the facade returns the expected file and symbol data.
 
     :param tmp_path: Temporary directory provided by pytest.
     """
-    (tmp_path / "app.py").write_text("def hello():\n    return 'hi'\n", encoding="utf-8")
+    write_text(
+        tmp_path / "app.py",
+        """
+        def hello_world() -> str:
+            \"\"\"Return a greeting.\"\"\"
+            return "hello"
+        """.strip(),
+    )
     server = CodeIndexServer(tmp_path)
-    hits = server.search("hello")
-    assert len(hits) == 1
-    assert hits[0].relative_path == "app.py"
+
+    files = server.list_files()
+    assert files[0].path == "app.py"
+
+    descriptions = server.describe_symbol("hello_world")
+    assert descriptions and descriptions[0].name == "hello_world"
+
+    function = server.get_function("hello_world", "app.py")
+    assert function is not None
+    assert "Return a greeting" in (function.symbol.docstring or "")
+
+
+@pytest.mark.asyncio
+async def test_code_index_watcher_refreshes_changes(tmp_path: Path) -> None:
+    """
+    Description:
+        Verify the code-index watcher starts, scans, and stops cleanly.
+
+    Requirements:
+        - This test is needed to prove the polling watcher can pick up a file
+          added after startup.
+        - Verify the watcher reindexes the new file without errors.
+
+    :param tmp_path: Temporary directory provided by pytest.
+    """
+    project = tmp_path / "project"
+    write_text(
+        project / "initial.py",
+        """
+        def first() -> str:
+            return "first"
+        """.strip(),
+    )
+    index = CodeIndex.build(project)
+    watcher = FileWatcher(project, index, debounce_ms=10)
+
+    await watcher.start()
+    write_text(
+        project / "added.py",
+        """
+        def second() -> str:
+            return "second"
+        """.strip(),
+    )
+    await watcher.scan_once()
+    await watcher.stop()
+
+    names = {symbol.name for symbol in index.search_symbol("second")}
+    assert "second" in names

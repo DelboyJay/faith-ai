@@ -18,8 +18,15 @@ import yaml
 
 from faith_pa.pa.external_mcp import (
     ExternalMCPManager,
+    build_external_mcp_registration,
+    build_git_mcp_registration,
     build_playwright_mcp_registration,
+    build_postgresql_mcp_registration,
+    build_tavily_mcp_registration,
+    ensure_git_mcp_registration,
     ensure_playwright_mcp_registration,
+    ensure_postgresql_mcp_registration,
+    ensure_tavily_mcp_registration,
 )
 from faith_pa.pa.secret_resolver import SecretResolver
 from faith_shared.config.models import ExternalMCPToolConfig, PrivacyProfile
@@ -204,7 +211,15 @@ def secret_resolver(tmp_faith_dir: Path) -> SecretResolver:
 
     config_dir = tmp_faith_dir.parent / "config"
     (config_dir / "secrets.yaml").write_text(
-        yaml.safe_dump({"credentials": {"github-token": "secret-token"}}, sort_keys=False),
+        yaml.safe_dump(
+            {
+                "credentials": {
+                    "github-token": "secret-token",
+                    "tavily-api-key": "tavily-secret",
+                }
+            },
+            sort_keys=False,
+        ),
         encoding="utf-8",
     )
     (config_dir / ".env").write_text("GITHUB_TOKEN=dotenv-token\n", encoding="utf-8")
@@ -254,6 +269,33 @@ def build_external_payload(**overrides: Any) -> dict[str, Any]:
         "env_secret_refs": {"API_TOKEN": "github-token"},
         "privacy_tier": "internal",
         "agents": ["software-developer", "qa-engineer"],
+        "enabled": True,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def build_tavily_payload(**overrides: Any) -> dict[str, Any]:
+    """Description:
+        Build one valid Tavily external MCP tool config payload for tests.
+
+    Requirements:
+        - Produce a version-pinned Tavily registration with secret-backed API key resolution by default.
+        - Allow callers to override individual fields per scenario.
+
+    :param overrides: Field overrides merged into the baseline payload.
+    :returns: Tavily external MCP tool config payload.
+    """
+
+    payload: dict[str, Any] = {
+        "schema_version": "1.0",
+        "registry_ref": "@tavily/mcp",
+        "package_version": "0.2.9",
+        "transport": "stdio",
+        "env": {},
+        "env_secret_refs": {"TAVILY_API_KEY": "tavily-api-key"},
+        "privacy_tier": "internal",
+        "agents": ["qa-engineer", "security-expert"],
         "enabled": True,
     }
     payload.update(overrides)
@@ -325,6 +367,39 @@ def test_load_configs_discovers_external_tool_files(
 
     assert count == 1
     assert manager.get_server("github") is not None
+
+
+def test_load_configs_skips_invalid_files_and_keeps_valid_registrations(
+    tmp_faith_dir: Path,
+    secret_resolver: SecretResolver,
+) -> None:
+    """Description:
+        Verify invalid external MCP config files do not block valid registrations.
+
+    Requirements:
+        - This test is needed because one bad `.faith/tools/external-*.yaml` file should not take down all external MCP loading.
+        - Verify the manager skips the invalid file and still registers the valid one.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    :param secret_resolver: Temporary secret resolver fixture.
+    """
+
+    write_external_tool(tmp_faith_dir, "github", build_external_payload())
+    write_external_tool(
+        tmp_faith_dir,
+        "broken",
+        {"schema_version": "1.0", "transport": "stdio"},
+    )
+    manager = ExternalMCPManager(
+        faith_dir=tmp_faith_dir,
+        secret_resolver=secret_resolver,
+    )
+
+    count = manager.load_configs()
+
+    assert count == 1
+    assert manager.get_server("github") is not None
+    assert manager.get_server("broken") is None
 
 
 def test_get_servers_for_agent_respects_privacy_and_enablement(
@@ -439,6 +514,131 @@ def test_playwright_mcp_registration_uses_official_package_and_qa_defaults() -> 
     assert registration["args"] == ["--headless", "--isolated"]
 
 
+def test_generic_external_mcp_registration_supports_non_browser_servers() -> None:
+    """Description:
+        Verify FAITH can generate a generic external MCP registration template.
+
+    Requirements:
+        - This test is needed because optional external-first tools like RAG and pricing should not require FAITH-owned server code.
+        - Verify the helper preserves registry/package metadata, agent targeting, and secret wiring for a non-browser server.
+    """
+
+    registration = build_external_mcp_registration(
+        registry_ref="@modelcontextprotocol/server-rag",
+        package_version="2.4.6",
+        privacy_tier=PrivacyProfile.CONFIDENTIAL,
+        agents=["project-agent", "researcher"],
+        args=["--project-scope", "--source-aware"],
+        env={"RAG_CACHE_DIR": "/workspace/.faith/rag"},
+        env_secret_refs={"RAG_API_KEY": "rag-api-key"},
+    )
+
+    assert registration["registry_ref"] == "@modelcontextprotocol/server-rag"
+    assert registration["package_version"] == "2.4.6"
+    assert registration["privacy_tier"] == PrivacyProfile.CONFIDENTIAL.value
+    assert registration["agents"] == ["project-agent", "researcher"]
+    assert registration["args"] == ["--project-scope", "--source-aware"]
+    assert registration["env"]["RAG_CACHE_DIR"] == "/workspace/.faith/rag"
+    assert registration["env_secret_refs"] == {"RAG_API_KEY": "rag-api-key"}
+
+
+def test_postgresql_mcp_registration_uses_secret_wiring_and_db_defaults() -> None:
+    """Description:
+        Verify FAITH can generate an external PostgreSQL registration with secret-backed credentials.
+
+    Requirements:
+        - This test is needed because database credentials must stay out of project tool files.
+        - Verify the helper pins the package, assigns database-focused agents, and stores the password as a secret reference.
+    """
+
+    registration = build_postgresql_mcp_registration(
+        package_version="0.1.3",
+        host="db.internal",
+        port=5432,
+        database="myapp",
+        user="agent_readonly",
+        password_secret_ref="prod-db-password",
+    )
+
+    assert registration["registry_ref"] == "mcp-postgres-server"
+    assert registration["package_version"] == "0.1.3"
+    assert registration["privacy_tier"] == PrivacyProfile.INTERNAL.value
+    assert registration["agents"] == ["software-developer", "fds-architect"]
+    assert registration["env"] == {
+        "PG_HOST": "db.internal",
+        "PG_PORT": "5432",
+        "PG_DATABASE": "myapp",
+        "PG_USER": "agent_readonly",
+    }
+    assert registration["env_secret_refs"] == {"PG_PASSWORD": "prod-db-password"}
+
+
+def test_git_mcp_registration_targets_local_repository_workspace() -> None:
+    """Description:
+        Verify FAITH can generate an external local Git registration that binds to the active workspace.
+
+    Requirements:
+        - This test is needed because local Git servers must operate on the checked-out repository, not a remote API.
+        - Verify the helper pins the package and exposes the workspace binding placeholder for runtime resolution.
+    """
+
+    registration = build_git_mcp_registration(package_version="2.3.3")
+
+    assert registration["registry_ref"] == "@cyanheads/git-mcp-server"
+    assert registration["package_version"] == "2.3.3"
+    assert registration["privacy_tier"] == PrivacyProfile.INTERNAL.value
+    assert registration["agents"] == ["software-developer", "code-reviewer"]
+    assert registration["env"]["GIT_BASE_DIR"] == "${FAITH_WORKSPACE_PATH}"
+    assert registration["env"]["GIT_SIGN_COMMITS"] == "false"
+
+
+def test_ensure_postgresql_mcp_registration_creates_default_tool_file(
+    tmp_faith_dir: Path,
+) -> None:
+    """Description:
+        Verify FAITH can materialise the default PostgreSQL external MCP registration.
+
+    Requirements:
+        - This test is needed so setup and wizard flows can add a compliant database server without duplicating YAML knowledge.
+        - Verify the generated file uses the external registry package and secret-backed password wiring.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    """
+
+    path = ensure_postgresql_mcp_registration(
+        tmp_faith_dir,
+        package_version="0.1.3",
+    )
+
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert path == tmp_faith_dir / "tools" / "external-postgres.yaml"
+    assert payload["registry_ref"] == "mcp-postgres-server"
+    assert payload["package_version"] == "0.1.3"
+    assert payload["env_secret_refs"] == {"PG_PASSWORD": "postgres-password"}
+
+
+def test_ensure_git_mcp_registration_creates_default_tool_file(
+    tmp_faith_dir: Path,
+) -> None:
+    """Description:
+        Verify FAITH can materialise the default external Git registration.
+
+    Requirements:
+        - This test is needed so workspace-bound Git access can be installed without a hand-authored config file.
+        - Verify the generated file uses the external Git package and workspace placeholder wiring.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    """
+
+    path = ensure_git_mcp_registration(tmp_faith_dir, package_version="2.3.3")
+
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert path == tmp_faith_dir / "tools" / "external-git.yaml"
+    assert payload["registry_ref"] == "@cyanheads/git-mcp-server"
+    assert payload["package_version"] == "2.3.3"
+    assert payload["env"]["GIT_BASE_DIR"] == "${FAITH_WORKSPACE_PATH}"
+
+
 def test_ensure_playwright_mcp_registration_creates_default_tool_file(
     tmp_faith_dir: Path,
 ) -> None:
@@ -483,12 +683,179 @@ def test_ensure_playwright_mcp_registration_preserves_existing_tool_file(
         build_playwright_mcp_registration(package_version="0.0.12", enabled=False),
     )
 
-    ensured = ensure_playwright_mcp_registration(tmp_faith_dir, package_version="0.0.36")
+    ensured = ensure_playwright_mcp_registration(
+        tmp_faith_dir,
+        package_version="0.0.36",
+    )
 
     payload = yaml.safe_load(ensured.read_text(encoding="utf-8"))
     assert ensured == path
     assert payload["package_version"] == "0.0.12"
     assert payload["enabled"] is False
+
+
+def test_tavily_mcp_registration_uses_official_package_and_secret_backed_api_key() -> None:
+    """Description:
+        Verify the built-in Tavily MCP registration template matches the agreed external-search approach.
+
+    Requirements:
+        - This test is needed so FAITH can create a reliable default Tavily MCP registration without hand-authored YAML.
+        - Verify the official package, pinned version, secret-backed API key mapping, and privacy tier are present.
+    """
+
+    registration = build_tavily_mcp_registration(package_version="0.2.9")
+
+    assert registration["registry_ref"] == "@tavily/mcp"
+    assert registration["package_version"] == "0.2.9"
+    assert registration["env_secret_refs"] == {"TAVILY_API_KEY": "tavily-api-key"}
+    assert registration["privacy_tier"] == "internal"
+
+
+def test_ensure_tavily_mcp_registration_creates_default_tool_file(
+    tmp_faith_dir: Path,
+) -> None:
+    """Description:
+        Verify FAITH can materialise the default Tavily external MCP registration.
+
+    Requirements:
+        - This test is needed so setup/wizard code can install the default web-search registration without duplicating YAML knowledge.
+        - Verify the generated file uses the official package and secret-backed API key configuration.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    """
+
+    path = ensure_tavily_mcp_registration(tmp_faith_dir, package_version="0.2.9")
+
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert path == tmp_faith_dir / "tools" / "external-tavily.yaml"
+    assert payload["registry_ref"] == "@tavily/mcp"
+    assert payload["package_version"] == "0.2.9"
+    assert payload["env_secret_refs"] == {"TAVILY_API_KEY": "tavily-api-key"}
+
+
+def test_ensure_tavily_mcp_registration_preserves_existing_tool_file(
+    tmp_faith_dir: Path,
+) -> None:
+    """Description:
+        Verify default Tavily registration creation does not overwrite user config.
+
+    Requirements:
+        - This test is needed because users may pin a different Tavily MCP version or disable the server.
+        - Verify an existing registration file is left unchanged.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    """
+
+    path = write_external_tool(
+        tmp_faith_dir,
+        "tavily",
+        build_tavily_payload(package_version="0.2.3", enabled=False),
+    )
+
+    ensured = ensure_tavily_mcp_registration(tmp_faith_dir, package_version="0.2.9")
+
+    payload = yaml.safe_load(ensured.read_text(encoding="utf-8"))
+    assert ensured == path
+    assert payload["package_version"] == "0.2.3"
+    assert payload["enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_tavily_mcp_registration_launches_with_resolved_api_key(
+    tmp_faith_dir: Path,
+    secret_resolver: SecretResolver,
+) -> None:
+    """Description:
+        Verify the default Tavily MCP registration launches with a resolved API key.
+
+    Requirements:
+        - This test is needed because the Tavily API key must come from secrets/environment rather than hard-coded YAML.
+        - Verify the launch command is version-pinned and the environment includes the resolved API key value.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    :param secret_resolver: Temporary secret resolver fixture.
+    """
+
+    write_external_tool(
+        tmp_faith_dir,
+        "tavily",
+        build_tavily_payload(),
+    )
+    launcher = FakeLauncher()
+    manager = ExternalMCPManager(
+        faith_dir=tmp_faith_dir,
+        secret_resolver=secret_resolver,
+        launcher=launcher,
+    )
+    manager.load_configs()
+
+    started = await manager.start_server("tavily", session_id="sess-tavily")
+
+    assert started is True
+    assert launcher.calls[0]["cmd"] == [
+        "npx",
+        "-y",
+        "@tavily/mcp@0.2.9",
+    ]
+    assert launcher.calls[0]["env"]["TAVILY_API_KEY"] == "tavily-secret"
+    assert manager.get_server("tavily").session_id == "sess-tavily"
+
+
+@pytest.mark.asyncio
+async def test_tavily_mcp_registration_blocks_confidential_privacy_before_secret_resolution(
+    tmp_faith_dir: Path,
+) -> None:
+    """Description:
+        Verify Tavily access is blocked for confidential projects before any outbound launch attempt.
+
+    Requirements:
+        - This test is needed to prove privacy gating happens before secret resolution or network activity.
+        - Verify the manager returns `False` without consulting the secret resolver or launcher.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    """
+
+    class FailingSecretResolver:
+        """Description:
+            Raise if the confidential privacy gate does not short-circuit first.
+
+        Requirements:
+            - Fail loudly if environment resolution is attempted.
+        """
+
+        def resolve_environment(
+            self,
+            *,
+            env: dict[str, str] | None = None,
+            env_secret_refs: dict[str, str] | None = None,
+        ) -> dict[str, str]:
+            """Description:
+                Reject any secret resolution attempt in the confidential privacy case.
+
+            Requirements:
+                - Preserve the privacy regression test's short-circuit guarantee.
+
+            :param env: Plain environment values.
+            :param env_secret_refs: Secret-reference mapping.
+            :raises AssertionError: Always raised if called.
+            """
+
+            raise AssertionError("secret resolution should not run for confidential privacy")
+
+    write_external_tool(tmp_faith_dir, "tavily", build_tavily_payload())
+    launcher = FakeLauncher()
+    manager = ExternalMCPManager(
+        faith_dir=tmp_faith_dir,
+        secret_resolver=FailingSecretResolver(),
+        active_privacy_profile=PrivacyProfile.CONFIDENTIAL,
+        launcher=launcher,
+    )
+    manager.load_configs()
+
+    started = await manager.start_server("tavily", session_id="sess-private")
+
+    assert started is False
+    assert launcher.calls == []
 
 
 @pytest.mark.asyncio
@@ -570,6 +937,142 @@ async def test_start_server_launches_stdio_process_with_resolved_env(
     assert launcher.calls[0]["env"]["GITHUB_TOKEN"] == "dotenv-token"
     assert launcher.calls[0]["env"]["API_TOKEN"] == "secret-token"
     assert manager.get_server("github").session_id == "sess-001"
+
+
+@pytest.mark.asyncio
+async def test_start_server_launches_postgresql_process_with_resolved_env(
+    tmp_faith_dir: Path,
+    secret_resolver: SecretResolver,
+) -> None:
+    """Description:
+        Verify starting the external PostgreSQL server resolves secret-backed environment values.
+
+    Requirements:
+        - This test is needed because database credentials must be resolved before launch without being written into the tool config.
+        - Verify the launch command is version-pinned and the PostgreSQL password comes from the secret resolver.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    :param secret_resolver: Temporary secret resolver fixture.
+    """
+
+    write_external_tool(
+        tmp_faith_dir,
+        "postgres",
+        build_postgresql_mcp_registration(
+            package_version="0.1.3",
+            password_secret_ref="github-token",
+        ),
+    )
+    launcher = FakeLauncher()
+    manager = ExternalMCPManager(
+        faith_dir=tmp_faith_dir,
+        secret_resolver=secret_resolver,
+        launcher=launcher,
+    )
+    manager.load_configs()
+
+    started = await manager.start_server("postgres", session_id="sess-db")
+
+    assert started is True
+    assert launcher.calls[0]["cmd"] == [
+        "npx",
+        "-y",
+        "mcp-postgres-server@0.1.3",
+    ]
+    assert launcher.calls[0]["env"]["PG_PASSWORD"] == "secret-token"
+    assert launcher.calls[0]["env"]["PG_HOST"] == "localhost"
+    assert launcher.calls[0]["env"]["PG_DATABASE"] == "postgres"
+
+
+@pytest.mark.asyncio
+async def test_start_server_launches_git_process_with_workspace_path(
+    tmp_faith_dir: Path,
+    secret_resolver: SecretResolver,
+) -> None:
+    """Description:
+        Verify starting the external Git server resolves the workspace-bound repository path.
+
+    Requirements:
+        - This test is needed because local Git operations must target the checked-out repository on disk.
+        - Verify the workspace placeholder is expanded before the subprocess is launched.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    :param secret_resolver: Temporary secret resolver fixture.
+    """
+
+    write_external_tool(
+        tmp_faith_dir,
+        "git",
+        build_git_mcp_registration(package_version="2.3.3"),
+    )
+    launcher = FakeLauncher()
+    manager = ExternalMCPManager(
+        faith_dir=tmp_faith_dir,
+        secret_resolver=secret_resolver,
+        launcher=launcher,
+    )
+    manager.load_configs()
+
+    started = await manager.start_server(
+        "git",
+        session_id="sess-git",
+        workspace_path=tmp_faith_dir.parent,
+    )
+
+    assert started is True
+    assert launcher.calls[0]["cmd"] == [
+        "npx",
+        "-y",
+        "@cyanheads/git-mcp-server@2.3.3",
+    ]
+    assert launcher.calls[0]["env"]["GIT_BASE_DIR"] == str(tmp_faith_dir.parent.resolve())
+    assert manager.get_server("git").session_id == "sess-git"
+
+
+@pytest.mark.asyncio
+async def test_start_server_returns_false_when_launch_fails(
+    tmp_faith_dir: Path,
+    secret_resolver: SecretResolver,
+) -> None:
+    """Description:
+        Verify external MCP startup degrades cleanly when subprocess launch fails.
+
+    Requirements:
+        - This test is needed so one failed external tool does not crash the session flow.
+        - Verify the manager returns `False` when the launcher raises an exception.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    :param secret_resolver: Temporary secret resolver fixture.
+    """
+
+    write_external_tool(tmp_faith_dir, "github", build_external_payload())
+    manager = ExternalMCPManager(
+        faith_dir=tmp_faith_dir,
+        secret_resolver=secret_resolver,
+        launcher=FakeLauncher(),
+    )
+    manager.load_configs()
+
+    async def failing_launcher(*cmd: str, env: dict[str, str]) -> FakeProcess:
+        """Description:
+            Raise a launch failure for the regression test.
+
+        Requirements:
+            - Simulate the subprocess launcher rejecting the request.
+
+        :param cmd: Command-line segments for the launch attempt.
+        :param env: Resolved process environment.
+        :raises RuntimeError: Always raised to simulate a launch failure.
+        """
+
+        raise RuntimeError("launch failed")
+
+    manager.launcher = failing_launcher
+
+    started = await manager.start_server("github", session_id="sess-007")
+
+    assert started is False
+    assert manager.get_server("github").process is None
 
 
 @pytest.mark.asyncio
@@ -750,6 +1253,58 @@ async def test_get_server_stdio_returns_handles_for_running_server(
 
     assert stdio is not None
     assert len(stdio) == 2
+
+
+def test_list_servers_exposes_health_and_transport_metadata(
+    tmp_faith_dir: Path,
+    secret_resolver: SecretResolver,
+) -> None:
+    """Description:
+        Verify external MCP summaries expose the metadata needed for the UI configuration page.
+
+    Requirements:
+        - This test is needed because optional external-first services still need health and transport details without FAITH-owned server logic.
+        - Verify a registered server reports its transport, health, and rollback metadata fields.
+
+    :param tmp_faith_dir: Temporary `.faith` directory fixture.
+    :param secret_resolver: Temporary secret resolver fixture.
+    """
+
+    write_external_tool(
+        tmp_faith_dir,
+        "pricing",
+        build_external_payload(
+            registry_ref="@modelcontextprotocol/server-pricing",
+            package_version="3.2.1",
+        ),
+    )
+    manager = ExternalMCPManager(
+        faith_dir=tmp_faith_dir,
+        secret_resolver=secret_resolver,
+    )
+    manager.load_configs()
+
+    listing = manager.list_servers()
+
+    assert listing == [
+        {
+            "name": "pricing",
+            "registry_ref": "@modelcontextprotocol/server-pricing",
+            "package_version": "3.2.1",
+            "previous_package_version": None,
+            "enabled": True,
+            "privacy_tier": PrivacyProfile.INTERNAL.value,
+            "privacy_allowed": True,
+            "transport": "stdio",
+            "health": "stopped",
+            "agents": ["software-developer", "qa-engineer"],
+            "env_keys": ["API_TOKEN", "GITHUB_TOKEN"],
+            "running": False,
+            "session_id": None,
+            "install_status": "registered",
+            "available_update_version": None,
+        }
+    ]
 
 
 def test_reload_configs_preserves_running_process_state(
