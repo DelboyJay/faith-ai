@@ -130,6 +130,23 @@ def test_web_ui_container_requirements_include_runtime_imports() -> None:
     assert "httpx" in requirements_text
 
 
+def test_tool_python_requirements_pin_patched_lxml() -> None:
+    """
+    Description:
+        Verify the Python tool container depends on a patched lxml release.
+
+    Requirements:
+        - This test is needed to prevent the Python execution image from shipping
+          with the known high-severity lxml vulnerability reported by dependency
+          scanners.
+        - Verify the tool-python requirements pin lxml at or above the patched
+          6.1.0 release line.
+    """
+    requirements_text = (ROOT / "containers" / "tool-python" / "requirements.txt").read_text()
+
+    assert "lxml>=6.1.0" in requirements_text
+
+
 def test_compose_provides_mcp_registry_database() -> None:
     """
     Description:
