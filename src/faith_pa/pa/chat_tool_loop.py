@@ -37,6 +37,32 @@ INVENTORY_QUESTION_PATTERN = re.compile(
     r"|\bwhat\b.*\b(mcp|tool|tools|server|servers)\b",
     re.IGNORECASE,
 )
+EXPLICIT_TOOL_FAMILY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "python",
+        re.compile(
+            r"\b(use|using|via|with|try|run|rerun)\b.*\bpython\b.*\b(mcp|tool)\b"
+            r"|\bpython\b.*\b(mcp|tool)\b.*\b(use|using|via|with|try|run|rerun)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "filesystem",
+        re.compile(
+            r"\b(use|using|via|with|try|run|rerun)\b.*\bfilesystem\b.*\b(mcp|tool)\b"
+            r"|\bfilesystem\b.*\b(mcp|tool)\b.*\b(use|using|via|with|try|run|rerun)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "mcp",
+        re.compile(
+            r"\b(use|using|via|with|try|run|rerun)\b.*\bmcp\.list_tools\b"
+            r"|\bmcp\.list_tools\b.*\b(use|using|via|with|try|run|rerun)\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +144,30 @@ def is_mcp_inventory_question(user_text: str) -> bool:
     normalised = user_text.strip()
     if not normalised:
         return False
+    if get_explicit_tool_family_request(normalised) is not None:
+        return False
     return INVENTORY_QUESTION_PATTERN.search(normalised) is not None
+
+
+def get_explicit_tool_family_request(user_text: str) -> str | None:
+    """Description:
+        Detect whether the user explicitly requested one PA chat tool family.
+
+    Requirements:
+        - Match imperative user wording such as `use the python MCP tool`.
+        - Return ``None`` when the message does not clearly constrain tool choice.
+
+    :param user_text: User-authored browser-chat message text.
+    :returns: Requested tool family name when one is explicit.
+    """
+
+    normalised = user_text.strip()
+    if not normalised:
+        return None
+    for tool_family, pattern in EXPLICIT_TOOL_FAMILY_PATTERNS:
+        if pattern.search(normalised):
+            return tool_family
+    return None
 
 
 def build_mcp_inventory_answer(tools: tuple[MCPToolDescriptor, ...]) -> str:
@@ -220,6 +269,7 @@ class ProjectAgentMCPToolExecutor:
         self._inventory = MCPInventoryAdapter(get_canonical_mcp_registry())
         self._filesystem_server: FilesystemServer | None = None
         self._filesystem_agent_mounts: dict[str, str] | None = None
+        self._filesystem_mount_roots: dict[str, Path] | None = None
         self._python_server: Any | None = None
 
     def list_available_tools(self) -> tuple[MCPToolDescriptor, ...]:
@@ -293,9 +343,10 @@ class ProjectAgentMCPToolExecutor:
 
         server = self._get_filesystem_server()
         agent_mounts = self._get_filesystem_agent_mounts()
+        normalised_args = self._normalise_filesystem_request_args(request.args)
         return await server.handle_tool_call(
             request.action,
-            request.args,
+            normalised_args,
             agent_id="project-agent",
             agent_mounts=agent_mounts,
         )
@@ -395,6 +446,85 @@ class ProjectAgentMCPToolExecutor:
                 if isinstance(mount, dict)
             }
         return self._filesystem_agent_mounts
+
+    def _get_filesystem_mount_roots(self) -> dict[str, Path]:
+        """Description:
+            Return filesystem mount roots keyed by mount name.
+
+        Requirements:
+            - Resolve mount host paths once and reuse them for later chat-path normalisation.
+            - Ignore malformed mount definitions that do not carry a host path.
+
+        :returns: Mapping of filesystem mount names to resolved host paths.
+        """
+
+        if self._filesystem_mount_roots is not None:
+            return self._filesystem_mount_roots
+        filesystem_config = self._load_filesystem_config()
+        self._filesystem_mount_roots = {
+            name: Path(str(mount["host_path"])).resolve()
+            for name, mount in filesystem_config.get("mounts", {}).items()
+            if isinstance(mount, dict) and mount.get("host_path")
+        }
+        return self._filesystem_mount_roots
+
+    def _normalise_filesystem_request_args(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Description:
+            Rewrite chat-time filesystem arguments into canonical mount-relative form.
+
+        Requirements:
+            - Accept in-workspace absolute paths supplied in either the `mount` or `path` field.
+            - Preserve non-filesystem arguments unchanged when no normalisation is needed.
+
+        :param args: Raw filesystem arguments emitted by the PA chat model.
+        :returns: Canonicalised filesystem arguments safe for the MCP server.
+        """
+
+        normalised_args = dict(args)
+        mount_name = normalised_args.get("mount")
+        path_value = normalised_args.get("path")
+        if isinstance(path_value, str):
+            resolved = self._resolve_mount_relative_path(path_value)
+            if resolved is not None:
+                normalised_args["mount"], normalised_args["path"] = resolved
+                return normalised_args
+        if isinstance(mount_name, str):
+            resolved_mount = self._resolve_mount_relative_path(mount_name)
+            if resolved_mount is not None:
+                normalised_args["mount"] = resolved_mount[0]
+                if not isinstance(path_value, str) or not path_value.strip():
+                    normalised_args["path"] = resolved_mount[1]
+        return normalised_args
+
+    def _resolve_mount_relative_path(self, candidate_path: str) -> tuple[str, str] | None:
+        """Description:
+            Resolve one absolute host path into a configured filesystem mount plus relative path.
+
+        Requirements:
+            - Return ``None`` for non-absolute paths or paths outside configured mounts.
+            - Prefer the shortest matching relative path when multiple mounts overlap.
+
+        :param candidate_path: Candidate host path emitted by the chat model.
+        :returns: Canonical ``(mount, relative_path)`` tuple when resolution succeeds.
+        """
+
+        try:
+            candidate = Path(candidate_path).resolve(strict=False)
+        except (OSError, RuntimeError):
+            return None
+        if not candidate.is_absolute():
+            return None
+        matches: list[tuple[str, str]] = []
+        for mount_name, mount_root in self._get_filesystem_mount_roots().items():
+            try:
+                relative = candidate.relative_to(mount_root)
+            except ValueError:
+                continue
+            relative_text = "" if str(relative) == "." else relative.as_posix()
+            matches.append((mount_name, relative_text))
+        if not matches:
+            return None
+        return min(matches, key=lambda item: len(item[1]))
 
     def _get_python_server(self) -> Any:
         """Description:

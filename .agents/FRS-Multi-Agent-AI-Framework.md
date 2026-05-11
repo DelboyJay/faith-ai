@@ -1099,9 +1099,20 @@ runtime.
 - The PA includes a compact MCP tool manifest in the Project Agent system context.
 - For non-native models, the manifest describes the exact JSON shape the model must
   emit to request a tool call: `{"type": "tool_call", "tool": "...", "action": "...", "args": {...}}`.
+- When the user explicitly requests a particular chat-time tool family for the
+  current turn (for example, *"use the python MCP tool"*), the PA must treat
+  that as a runtime constraint for the bounded browser-chat tool loop rather than
+  leaving the choice entirely to the model.
+- The browser-chat runtime must not misclassify imperative tool-choice requests
+  as inventory questions merely because they contain words such as `MCP` or
+  `tool`.
 - When the model emits a valid tool-call JSON object, the PA parses it, validates the
   requested tool/action, executes it through the existing MCP adapter/tool execution
   layer, and sends the structured tool result back to the model as the next turn.
+- If the user explicitly constrained the turn to one tool family and the model
+  emits a different tool-family call, the PA must reject that mismatched call,
+  feed back the reason to the model, and continue the bounded loop instead of
+  executing the wrong tool silently.
 - The PA streams visible tool-use progress to the Project Agent panel so the user can
   see that the agent is still working.
 - The loop stops when the model returns a normal user-facing answer or when a bounded
@@ -1134,6 +1145,9 @@ canonical runtime inventory, not from general LLM knowledge.
   `filesystem.list`, and `filesystem.stat`).
 - The answer must not invent placeholder servers such as "MCP Server 1" or tools
   that are not actually available.
+- The inventory-answer shortcut must be narrow enough that normal execution
+  requests such as *"please use the python MCP tool"* still reach the normal
+  browser-chat execution path.
 
 ---
 
@@ -1212,6 +1226,12 @@ The Python execution tool is a high-risk surface and requires explicit security 
 ### 4.3 Filesystem Tool
 
 The filesystem tool is a **security-first project workspace boundary**, not a general-purpose filesystem platform. It implements only the file operations FAITH needs while prioritising mount isolation, permission enforcement, deny-lists, symlink safety, auditability, and change detection.
+
+For the interactive Project Agent browser-chat path, FAITH may normalise a
+recognised absolute path that already lies inside an approved project workspace
+mount into the canonical `mount` + mount-relative `path` argument shape before
+dispatching to the filesystem MCP server. This normalization is a convenience
+layer only; it must not grant access to paths outside configured mounts.
 
 #### 4.3.1 Mount Configuration
 
@@ -2419,6 +2439,10 @@ For the Project Agent's interactive chat view, the transcript must be rendered a
 - When the Web UI reloads or the PA/Web UI services restart, the Project Agent panel must rehydrate the most recent persisted Project Agent transcript from the latest available session log so the visible conversation matches the retained backend context.
 - The restored transcript must be presented before new live WebSocket output resumes, and it must not require the user to resend messages just to make retained context visible.
 - Any value that the user can save from the Web UI must persist to the FAITH host-backed runtime volume rather than container-local storage so rebuilds and container replacement do not silently discard user changes.
+- Tool-use transparency must be available through the Web UI logging surfaces. A
+  user should be able to inspect Project Agent chat-time tool family, action,
+  and structured argument details from the Audit Trail and Session History
+  surfaces without depending on hidden console output.
 
 **PA System Prompt Panel**
 
@@ -2975,6 +2999,10 @@ agents/software-developer/sessions.index.md
 Lists sessions and tasks the agent participated in with links to the relevant session log directories.
 
 The latest `pa-user.log` is also the canonical source used to rehydrate the Project Agent transcript back into the Web UI after restart or browser reload. The UI must prefer this persisted conversation over an empty panel whenever retained Project Agent context exists.
+
+Interactive Project Agent chat-time tool calls and tool results must also be
+captured in the persisted session/task logs so Session History can reveal what
+the PA actually requested during one turn.
 
 ---
 

@@ -80,6 +80,10 @@ def build_agent_tool_manifest_prompt(
         "Never interpret MCP as Microsoft Configuration Manager.\n\n"
         "Available MCP tools:\n"
         f"{tool_lines if tool_lines else '- (none)'}\n\n"
+        "Filesystem tool-call guidance:\n"
+        "- Use a canonical mount name such as `project` in the `mount` field.\n"
+        "- Do not put raw absolute host paths into the `mount` field.\n"
+        "- Put only mount-relative paths into the `path` field.\n\n"
         "When a tool is needed, reply with only one JSON object in this exact shape:\n"
         '{"type": "tool_call", "tool": "filesystem", "action": "read", '
         '"args": {"mount": "project", "path": "README.md"}}\n\n'

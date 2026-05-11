@@ -43,6 +43,7 @@ from faith_pa.pa.chat_tool_loop import (
     build_mcp_inventory_answer,
     build_tool_manifest_prompt,
     format_tool_result_for_model,
+    get_explicit_tool_family_request,
     is_mcp_inventory_question,
     parse_chat_tool_call,
 )
@@ -52,6 +53,7 @@ from faith_pa.runtime_time_context import (
     RuntimeTimeContextProvider,
     RuntimeUserContextProvider,
 )
+from faith_pa.security.audit_log import AuditLogger
 from faith_pa.utils import (
     SYSTEM_EVENTS_CHANNEL,
     USER_INPUT_CHANNEL,
@@ -875,6 +877,7 @@ class ProjectAgentChatRuntime:
     :param user_settings_store: Shared user-settings store used to load runtime user profile context.
     :param session_manager: Shared session manager used for transcript persistence and recovery.
     :param token_logger: Shared token logger used for model-usage and cost accounting.
+    :param audit_logger: Shared audit logger used for PA chat-time tool visibility.
     :param output_channel: Redis output channel used by the Project Agent panel.
     """
 
@@ -891,6 +894,7 @@ class ProjectAgentChatRuntime:
         user_settings_store: UserSettingsStore | None = None,
         session_manager: SessionManager | None = None,
         token_logger: TokenLogger | None = None,
+        audit_logger: AuditLogger | None = None,
         output_channel: str = PROJECT_AGENT_OUTPUT_CHANNEL,
     ) -> None:
         """Description:
@@ -910,6 +914,7 @@ class ProjectAgentChatRuntime:
         :param user_settings_store: Shared user-settings store used to load runtime user profile context.
         :param session_manager: Shared session manager used for transcript persistence and recovery.
         :param token_logger: Shared token logger used for model-usage and cost accounting.
+        :param audit_logger: Shared audit logger used for PA chat-time tool visibility.
         :param output_channel: Redis output channel used by the Project Agent panel.
         """
 
@@ -929,6 +934,7 @@ class ProjectAgentChatRuntime:
             project_root=_project_agent_session_root()
         )
         self.token_logger = token_logger or _build_token_logger()
+        self.audit_logger = audit_logger or _build_audit_logger()
         self.output_channel = output_channel
         self.history: list[dict[str, str]] = []
         self.transcript_messages: list[dict[str, str]] = []
@@ -1058,9 +1064,15 @@ class ProjectAgentChatRuntime:
                 await self._stream_assistant_reply(reply_text)
                 await self._publish_status("idle")
                 return
-            messages = self._build_chat_messages(user_text)
+            requested_tool_family = get_explicit_tool_family_request(user_text)
+            messages = self._build_chat_messages(
+                user_text,
+                requested_tool_family=requested_tool_family,
+            )
             reply_text = await self._generate_reply_with_tools(
-                messages, task_id=active_task.task_id
+                messages,
+                task_id=active_task.task_id,
+                requested_tool_family=requested_tool_family,
             )
             if not reply_text:
                 reply_text = "I did not generate a reply for that message."
@@ -1108,7 +1120,12 @@ class ProjectAgentChatRuntime:
             summary = f"{message}\n\n{summary}"
         return summary.strip()
 
-    def _build_chat_messages(self, user_text: str) -> list[dict[str, str]]:
+    def _build_chat_messages(
+        self,
+        user_text: str,
+        *,
+        requested_tool_family: str | None = None,
+    ) -> list[dict[str, str]]:
         """Description:
             Build the lightweight chat payload for one browser message.
 
@@ -1117,9 +1134,17 @@ class ProjectAgentChatRuntime:
             - Preserve a bounded recent conversation history.
 
         :param user_text: Current user message text.
+        :param requested_tool_family: Optional explicit tool-family preference for the current turn.
         :returns: Chat message payload for the shared LLM client.
         """
 
+        tool_preference_block = ""
+        if requested_tool_family is not None:
+            tool_preference_block = (
+                "[Runtime Tool Preference]\n"
+                f"- The user explicitly requested the `{requested_tool_family}` tool family for this turn.\n"
+                f"- Do not call any tool family other than `{requested_tool_family}` unless the user changes that instruction.\n\n"
+            )
         messages: list[dict[str, str]] = [
             {
                 "role": "system",
@@ -1127,6 +1152,7 @@ class ProjectAgentChatRuntime:
                     f"{self.prompt_store.get_active_prompt()}\n\n"
                     f"{self.user_context_provider.build_prompt_block()}\n\n"
                     f"{self.time_context_provider.build_prompt_block()}\n\n"
+                    f"{tool_preference_block}"
                     f"{build_tool_manifest_prompt()}"
                 ),
             },
@@ -1194,6 +1220,7 @@ class ProjectAgentChatRuntime:
         messages: list[dict[str, str]],
         *,
         task_id: str,
+        requested_tool_family: str | None = None,
     ) -> str:
         """Description:
             Generate one Project Agent reply with bounded MCP tool-call support.
@@ -1206,6 +1233,7 @@ class ProjectAgentChatRuntime:
 
         :param messages: Initial chat payload for the LLM.
         :param task_id: Active task identifier used for token and cost accounting.
+        :param requested_tool_family: Optional explicit tool-family preference for the current turn.
         :returns: Final assistant reply text.
         """
 
@@ -1221,9 +1249,26 @@ class ProjectAgentChatRuntime:
             tool_call = parse_chat_tool_call(reply_text)
             if tool_call is None:
                 return reply_text
+            if requested_tool_family is not None and tool_call.tool != requested_tool_family:
+                working_messages.append({"role": "assistant", "content": reply_text})
+                working_messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Tool selection correction:\n"
+                            f"- The user explicitly requested the `{requested_tool_family}` tool family.\n"
+                            f"- Do not call `{tool_call.tool}` for this turn.\n"
+                            f"- Retry with a `{requested_tool_family}` tool call or answer without tools if that is impossible."
+                        ),
+                    }
+                )
+                continue
 
             await self._publish_output(f"PA is using {tool_call.tool}.{tool_call.action}...\n")
             tool_result = await self.tool_executor.execute(tool_call)
+            self._record_tool_visibility(
+                task_id=task_id, tool_call=tool_call, tool_result=tool_result
+            )
             working_messages.append({"role": "assistant", "content": reply_text})
             working_messages.append(
                 {
@@ -1284,6 +1329,57 @@ class ProjectAgentChatRuntime:
             else:
                 warning += " You can switch it to a cheaper model to reduce cost."
             await self._publish_warning(warning)
+
+    def _record_tool_visibility(
+        self,
+        *,
+        task_id: str,
+        tool_call: Any,
+        tool_result: dict[str, Any],
+    ) -> None:
+        """Description:
+            Persist PA chat-time tool-call visibility into the audit log and session task logs.
+
+        Requirements:
+            - Record the requested tool, action, and arguments into `audit.log`.
+            - Append tool-call and tool-result summaries into the active `pa-user` task log.
+
+        :param task_id: Active task identifier receiving the visibility entries.
+        :param tool_call: Parsed chat tool-call request.
+        :param tool_result: Structured tool execution result.
+        """
+
+        target = json.dumps(tool_call.args, sort_keys=True)
+        self.audit_logger.log_tool_operation(
+            agent=PROJECT_AGENT_ID,
+            tool=tool_call.tool,
+            action=tool_call.action,
+            target=target,
+            channel="pa-user",
+        )
+        self.session_manager.append_channel_message(
+            task_id=task_id,
+            channel_name="pa-user",
+            sender=PROJECT_AGENT_ID,
+            recipient=PROJECT_AGENT_ID,
+            msg_type="tool_call",
+            summary=(
+                f"Project Agent requested {tool_call.tool}.{tool_call.action} with args {target}"
+            ),
+            status="requested",
+        )
+        self.session_manager.append_channel_message(
+            task_id=task_id,
+            channel_name="pa-user",
+            sender=PROJECT_AGENT_ID,
+            recipient=PROJECT_AGENT_ID,
+            msg_type="tool_result",
+            summary=(
+                f"Tool result for {tool_call.tool}.{tool_call.action}: "
+                f"{json.dumps(tool_result, sort_keys=True)}"
+            ),
+            status="success" if tool_result.get("success") else "error",
+        )
 
     def _append_history(self, role: str, content: str) -> None:
         """Description:
@@ -1784,6 +1880,19 @@ def _build_event_log_writer() -> EventLogWriter:
     return EventLogWriter(logs_dir=logs_dir())
 
 
+def _build_audit_logger() -> AuditLogger:
+    """Description:
+        Build the shared audit logger used by the PA runtime.
+
+    Requirements:
+        - Write PA browser-chat tool visibility entries into the canonical host-backed logs directory.
+
+    :returns: Configured audit logger for PA runtime audit entries.
+    """
+
+    return AuditLogger(logs_dir=logs_dir())
+
+
 def _build_log_rotator() -> LogRotator:
     """Description:
         Build the shared log rotator used by the PA runtime.
@@ -2100,6 +2209,7 @@ async def lifespan(app: FastAPI):
         project_root=Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
     )
     app.state.project_agent_token_logger = _build_token_logger()
+    app.state.audit_logger = _build_audit_logger()
     app.state.event_log_writer = _build_event_log_writer()
     app.state.log_rotator = _build_log_rotator()
     app.state.redis = await get_async_client()
@@ -2115,6 +2225,7 @@ async def lifespan(app: FastAPI):
             prompt_store=app.state.project_agent_prompt_store,
             session_manager=app.state.project_agent_session_manager,
             token_logger=app.state.project_agent_token_logger,
+            audit_logger=app.state.audit_logger,
         )
         app.state.project_agent_chat_runtime = chat_runtime
         await chat_runtime.start()

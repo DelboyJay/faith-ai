@@ -25,6 +25,7 @@ import faith_pa.pa.app as pa_app_module
 from faith_pa.logging.token_logger import TokenLogger
 from faith_pa.pa.chat_tool_loop import ChatToolCall, list_available_chat_mcp_tools
 from faith_pa.runtime_time_context import RuntimeTimeContextProvider
+from faith_pa.security.audit_log import AuditLogger
 from faith_pa.utils.redis_client import USER_INPUT_CHANNEL
 from faith_shared.protocol.events import SYSTEM_EVENTS_CHANNEL, EventType, FaithEvent
 
@@ -1741,6 +1742,28 @@ def test_pa_chat_bridge_manifest_defines_faith_mcp_inventory() -> None:
     assert "python.execute_python" in system_text
 
 
+def test_pa_chat_bridge_manifest_discourages_raw_absolute_filesystem_mounts() -> None:
+    """Description:
+    Verify the PA tool manifest warns against raw absolute filesystem mount arguments.
+
+    Requirements:
+    - This test is needed to reduce the chance that the model emits raw Windows or POSIX absolute paths as filesystem mount identifiers.
+    - Verify the manifest explicitly tells the model to keep `mount` canonical and place only mount-relative paths in `path`.
+    """
+
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=SequencedFakeLLMClient(["No tool needed."]),
+        model_name="ollama/llama3:8b",
+        tool_executor=FakeToolExecutor(),
+    )
+
+    system_text = runtime._build_chat_messages("List the workspace contents.")[0]["content"]
+
+    assert "Do not put raw absolute host paths into the `mount` field." in system_text
+    assert "Use a canonical mount name such as `project`" in system_text
+
+
 def test_pa_chat_bridge_answers_mcp_inventory_questions_from_canonical_inventory() -> None:
     """Description:
     Verify MCP inventory questions are answered from the canonical inventory.
@@ -1792,6 +1815,73 @@ def test_pa_chat_bridge_answers_mcp_inventory_questions_from_canonical_inventory
     assert "python.execute_python" in output_text
 
 
+def test_mcp_inventory_question_detection_ignores_explicit_tool_usage_requests() -> None:
+    """Description:
+    Verify explicit tool-usage requests are not mistaken for MCP inventory questions.
+
+    Requirements:
+    - This test is needed to prove imperative requests such as `use the python MCP tool` still reach the normal PA execution loop.
+    - Verify normal inventory questions still match while explicit tool-usage requests do not.
+    """
+
+    assert pa_app_module.is_mcp_inventory_question("what MCP tools are available?") is True
+    assert (
+        pa_app_module.is_mcp_inventory_question("Please try again using the python mcp tool.")
+        is False
+    )
+
+
+def test_pa_chat_bridge_honours_explicit_user_requested_tool_family() -> None:
+    """Description:
+    Verify the PA browser-chat loop enforces an explicit user-requested tool family.
+
+    Requirements:
+    - This test is needed to prove the PA does not silently execute the wrong tool family after the user explicitly asks for another one.
+    - Verify a mismatched tool call is skipped and a later matching tool call is the one that actually executes.
+    """
+
+    llm_client = SequencedFakeLLMClient(
+        [
+            '{"type": "tool_call", "tool": "filesystem", "action": "list", "args": {"mount": "project", "path": ""}}',
+            '{"type": "tool_call", "tool": "python", "action": "execute_python", "args": {"code": "print(123)"}}',
+            "The python tool ran successfully.",
+        ]
+    )
+    tool_executor = FakeToolExecutor()
+    fake_redis = FakeRedis()
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=fake_redis,
+        llm_client=llm_client,
+        model_name="ollama/llama3:8b",
+        tool_executor=tool_executor,
+    )
+
+    asyncio.run(
+        runtime._handle_payload(
+            {
+                "type": "user_input",
+                "message_id": "msg-explicit-tool-001",
+                "message": "Please try again using the python mcp tool.",
+            }
+        )
+    )
+
+    published = [
+        json.loads(payload)
+        for channel, payload in fake_redis.published
+        if channel == "agent:project-agent:output"
+    ]
+    output_text = "".join(
+        item.get("text", "") for item in published if item.get("type") == "output"
+    )
+
+    assert len(llm_client.calls) == 3
+    assert len(tool_executor.calls) == 1
+    assert tool_executor.calls[0].tool == "python"
+    assert tool_executor.calls[0].action == "execute_python"
+    assert "The python tool ran successfully." in output_text
+
+
 def test_pa_chat_executor_lists_python_mcp_actions(tmp_path: Path) -> None:
     """Description:
     Verify the PA chat executor includes Python actions in the canonical inventory.
@@ -1815,6 +1905,68 @@ def test_pa_chat_executor_lists_python_mcp_actions(tmp_path: Path) -> None:
     assert "filesystem.read" in tool_names
     assert "python.execute_python" in tool_names
     assert "python.pip_install" in tool_names
+
+
+def test_pa_chat_executor_normalises_absolute_workspace_paths_for_filesystem_calls(
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify the PA chat executor normalises absolute workspace paths before calling the filesystem MCP server.
+
+    Requirements:
+    - This test is needed to prove valid in-workspace absolute paths do not fail with confusing unknown-mount or traversal-style errors in PA chat.
+    - Verify the executor can read a file when the chat tool call supplies the file as an absolute path.
+
+    :param tmp_path: Temporary project root used to build the executor safely.
+    """
+
+    readme = tmp_path / "README.md"
+    readme.write_text("hello from README", encoding="utf-8")
+    executor = pa_app_module.ProjectAgentMCPToolExecutor(root=tmp_path)
+
+    result = asyncio.run(
+        executor.execute(
+            ChatToolCall(
+                tool="filesystem",
+                action="read",
+                args={"mount": "project", "path": str(readme)},
+            )
+        )
+    )
+
+    assert result["success"] is True
+    assert result["result"]["content"] == "hello from README"
+
+
+def test_pa_chat_executor_normalises_absolute_workspace_mount_arguments(
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify the PA chat executor normalises mistaken absolute workspace mount arguments.
+
+    Requirements:
+    - This test is needed to prove the PA can recover when the model puts the absolute project path into the filesystem `mount` field.
+    - Verify the executor rewrites the absolute path into the canonical `project` mount and succeeds.
+
+    :param tmp_path: Temporary project root used to build the executor safely.
+    """
+
+    readme = tmp_path / "README.md"
+    readme.write_text("hello from mistaken mount", encoding="utf-8")
+    executor = pa_app_module.ProjectAgentMCPToolExecutor(root=tmp_path)
+
+    result = asyncio.run(
+        executor.execute(
+            ChatToolCall(
+                tool="filesystem",
+                action="read",
+                args={"mount": str(tmp_path), "path": "README.md"},
+            )
+        )
+    )
+
+    assert result["success"] is True
+    assert result["result"]["content"] == "hello from mistaken mount"
 
 
 def test_pa_chat_bridge_executes_mcp_tool_call_and_returns_final_answer() -> None:
@@ -1873,6 +2025,64 @@ def test_pa_chat_bridge_executes_mcp_tool_call_and_returns_final_answer() -> Non
         item.get("text", "") for item in published if item.get("type") == "output"
     )
     assert "The README says FAITH is local-first." in output_text
+
+
+def test_pa_chat_runtime_persists_tool_call_visibility_to_audit_and_session_logs(
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify PA browser-chat tool calls are written to the audit log and the persisted session channel log.
+
+    Requirements:
+    - This test is needed to prove users can inspect PA chat-time tool requests outside the main transcript.
+    - Verify one tool call creates an audit entry and a persisted channel-log summary carrying tool details.
+
+    :param tmp_path: Temporary project root used for audit and session persistence.
+    """
+
+    llm_client = SequencedFakeLLMClient(
+        [
+            '{"type": "tool_call", "tool": "filesystem", "action": "read", "args": {"mount": "project", "path": "README.md"}}',
+            "The README says FAITH is local-first.",
+        ]
+    )
+    tool_executor = FakeToolExecutor()
+    audit_logger = AuditLogger(logs_dir=tmp_path / "logs")
+    session_manager = pa_app_module.SessionManager(project_root=tmp_path)
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=llm_client,
+        model_name="ollama/llama3:8b",
+        tool_executor=tool_executor,
+        prompt_store=pa_app_module.ProjectAgentPromptStore(project_root=tmp_path),
+        session_manager=session_manager,
+        audit_logger=audit_logger,
+    )
+
+    asyncio.run(
+        runtime._handle_payload(
+            {
+                "type": "user_input",
+                "message_id": "msg-audit-tool-001",
+                "message": "Please read README.md and summarise it.",
+            }
+        )
+    )
+
+    entries = audit_logger.read_entries(limit=10)
+    active_task = runtime.session_manager.get_active_task()
+
+    assert len(entries) == 1
+    assert entries[0].tool == "filesystem"
+    assert entries[0].action == "read"
+    assert "README.md" in entries[0].target
+    assert active_task is not None
+    channel_log = active_task.path / "pa-user.log"
+    assert channel_log.exists()
+    channel_log_text = channel_log.read_text(encoding="utf-8")
+    assert "tool_call" in channel_log_text
+    assert "filesystem.read" in channel_log_text
+    assert "README.md" in channel_log_text
 
 
 def test_pa_chat_runtime_logs_token_usage_and_cost_warning(tmp_path: Path) -> None:

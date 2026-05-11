@@ -431,7 +431,7 @@ phases:
     title: 'Web UI'
     status: 'TODO'
     summary: 'Implement panel-level behaviour and user-facing Web UI features on top of the React + Dockview workspace. Phase 8 owns panel content, interaction UX, and feature surfaces; Phase 13 owns workspace shell, default layout mechanics, minimize/restore behaviour, and menu primitives.'
-    task_count: 23
+    task_count: 26
     tasks:
       - id: 'FAITH-036'
         name: 'FastAPI Server Setup & WebSocket Endpoints'
@@ -622,6 +622,33 @@ phases:
         dependencies: ['FAITH-083', 'FAITH-084']
         frs_reference: 'Section 6.4.2, 7.2, 9.3'
         summary: 'Replace free-text locale and timezone entry in the user settings experience with validated fixed-option dropdown selectors. Default to `en-GB` and `Europe/London`, add a country selector that filters the available timezone list, allow setup-time suggestion support, and keep timezone as an explicit persisted value rather than deriving it blindly from country.'
+      - id: 'FAITH-096'
+        name: 'Deterministic User-Requested Tool Selection in PA Chat'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-096-deterministic-user-requested-tool-selection.md'
+        dependencies: ['FAITH-068', 'FAITH-069', 'FAITH-081']
+        frs_reference: 'Section 4.1.2, 4.1.3, 6.4.2'
+        summary: 'Make the interactive Project Agent chat loop obey explicit user tool-choice instructions deterministically instead of relying only on LLM interpretation. The runtime must stop misclassifying imperative tool requests as inventory questions, must ground the current turn with any explicit user-requested tool family, and must reject mismatched tool-family calls during the bounded tool loop so the PA can retry with the requested tool when needed.'
+      - id: 'FAITH-097'
+        name: 'Project-Workspace Absolute Path Normalisation for Chat Tool Calls'
+        complexity: 'S'
+        model: 'Sonnet / GPT-5.4'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-097-project-workspace-absolute-path-normalisation.md'
+        dependencies: ['FAITH-022', 'FAITH-068']
+        frs_reference: 'Section 4.1.3, 4.3, 6.4.2'
+        summary: 'Allow the Project Agent chat tool loop to accept absolute project-workspace paths safely when the user or model refers to them in Windows or POSIX form. The runtime must normalise recognised in-workspace absolute paths onto the configured filesystem mount plus mount-relative path before dispatching to the filesystem MCP server, instead of surfacing confusing unknown-mount errors for valid project paths.'
+      - id: 'FAITH-098'
+        name: 'PA Chat Tool Call Audit & Session Visibility'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-098-pa-chat-tool-call-audit-session-visibility.md'
+        dependencies: ['FAITH-021', 'FAITH-044', 'FAITH-046', 'FAITH-068']
+        frs_reference: 'Section 5.5, 6.4.2, 8.4'
+        summary: 'Persist interactive Project Agent chat-time tool calls and outcomes into the standard audit and session-history surfaces. Users must be able to inspect the requested tool family, action, and structured arguments/results through the Audit Trail and Session History panels without depending on the main transcript stream for raw command visibility.'
       - id: 'FAITH-086'
         name: 'Host-Backed Web UI Saved State Persistence'
         complexity: 'S'
