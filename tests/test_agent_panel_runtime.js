@@ -118,6 +118,24 @@ function findByClass(root, className) {
   return null;
 }
 
+function findAllByClass(root, className, matches = []) {
+  if ((root.className || "").split(/\s+/).includes(className)) {
+    matches.push(root);
+  }
+  for (const child of root.children || []) {
+    findAllByClass(child, className, matches);
+  }
+  return matches;
+}
+
+function collectText(root) {
+  let text = root.textContent || "";
+  for (const child of root.children || []) {
+    text += collectText(child);
+  }
+  return text;
+}
+
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
@@ -249,13 +267,29 @@ async function main() {
   assert(socket.url.includes("/ws/agent/project-agent"), "Expected the agent panel to target the agent websocket.");
 
   const restoredTerminal = findByClass(target, "faith-agent-panel__fallback-terminal");
+  const restoredUserBubble = findByClass(target, "faith-agent-panel__message--user");
+  const restoredAssistantMessage = findByClass(target, "faith-agent-panel__message--assistant");
+  assert(restoredTerminal, "Expected the panel to render a transcript container.");
+  assert(restoredUserBubble, "Expected the saved user transcript to render as a user bubble.");
   assert(
-    restoredTerminal.textContent.includes("Recovered user message."),
-    "Expected the panel to render the saved user transcript before live websocket updates begin.",
+    restoredUserBubble.textContent.includes("Recovered user message."),
+    "Expected the user bubble to include the saved user transcript text.",
   );
   assert(
-    restoredTerminal.textContent.includes("Recovered assistant reply."),
-    "Expected the panel to render the saved assistant transcript before live websocket updates begin.",
+    restoredAssistantMessage,
+    "Expected the saved assistant transcript to render as an assistant message block.",
+  );
+  assert(
+    restoredAssistantMessage.textContent.includes("Recovered assistant reply."),
+    "Expected the assistant message block to include the saved assistant transcript text.",
+  );
+  assert(
+    !collectText(restoredTerminal).includes("User: Recovered user message."),
+    "Expected saved transcript rendering to omit the literal 'User:' prefix.",
+  );
+  assert(
+    !collectText(restoredTerminal).includes("PA: Recovered assistant reply."),
+    "Expected saved transcript rendering to omit the literal 'PA:' prefix.",
   );
 
   socket.emit("open", {});
@@ -276,6 +310,8 @@ async function main() {
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "hello world" }) });
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "streamed ", stream: true }) });
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "reply", stream: true }) });
+  socket.emit("message", { data: JSON.stringify({ type: "output", text: "User: show me the files" }) });
+  socket.emit("message", { data: JSON.stringify({ type: "output", text: "PA: here is the list" }) });
   socket.emit("message", { data: JSON.stringify([{ type: "output", text: "batch one" }, { type: "output", text: "batch two" }]) });
 
   const statusBadge = findByClass(target, "faith-agent-panel__status");
@@ -287,21 +323,28 @@ async function main() {
   socket.emit("message", { data: "not-json" });
 
   const terminal = findByClass(target, "faith-agent-panel__fallback-terminal");
-  assert(terminal.textContent.includes("hello world"), "Expected output frames to render into the terminal.");
-  assert(terminal.textContent.includes("streamed reply"), "Expected streamed output chunks to append inline.");
-  assert(terminal.textContent.includes("batch one"), "Expected multi-message frames to render every contained item.");
-  assert(terminal.textContent.includes("batch two"), "Expected multi-message frames to render every contained item.");
-  assert(terminal.textContent.includes("compact:task:update"), "Expected protocol frames to render into the terminal.");
-  assert(terminal.textContent.includes("Malformed agent payload"), "Expected malformed frames to become non-fatal errors.");
+  const liveUserBubbles = findAllByClass(target, "faith-agent-panel__message--user");
+  assert(collectText(terminal).includes("hello world"), "Expected output frames to render into the terminal.");
+  assert(collectText(terminal).includes("streamed reply"), "Expected streamed output chunks to append inline.");
+  assert(
+    liveUserBubbles.some((bubble) => bubble.textContent.includes("show me the files")),
+    "Expected live user output to render inside a user bubble.",
+  );
+  assert(!collectText(terminal).includes("User: show me the files"), "Expected live user output to omit the literal 'User:' prefix.");
+  assert(!collectText(terminal).includes("PA: here is the list"), "Expected live assistant output to omit the literal 'PA:' prefix.");
+  assert(collectText(terminal).includes("batch one"), "Expected multi-message frames to render every contained item.");
+  assert(collectText(terminal).includes("batch two"), "Expected multi-message frames to render every contained item.");
+  assert(collectText(terminal).includes("compact:task:update"), "Expected protocol frames to render into the terminal.");
+  assert(collectText(terminal).includes("Malformed agent payload"), "Expected malformed frames to become non-fatal errors.");
 
   const pauseButton = findByText(target, "Pause");
   pauseButton.dispatch("click");
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "queued while paused" }) });
-  assert(!terminal.textContent.includes("queued while paused"), "Expected paused panels to queue output.");
+  assert(!collectText(terminal).includes("queued while paused"), "Expected paused panels to queue output.");
 
   const resumeButton = findByText(target, "Resume");
   resumeButton.dispatch("click");
-  assert(terminal.textContent.includes("queued while paused"), "Expected queued output to flush on resume.");
+  assert(collectText(terminal).includes("queued while paused"), "Expected queued output to flush on resume.");
 
   const terminalHost = findByClass(target, "faith-agent-panel__terminal");
   assert(terminalHost, "Expected the transcript host element to exist.");
@@ -349,16 +392,16 @@ async function main() {
   await Promise.resolve();
   await Promise.resolve();
   assert(
-    terminal.textContent.includes("Question sent while websocket was down."),
+    collectText(terminal).includes("Question sent while websocket was down."),
     "Expected reconnect to rehydrate user transcript entries created while the websocket was disconnected.",
   );
   assert(
-    terminal.textContent.includes("Answer generated while websocket was down."),
+    collectText(terminal).includes("Answer generated while websocket was down."),
     "Expected reconnect to rehydrate assistant transcript entries created while the websocket was disconnected.",
   );
   recoveredSocket.emit("message", { data: JSON.stringify({ type: "output", text: "after reconnect" }) });
   assert(
-    terminal.textContent.includes("after reconnect"),
+    collectText(terminal).includes("after reconnect"),
     "Expected the panel to keep rendering output after a reconnect.",
   );
 

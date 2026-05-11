@@ -611,6 +611,44 @@ pre {
   margin: 0;
 }
 
+.faith-agent-panel__message-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100%;
+  font-family: Consolas, "Cascadia Code", monospace;
+}
+
+.faith-agent-panel__message {
+  max-width: min(78ch, 82%);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.faith-agent-panel__message--user {
+  align-self: flex-end;
+  background: rgba(88, 166, 255, 0.16);
+  border-color: rgba(88, 166, 255, 0.38);
+  color: #dceeff;
+}
+
+.faith-agent-panel__message--assistant {
+  align-self: flex-start;
+  background: rgba(201, 209, 217, 0.06);
+  color: var(--text);
+}
+
+.faith-agent-panel__system-line {
+  color: #9ad1ff;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
 .faith-agent-panel__jump {
   align-self: flex-end;
   min-height: 30px;

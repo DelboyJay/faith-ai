@@ -93,9 +93,61 @@
    * @returns {object} Terminal adapter with write, writeLine, clear, copy, resize, and dispose methods.
    */
   function createTerminalAdapter(host, onContentChanged, isPinnedToLatest) {
-    const pre = document.createElement("pre");
-    pre.className = "faith-agent-panel__fallback-terminal";
-    host.appendChild(pre);
+    const messageList = document.createElement("div");
+    messageList.className = "faith-agent-panel__fallback-terminal faith-agent-panel__message-list";
+    host.appendChild(messageList);
+    let activeAssistantStream = null;
+
+    /**
+     * Description:
+     *   Finish any in-progress streamed assistant entry before another entry type is rendered.
+     *
+     * Requirements:
+     *   - Prevent system lines and user bubbles from being appended into the active streamed assistant block.
+     *
+     * @returns {void}
+     */
+    function closeActiveAssistantStream() {
+      activeAssistantStream = null;
+    }
+
+    /**
+     * Description:
+     *   Create one transcript entry element under the message list.
+     *
+     * Requirements:
+     *   - Preserve the entry class name so the stylesheet can distinguish assistant, user, and system entries.
+     *
+     * @param {string} className: Entry class name suffix.
+     * @returns {HTMLElement} Created transcript entry element.
+     */
+    function createTranscriptEntry(className) {
+      const entry = document.createElement("div");
+      entry.className = className;
+      messageList.appendChild(entry);
+      return entry;
+    }
+
+    /**
+     * Description:
+     *   Collect plain transcript text from the message list for scroll heuristics and copy support.
+     *
+     * Requirements:
+     *   - Work in both the browser DOM and the lightweight runtime harness.
+     *   - Preserve entry order in the exported plain-text transcript.
+     *
+     * @returns {string} Plain-text transcript content.
+     */
+    function collectTranscriptText() {
+      if (typeof messageList.innerText === "string" && messageList.innerText) {
+        return messageList.innerText;
+      }
+      return (messageList.children || [])
+        .map(function mapEntry(entry) {
+          return entry.textContent || "";
+        })
+        .join("\n");
+    }
 
     /**
      * Description:
@@ -108,7 +160,10 @@
     function notifyContentChanged() {
       const wasNearBottom = typeof isPinnedToLatest === "function" ? isPinnedToLatest() : true;
       if (typeof host.clientHeight === "number" && typeof host.scrollHeight === "number") {
-        host.scrollHeight = Math.max(host.clientHeight, pre.textContent.length + host.clientHeight);
+        host.scrollHeight = Math.max(
+          host.clientHeight,
+          collectTranscriptText().length + host.clientHeight,
+        );
       }
       if (typeof onContentChanged === "function") {
         onContentChanged(wasNearBottom);
@@ -117,20 +172,50 @@
 
     return {
       write(text) {
-        pre.textContent += text;
+        this.writeSystemLine(text);
         notifyContentChanged();
       },
       writeLine(text) {
-        pre.textContent += `${text}\n`;
+        this.writeSystemLine(text);
+        notifyContentChanged();
+      },
+      writeUserBubble(text) {
+        closeActiveAssistantStream();
+        const bubble = createTranscriptEntry("faith-agent-panel__message faith-agent-panel__message--user");
+        bubble.textContent = text;
+        notifyContentChanged();
+      },
+      writeAssistantMessage(text) {
+        closeActiveAssistantStream();
+        const message = createTranscriptEntry(
+          "faith-agent-panel__message faith-agent-panel__message--assistant",
+        );
+        message.textContent = text;
+        notifyContentChanged();
+      },
+      appendAssistantStream(text) {
+        if (activeAssistantStream === null) {
+          activeAssistantStream = createTranscriptEntry(
+            "faith-agent-panel__message faith-agent-panel__message--assistant",
+          );
+        }
+        activeAssistantStream.textContent += text;
+        notifyContentChanged();
+      },
+      writeSystemLine(text) {
+        closeActiveAssistantStream();
+        const line = createTranscriptEntry("faith-agent-panel__system-line");
+        line.textContent = text;
         notifyContentChanged();
       },
       clear() {
-        pre.textContent = "";
+        messageList.replaceChildren();
+        closeActiveAssistantStream();
         notifyContentChanged();
       },
       async copy() {
         if (globalScope.navigator && globalScope.navigator.clipboard) {
-          await globalScope.navigator.clipboard.writeText(pre.textContent.trim());
+          await globalScope.navigator.clipboard.writeText(collectTranscriptText().trim());
         }
       },
       resize() {},
@@ -375,23 +460,33 @@
         return;
       }
       if (message.type === "protocol") {
-        terminal.writeLine(`\x1b[2m${message.text || message.message || ""}\x1b[0m`);
+        terminal.writeSystemLine(message.text || message.message || "");
         return;
       }
       if (message.type === "error") {
-        terminal.writeLine(`ERROR: ${message.message || message.text || "Unknown agent error"}`);
+        terminal.writeSystemLine(`ERROR: ${message.message || message.text || "Unknown agent error"}`);
         setHeaderState("error", panelState.model);
         return;
       }
       if (message.type === "warning") {
-        terminal.writeLine(`WARNING: ${message.message || message.text || "Runtime warning"}`);
+        terminal.writeSystemLine(`WARNING: ${message.message || message.text || "Runtime warning"}`);
         return;
       }
+      const outputText = message.text || message.message || "";
       if (message.stream) {
-        terminal.write(message.text || message.message || "");
+        const streamText = outputText.startsWith("PA: ") ? outputText.slice(4) : outputText;
+        terminal.appendAssistantStream(streamText);
         return;
       }
-      terminal.writeLine(message.text || message.message || "");
+      if (outputText.startsWith("User: ")) {
+        terminal.writeUserBubble(outputText.slice(6));
+        return;
+      }
+      if (outputText.startsWith("PA: ")) {
+        terminal.writeAssistantMessage(outputText.slice(4));
+        return;
+      }
+      terminal.writeSystemLine(outputText);
     }
 
     /**
@@ -408,12 +503,15 @@
       if (!message || typeof message !== "object") {
         return;
       }
-      const role = message.role === "assistant" ? "PA" : "User";
       const content = typeof message.content === "string" ? message.content : "";
       if (!content) {
         return;
       }
-      terminal.writeLine(`${role}: ${content}`);
+      if (message.role === "assistant") {
+        terminal.writeAssistantMessage(content);
+        return;
+      }
+      terminal.writeUserBubble(content);
     }
 
     /**

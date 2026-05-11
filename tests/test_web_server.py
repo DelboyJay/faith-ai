@@ -286,7 +286,7 @@ def test_index_renders_visible_web_ui_version(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert 'class="faith-toolbar__version"' in response.text
-    assert "v0.18.0" in response.text
+    assert "v0.18.1" in response.text
 
 
 def test_index_route_uses_non_deprecated_template_signature(client: TestClient) -> None:
@@ -537,6 +537,26 @@ def test_dockview_bundle_styles_workspace_with_grid_guides(
     assert "background-size: 1.5rem 1.5rem;" in source
     assert "min-width: 16rem;" in source
     assert "min-height: 10rem;" in source
+
+
+def test_agent_panel_styles_define_user_bubble_transcript(client: TestClient) -> None:
+    """Description:
+        Verify the agent panel stylesheet defines bubble-style transcript rendering for user messages.
+
+    Requirements:
+        - This test is needed to prove Project Agent transcript messages are no longer shown only as raw terminal lines with `User:` and `PA:` prefixes.
+        - Verify the stylesheet includes dedicated user-bubble and assistant-message transcript classes.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    del client
+    project_root = Path(__file__).resolve().parents[1]
+    source = (project_root / "web" / "css" / "theme.css").read_text(encoding="utf-8")
+
+    assert ".faith-agent-panel__message-list" in source
+    assert ".faith-agent-panel__message--user" in source
+    assert ".faith-agent-panel__message--assistant" in source
 
 
 def test_dockview_bundle_closes_add_panel_menu_on_outside_interaction(
