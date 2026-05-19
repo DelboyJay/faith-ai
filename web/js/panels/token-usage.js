@@ -27,8 +27,24 @@
         ["Model", item.model],
         ["Session", item.session_id],
         ["Task", item.task_id],
-        ["Input tokens", String(item.input_tokens || 0)],
-        ["Output tokens", String(item.output_tokens || 0)],
+        ["Context/input tokens", String(item.input_tokens || 0)],
+        ["Inference/output tokens", String(item.output_tokens || 0)],
+        ["Total tokens", String((item.input_tokens || 0) + (item.output_tokens || 0))],
+        ["Context window", item.context_window_percentage == null ? "unknown" : `${item.context_window_percentage}%`],
+        ["Effective-context snapshot", item.effective_context_snapshot_id || "—"],
+        ["Effective-context turn", item.effective_context_turn_id || "—"],
+        ["Cache", item.cache_hit == null ? "unknown" : item.cache_hit ? "hit" : "miss"],
+        ["Cached input tokens", String(item.cached_input_tokens ?? 0)],
+        [
+          "Context files",
+          Array.isArray(item.context_files) && item.context_files.length > 0
+            ? item.context_files
+                .map(function mapContextFile(fileEntry) {
+                  return `${fileEntry.path || "unknown"} (${fileEntry.tokens || 0})`;
+                })
+                .join(", ")
+            : "—",
+        ],
         ["Estimated cost", String(item.estimated_cost ?? 0)],
       ]);
     },

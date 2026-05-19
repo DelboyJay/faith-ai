@@ -19,6 +19,8 @@ from typing import Any
 
 import httpx
 
+from faith_pa.model_catalog import estimate_safe_usable_context
+
 OLLAMA_CONTAINER_HOST = "http://ollama:11434"
 OLLAMA_HOST_BRIDGE = "http://host.docker.internal:11434"
 OLLAMA_DEFAULT_HOST = OLLAMA_HOST_BRIDGE
@@ -75,6 +77,22 @@ class LocalModelCapability:
     system_ram_mb: int | None
     probe_model: str
     notes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ModelContextDiagnostic:
+    """Description:
+        Represent one deterministic model context diagnostic summary.
+
+    Requirements:
+        - Preserve the nominal context window and the derived safe usable context.
+        - Carry the provenance label used by catalog diagnostics.
+    """
+
+    nominal_context_window: int
+    safe_usable_context: int
+    provenance: str
+    warning: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -457,6 +475,43 @@ class LLMClient:
             )
         raise last_error or LLMRetryableError(
             "No Ollama endpoint passed the local capability probe"
+        )
+
+    def build_model_context_diagnostic(
+        self,
+        *,
+        nominal_context_window: int,
+        usable_vram_mb: int | None,
+        system_ram_mb: int | None,
+        provenance: str,
+        route_kind: str = "container",
+    ) -> ModelContextDiagnostic:
+        """Description:
+            Build a deterministic context-window diagnostic for one model.
+
+        Requirements:
+            - Keep the estimate simple enough for repeatable backend diagnostics.
+            - Surface a warning when the usable context is constrained by VRAM.
+
+        :param nominal_context_window: Declared or discovered nominal window size.
+        :param usable_vram_mb: Estimated usable VRAM budget.
+        :param system_ram_mb: Estimated system RAM budget.
+        :param provenance: Provenance label for the context value.
+        :param route_kind: Local route kind used for the estimate.
+        :returns: Deterministic context diagnostic payload.
+        """
+
+        estimate = estimate_safe_usable_context(
+            nominal_context_window=nominal_context_window,
+            usable_vram_mb=usable_vram_mb,
+            system_ram_mb=system_ram_mb,
+            route_kind=route_kind,
+        )
+        return ModelContextDiagnostic(
+            nominal_context_window=estimate.nominal_context_window,
+            safe_usable_context=estimate.safe_usable_context,
+            provenance=provenance,
+            warning=estimate.warning,
         )
 
     def _ollama_probe_candidates(

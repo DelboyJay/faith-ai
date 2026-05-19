@@ -16,7 +16,8 @@
    *   Return the canonical default workspace descriptor for first browser load.
    *
    * Requirements:
-   *   - Keep the Project Agent and System Status in the upper tab group.
+   *   - Keep Session History on the upper-left beside the Project Agent workspace.
+   *   - Keep the Project Agent and System Status in the upper-right tab group.
    *   - Keep Input and User Settings in one lower-left tab group.
    *   - Keep Approvals to the right of that lower-left tab group.
    *   - Preserve the Project Agent model metadata used by the current panel.
@@ -26,7 +27,25 @@
   function buildDefaultWorkspaceDescriptor() {
     return {
       version: "v1",
-      upperGroup: {
+      upperLeftGroup: {
+        panels: [
+          {
+            id: "session-history",
+            componentType: "session-history-panel",
+            title: "Session History",
+            size: 50,
+            componentState: {},
+          },
+          {
+            id: "effective-context",
+            componentType: "effective-context-panel",
+            title: "Effective Context",
+            size: 50,
+            componentState: {},
+          },
+        ],
+      },
+      upperRightGroup: {
         panels: [
           {
             id: "project-agent",
@@ -42,6 +61,7 @@
             id: "system-status",
             componentType: "status-panel",
             title: "System Status",
+            size: 50,
             componentState: {},
           },
         ],

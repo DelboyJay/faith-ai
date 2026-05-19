@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 import faith_pa.pa.app as pa_app_module
 from faith_pa.logging.token_logger import TokenLogger
 from faith_pa.pa.chat_tool_loop import ChatToolCall, list_available_chat_mcp_tools
+from faith_pa.pa.context_compaction import ContextCompactionMode
 from faith_pa.runtime_time_context import RuntimeTimeContextProvider
 from faith_pa.security.audit_log import AuditLogger
 from faith_pa.utils.redis_client import USER_INPUT_CHANNEL
@@ -262,6 +263,66 @@ class FakeLLMClient:
         - Preserve the supplied message payload and model metadata for later assertions.
 
         :param messages: Chat message payload supplied by the PA.
+        :param model: Optional model override.
+        :param fallback_model: Optional fallback-model override.
+        :param temperature: Optional temperature override.
+        :param max_tokens: Optional output-token cap.
+        :returns: Deterministic fake LLM response.
+        """
+
+        self.calls.append(
+            {
+                "messages": messages,
+                "model": model,
+                "fallback_model": fallback_model,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+        )
+        return FakeLLMResponse(self.content)
+
+
+class FakeCompactionLLMClient:
+    """Description:
+    Provide a deterministic local summariser stand-in for PA compaction tests.
+
+    Requirements:
+    - Capture compaction prompts for later assertions.
+    - Return one stable summary without network access.
+    """
+
+    def __init__(
+        self, content: str = "Resolved earlier turns and kept outstanding blockers."
+    ) -> None:
+        """Description:
+        Initialise the fake compaction LLM client.
+
+        Requirements:
+        - Start with an empty request log.
+
+        :param content: Summary content returned by ``chat()``.
+        """
+
+        self.content = content
+        self.calls: list[dict[str, object]] = []
+
+    async def chat(
+        self,
+        messages: list[dict[str, object]],
+        *,
+        model: str | None = None,
+        fallback_model: str | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> FakeLLMResponse:
+        """Description:
+        Record one compaction-summary request and return a deterministic response.
+
+        Requirements:
+        - Preserve the request payload for later assertions.
+        - Return a fake response shape matching the shared LLM client contract.
+
+        :param messages: Chat message payload supplied by the PA compaction path.
         :param model: Optional model override.
         :param fallback_model: Optional fallback-model override.
         :param temperature: Optional temperature override.
@@ -956,16 +1017,16 @@ def test_user_settings_update_rejects_invalid_timezone(
     assert "timezone" in response.json()["detail"].lower()
 
 
-def test_pa_system_prompt_store_uses_host_backed_runtime_volume_when_configured(
+def test_pa_system_prompt_store_uses_project_root_agents_md_when_runtime_volume_is_configured(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     """Description:
-    Verify the Project Agent prompt store persists edited prompts under the host-backed runtime volume.
+    Verify the PA project-instruction store still uses project-root `AGENTS.md` when runtime persistence is configured.
 
     Requirements:
-    - This test is needed to prove PA prompt edits survive container rebuilds when FAITH runs with a mounted data volume.
-    - Verify the prompt path resolves under `FAITH_DATA_DIR/pa-runtime` and accepted updates are written there.
+    - This test is needed to prove Phase 16 keeps the editable project-instruction layer in the project workspace rather than moving it onto the runtime volume.
+    - Verify the prompt path resolves to `AGENTS.md` under the project root even when `FAITH_DATA_DIR` is configured.
 
     :param monkeypatch: Pytest monkeypatch fixture.
     :param tmp_path: Temporary directory used to simulate the host-backed data volume.
@@ -977,9 +1038,9 @@ def test_pa_system_prompt_store_uses_host_backed_runtime_volume_when_configured(
 
     payload = store.update("Persist this custom PA prompt on the host-backed volume.")
 
-    assert store.prompt_path == data_root / "pa-runtime" / "agents" / "project-agent" / "prompt.md"
+    assert store.prompt_path == tmp_path / "workspace" / "AGENTS.md"
     assert store.prompt_path.read_text(encoding="utf-8") == payload["prompt"]
-    assert payload["path"].endswith("pa-runtime/agents/project-agent/prompt.md")
+    assert payload["path"].endswith("workspace/AGENTS.md")
 
 
 def test_user_settings_store_uses_host_backed_runtime_volume_when_configured(
@@ -1037,6 +1098,227 @@ def test_user_settings_store_uses_host_backed_runtime_volume_when_configured(
     assert stored["timezone"] == "Europe/London"
     assert payload["path"].endswith("pa-runtime/user-settings/system.yaml")
     assert json.loads((faith_dir / "system.yaml").read_text(encoding="utf-8"))["timezone"] == "UTC"
+
+
+def test_model_settings_endpoint_returns_catalog_and_agent_overrides(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify the PA model-settings endpoint returns persisted model metadata and per-agent overrides.
+
+    Requirements:
+    - This test is needed to prove the Web UI can inspect the current PA model, default agent model, and known catalog entries.
+    - Verify the endpoint returns agent override rows and model-catalog metadata over HTTP.
+
+    :param client: Test client for the PA application.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary project root used to hold config and runtime files.
+    """
+
+    project_root = tmp_path / "workspace"
+    faith_dir = project_root / ".faith"
+    agents_dir = faith_dir / "agents"
+    agents_dir.mkdir(parents=True)
+    (faith_dir / "system.yaml").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "privacy_profile": "internal",
+                "pa": {"model": "ollama/llama3:8b"},
+                "default_agent_model": "openrouter/openai/gpt-4o",
+            }
+        ),
+        encoding="utf-8",
+    )
+    researcher_dir = agents_dir / "researcher"
+    researcher_dir.mkdir(parents=True)
+    (researcher_dir / "config.yaml").write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "name": "Researcher",
+                "role": "researcher",
+                "model": "ollama/mistral:7b",
+            }
+        ),
+        encoding="utf-8",
+    )
+    data_root = tmp_path / "data"
+    data_root.mkdir(parents=True)
+    (data_root / "model-prices.default.json").write_text(
+        json.dumps(
+            {
+                "generated_date": "2026-05-10",
+                "models": {
+                    "ollama/llama3:8b": {"context_window": 8192},
+                    "ollama/mistral:7b": {"context_window": 32768},
+                    "openrouter/openai/gpt-4o": {"context_window": 128000},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("FAITH_PROJECT_ROOT", str(project_root))
+    monkeypatch.setenv("FAITH_DATA_DIR", str(data_root))
+
+    response = client.get("/api/model-settings")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["pa_model"] == "ollama/llama3:8b"
+    assert payload["default_agent_model"] == "openrouter/openai/gpt-4o"
+    assert payload["model_options"]
+    assert any(entry["key"] == "ollama/llama3:8b" for entry in payload["catalog"])
+    assert any(entry["agent_id"] == "researcher" for entry in payload["agent_overrides"])
+    assert payload["catalog_path"].endswith("pa-runtime/model-catalog.json")
+
+
+def test_model_settings_update_persists_system_agent_and_context_overrides(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify model-settings updates persist PA model, per-agent overrides, and context-window overrides.
+
+    Requirements:
+    - This test is needed to prove the model settings panel can change future PA turns without a restart.
+    - Verify the endpoint rewrites project config, agent config, and the persisted model catalog together.
+
+    :param client: Test client for the PA application.
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary project root used to hold config and runtime files.
+    """
+
+    project_root = tmp_path / "workspace"
+    faith_dir = project_root / ".faith"
+    agents_dir = faith_dir / "agents"
+    agents_dir.mkdir(parents=True)
+    system_path = faith_dir / "system.yaml"
+    system_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "privacy_profile": "internal",
+                "pa": {"model": "ollama/llama3:8b"},
+                "default_agent_model": "ollama/llama3:8b",
+            }
+        ),
+        encoding="utf-8",
+    )
+    reviewer_dir = agents_dir / "reviewer"
+    reviewer_dir.mkdir(parents=True)
+    reviewer_config_path = reviewer_dir / "config.yaml"
+    reviewer_config_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "name": "Reviewer",
+                "role": "reviewer",
+                "model": "ollama/llama3:8b",
+            }
+        ),
+        encoding="utf-8",
+    )
+    data_root = tmp_path / "data"
+    data_root.mkdir(parents=True)
+    monkeypatch.setenv("FAITH_PROJECT_ROOT", str(project_root))
+    monkeypatch.setenv("FAITH_DATA_DIR", str(data_root))
+
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=FakeLLMClient(),
+        model_name="ollama/llama3:8b",
+        prompt_store=pa_app_module.ProjectAgentPromptStore(project_root=project_root),
+        session_manager=pa_app_module.SessionManager(project_root=project_root),
+    )
+    pa_app_module.app.state.project_agent_chat_runtime = runtime
+
+    response = client.put(
+        "/api/model-settings",
+        json={
+            "pa_model": "openrouter/anthropic/claude-3.5-sonnet",
+            "default_agent_model": "openrouter/openai/gpt-4o",
+            "agent_overrides": {"reviewer": "ollama/mistral:7b"},
+            "context_window_overrides": {
+                "openrouter/anthropic/claude-3.5-sonnet": 200000,
+                "ollama/mistral:7b": 32768,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    updated_system = json.loads(system_path.read_text(encoding="utf-8"))
+    updated_agent = json.loads(reviewer_config_path.read_text(encoding="utf-8"))
+    catalog_path = data_root / "pa-runtime" / "model-catalog.json"
+    catalog_payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+
+    assert updated_system["pa"]["model"] == "openrouter/anthropic/claude-3.5-sonnet"
+    assert updated_system["default_agent_model"] == "openrouter/openai/gpt-4o"
+    assert updated_agent["model"] == "ollama/mistral:7b"
+    assert (
+        catalog_payload["entries"]["openrouter/anthropic/claude-3.5-sonnet"]["context_window"][
+            "provenance"
+        ]
+        == "user_override"
+    )
+    assert runtime.model_name == "openrouter/anthropic/claude-3.5-sonnet"
+    assert runtime.llm_client.model == "openrouter/anthropic/claude-3.5-sonnet"
+
+
+@pytest.mark.asyncio
+async def test_record_token_usage_persists_effective_context_and_cache_diagnostics(
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify PA token logging records effective-context and cache-diagnostic metadata.
+
+    Requirements:
+    - This test is needed to prove the token panel can correlate one LLM call with the effective-context snapshot and context-window percentage.
+    - Verify persisted token records preserve snapshot IDs, turn IDs, context percentage, and cache-hit diagnostics.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    """
+
+    token_logger = TokenLogger(logs_dir=tmp_path / "logs")
+    session_manager = pa_app_module.SessionManager(project_root=tmp_path)
+    await session_manager.start_session(trigger="web-ui")
+    task = session_manager.start_task("browser-chat", channel="pa-user")
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=FakeLLMClient(),
+        model_name="openrouter/anthropic/claude-3.5-sonnet",
+        prompt_store=pa_app_module.ProjectAgentPromptStore(project_root=tmp_path),
+        session_manager=session_manager,
+        token_logger=token_logger,
+    )
+    runtime._last_effective_context_snapshot = {
+        "snapshot_id": "ctx-001",
+        "turn_id": task.task_id,
+        "context_files": [{"path": "AGENTS.md", "tokens": 40}],
+    }
+    runtime._last_context_window_limit = 200
+
+    response = FakeLLMResponse("ok")
+    response.raw_response = {
+        "usage": {
+            "prompt_tokens": 12,
+            "completion_tokens": 8,
+            "prompt_tokens_details": {"cached_tokens": 10},
+        }
+    }
+
+    await runtime._record_token_usage(task_id=task.task_id, response=response)
+
+    entries = token_logger.read_entries()
+
+    assert entries[0].effective_context_snapshot_id == "ctx-001"
+    assert entries[0].effective_context_turn_id == task.task_id
+    assert entries[0].context_window_percentage == 6
+    assert entries[0].cache_hit is True
+    assert entries[0].cached_input_tokens == 10
 
 
 def test_publish_test_event_returns_payload_and_publishes(
@@ -1163,11 +1445,11 @@ def test_pa_system_prompt_endpoint_returns_default_prompt(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["prompt"] == pa_app_module.DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT
-    assert payload["source"] == "default"
+    assert payload["prompt"] == ""
+    assert payload["source"] == "project"
     assert payload["default_available"] is True
     assert payload["differs_from_default"] is False
-    assert payload["path"].endswith(".faith/agents/project-agent/prompt.md")
+    assert payload["path"].endswith("AGENTS.md")
 
 
 def test_pa_system_prompt_update_rejects_blank_prompt(
@@ -1193,8 +1475,8 @@ def test_pa_system_prompt_update_rejects_blank_prompt(
     assert response.status_code == 400
     assert "Prompt cannot be empty" in response.json()["detail"]
     current = client.get("/api/pa/system-prompt").json()
-    assert current["prompt"] == pa_app_module.DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT
-    assert current["source"] == "default"
+    assert current["prompt"] == ""
+    assert current["source"] == "project"
 
 
 def test_pa_system_prompt_update_persists_and_future_messages_use_it(
@@ -1221,7 +1503,7 @@ def test_pa_system_prompt_update_persists_and_future_messages_use_it(
     assert response.status_code == 200
     payload = response.json()
     assert payload["prompt"] == custom_prompt
-    assert payload["source"] == "custom"
+    assert payload["source"] == "project"
     assert payload["differs_from_default"] is True
     assert prompt_store.prompt_path.read_text(encoding="utf-8") == custom_prompt
 
@@ -1234,7 +1516,10 @@ def test_pa_system_prompt_update_persists_and_future_messages_use_it(
     )
     system_message = runtime._build_chat_messages("hello")[0]["content"]
     assert custom_prompt in system_message
-    assert pa_app_module.DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT not in system_message
+    assert pa_app_module.DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT in system_message
+    assert system_message.index(
+        pa_app_module.DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT
+    ) < system_message.index(custom_prompt)
 
 
 def test_pa_system_prompt_reset_restores_default_prompt(
@@ -1260,9 +1545,126 @@ def test_pa_system_prompt_reset_restores_default_prompt(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["prompt"] == pa_app_module.DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT
-    assert payload["source"] == "default"
+    assert payload["prompt"] == ""
+    assert payload["source"] == "project"
     assert not prompt_store.prompt_path.exists()
+
+
+def test_project_agent_context_compiler_resolves_includes_and_persists_redacted_snapshot(
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify the effective PA context compiler resolves includes and persists one redacted snapshot.
+
+    Requirements:
+    - This test is needed to prove project-root `AGENTS.md` can pull in explicit and inferred markdown references deterministically.
+    - Verify the compiler persists one redacted snapshot tied to the supplied session and turn metadata.
+
+    :param tmp_path: Temporary project root used for instruction and snapshot persistence.
+    """
+
+    project_root = tmp_path / "workspace"
+    project_root.mkdir(parents=True)
+    (project_root / "AGENTS.md").write_text(
+        (
+            "Project rule: keep answers short.\n"
+            "!include docs/project_instruction.md\n"
+            "See coding_style.md for coding rules.\n"
+            "Secret: sk-test-1234567890\n"
+        ),
+        encoding="utf-8",
+    )
+    docs_dir = project_root / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "project_instruction.md").write_text(
+        "Use TDD and keep the UI responsive.",
+        encoding="utf-8",
+    )
+    (project_root / "coding_style.md").write_text(
+        "Use docstrings and concise comments.",
+        encoding="utf-8",
+    )
+
+    compiler = pa_app_module.ProjectAgentContextCompiler(
+        project_root=project_root,
+        model_name="openrouter/openai/gpt-5",
+    )
+
+    snapshot = compiler.compile_for_turn(
+        session_id="sess-0001",
+        turn_id="turn-0001",
+        core_instructions=pa_app_module.DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT,
+        runtime_user_block="[Runtime User Context]\nAddress the user as: Delboy",
+        runtime_time_block="[Runtime Time Context]\nCurrent local date: 2026-05-18",
+        tool_manifest_block="Available MCP tools:\n- filesystem.read",
+    )
+
+    assert snapshot.project_instruction_path == (project_root / "AGENTS.md")
+    assert [entry.relative_path for entry in snapshot.include_entries] == [
+        "docs/project_instruction.md",
+        "coding_style.md",
+    ]
+    assert all(entry.token_estimate > 0 for entry in snapshot.include_entries)
+    assert snapshot.context_hash
+    assert snapshot.snapshot_path.exists()
+    persisted_payload = json.loads(snapshot.snapshot_path.read_text(encoding="utf-8"))
+    assert persisted_payload["session_id"] == "sess-0001"
+    assert persisted_payload["turn_id"] == "turn-0001"
+    assert persisted_payload["context_hash"] == snapshot.context_hash
+    assert "[REDACTED]" in persisted_payload["redacted_context"]
+    assert "sk-test-1234567890" not in persisted_payload["redacted_context"]
+
+
+def test_project_agent_context_compiler_rebuilds_when_nested_include_changes(
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify nested include changes invalidate the cached stable project-instruction block.
+
+    Requirements:
+    - This test is needed to prove resolved include hashing covers nested markdown dependencies rather than only direct AGENTS.md references.
+    - Verify a nested include edit changes the compiled context hash and refreshed compiled text on the next turn.
+
+    :param tmp_path: Temporary project root used to hold AGENTS.md and nested include files.
+    """
+
+    project_root = tmp_path / "workspace"
+    project_root.mkdir(parents=True)
+    (project_root / "AGENTS.md").write_text("!include docs/root.md\n", encoding="utf-8")
+    docs_dir = project_root / "docs"
+    docs_dir.mkdir()
+    (docs_dir / "root.md").write_text("!include nested.md\nRoot guidance.\n", encoding="utf-8")
+    (docs_dir / "nested.md").write_text("Nested guidance v1.\n", encoding="utf-8")
+
+    compiler = pa_app_module.ProjectAgentContextCompiler(
+        project_root=project_root,
+        model_name="ollama/llama3:8b",
+        snapshot_root=tmp_path / "runtime",
+    )
+
+    first = compiler.compile_for_turn(
+        session_id="sess-nested",
+        turn_id="turn-1",
+        core_instructions="Core guidance.",
+        runtime_user_block="",
+        runtime_time_block="",
+        tool_manifest_block="",
+    )
+
+    (docs_dir / "nested.md").write_text("Nested guidance v2.\n", encoding="utf-8")
+
+    second = compiler.compile_for_turn(
+        session_id="sess-nested",
+        turn_id="turn-2",
+        core_instructions="Core guidance.",
+        runtime_user_block="",
+        runtime_time_block="",
+        tool_manifest_block="",
+    )
+
+    assert "Nested guidance v1." in first.compiled_context
+    assert "Nested guidance v2." in second.compiled_context
+    assert first.context_hash != second.context_hash
 
 
 def test_pa_system_prompt_update_does_not_rewrite_history(tmp_path) -> None:
@@ -1689,6 +2091,52 @@ def test_project_agent_session_manager_uses_explicit_session_root(
     assert manager.faith_dir == session_root.resolve() / ".faith"
 
 
+def test_project_agent_chat_runtime_starts_fresh_session_and_clears_transcript(
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify the Project Agent runtime can start a brand-new browser session cleanly.
+
+    Requirements:
+    - This test is needed to prove the Session History panel can trigger a fresh session without carrying transcript, task, or cost state across sessions.
+    - Verify the runtime ends the previous session, starts a new one immediately, clears the exported transcript/history, and resets task state.
+
+    :param tmp_path: Temporary project root used for session persistence.
+    """
+
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=FakeRedis(),
+        llm_client=FakeLLMClient("First reply."),
+        model_name="ollama/llama3:8b",
+        session_manager=pa_app_module.SessionManager(project_root=tmp_path),
+    )
+
+    asyncio.run(
+        runtime._handle_payload(
+            {
+                "type": "user_input",
+                "message_id": "msg-session-001",
+                "message": "Hello from the first session.",
+            }
+        )
+    )
+
+    first_session_id = runtime.session_manager.session_id
+    assert first_session_id is not None
+    assert runtime.export_transcript_messages()
+    assert runtime.session_manager.tasks
+
+    session_payload = asyncio.run(runtime.start_new_session())
+
+    assert session_payload["previous_session_id"] == first_session_id
+    assert session_payload["session_id"] != first_session_id
+    assert session_payload["status"] == "active"
+    assert runtime.export_transcript_messages() == []
+    assert runtime.history == []
+    assert runtime.session_manager.tasks == {}
+    assert runtime.session_manager.get_active_task() is None
+
+
 def test_pa_chat_bridge_advertises_mcp_tools_to_llama() -> None:
     """Description:
     Verify the browser-chat LLM prompt includes the PA MCP tool manifest.
@@ -2085,6 +2533,34 @@ def test_pa_chat_runtime_persists_tool_call_visibility_to_audit_and_session_logs
     assert "README.md" in channel_log_text
 
 
+def test_pa_session_new_endpoint_starts_fresh_session(client: TestClient) -> None:
+    """Description:
+    Verify the PA exposes an HTTP endpoint for starting a fresh browser session.
+
+    Requirements:
+    - This test is needed to prove the Session History panel can request a new active session without waiting for another chat message first.
+    - Verify the endpoint returns the newly started session identifier and clears the live transcript snapshot.
+
+    :param client: Test client for the PA application.
+    """
+
+    first_response = client.post("/api/pa/session/new")
+    assert first_response.status_code == 200
+    first_payload = first_response.json()
+    assert first_payload["status"] == "active"
+    assert first_payload["session_id"]
+
+    transcript_response = client.get("/api/pa/transcript")
+    assert transcript_response.status_code == 200
+    assert transcript_response.json()["messages"] == []
+
+    second_response = client.post("/api/pa/session/new")
+    assert second_response.status_code == 200
+    second_payload = second_response.json()
+    assert second_payload["previous_session_id"] == first_payload["session_id"]
+    assert second_payload["session_id"] != first_payload["session_id"]
+
+
 def test_pa_chat_runtime_logs_token_usage_and_cost_warning(tmp_path: Path) -> None:
     """Description:
     Verify the Project Agent chat runtime writes token logs and publishes a threshold warning when cost crosses the limit.
@@ -2135,3 +2611,146 @@ def test_pa_chat_runtime_logs_token_usage_and_cost_warning(tmp_path: Path) -> No
     assert "project-agent" in warning_frames[0]["message"]
     assert "budget-model" in warning_frames[0]["message"]
     assert "cheaper model" in warning_frames[0]["message"]
+
+
+def test_pa_chat_runtime_hard_compacts_before_processing_a_turn(tmp_path: Path) -> None:
+    """Description:
+    Verify the Project Agent performs hard compaction before a new turn when active-context usage is too high.
+
+    Requirements:
+        - This test is needed to prove the PA blocks on hard compaction at 95 percent or above before the next inference turn is processed.
+        - Verify the runtime emits visible compaction-state frames, retains relevant blocker history, persists a compaction record, and still completes the user turn afterward.
+
+    :param tmp_path: Temporary project root used for session and compaction persistence.
+    """
+
+    fake_redis = FakeRedis()
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=fake_redis,
+        llm_client=FakeLLMClient("Fresh answer after compaction."),
+        compaction_llm_client=FakeCompactionLLMClient(),
+        model_name="ollama/llama3:8b",
+        prompt_store=pa_app_module.ProjectAgentPromptStore(project_root=tmp_path),
+        session_manager=pa_app_module.SessionManager(project_root=tmp_path),
+    )
+    runtime.history = [
+        {
+            "role": "user",
+            "content": "Resolved earlier greeting with a lot of extra filler text to inflate the prompt budget quickly.",
+        },
+        {
+            "role": "assistant",
+            "content": "Resolved setup note with a lot of extra filler text to inflate the prompt budget quickly.",
+        },
+        {
+            "role": "user",
+            "content": "Pending approval to delete generated files before we continue with the cleanup task.",
+        },
+        {
+            "role": "assistant",
+            "content": "There is still an unresolved blocker with the API key and we cannot finish until that is fixed.",
+        },
+        {
+            "role": "user",
+            "content": "Newest prior question with additional filler text to increase token usage.",
+        },
+        {
+            "role": "assistant",
+            "content": "Newest prior answer with additional filler text to increase token usage.",
+        },
+    ]
+    runtime._last_context_window_limit = 10
+
+    asyncio.run(
+        runtime._handle_payload(
+            {
+                "type": "user_input",
+                "message_id": "msg-compaction-001",
+                "message": "Please continue with the task.",
+            }
+        )
+    )
+
+    output_frames = [
+        json.loads(payload)
+        for channel, payload in fake_redis.published
+        if channel == "agent:project-agent:output"
+    ]
+    output_text = "".join(
+        frame.get("text", "") for frame in output_frames if frame.get("type") == "output"
+    )
+    compaction_frames = [
+        frame for frame in output_frames if frame.get("type") == "compaction_state"
+    ]
+    active_task = runtime.session_manager.get_active_task()
+
+    assert compaction_frames[0]["active"] is True
+    assert compaction_frames[-1]["active"] is False
+    assert runtime._last_compaction_record is not None
+    assert runtime._last_compaction_record["mode"] == ContextCompactionMode.HARD.value
+    assert runtime._last_compaction_record["usage_before_pct"] >= 95
+    assert any(
+        "Pending approval to delete generated files" in message["content"]
+        for message in runtime.history
+    )
+    assert any(
+        "unresolved blocker with the API key" in message["content"] for message in runtime.history
+    )
+    assert any(message["content"].startswith("Context compacted.") for message in runtime.history)
+    assert active_task is not None
+    compaction_dir = active_task.path.parent.parent / "compaction"
+    assert list(compaction_dir.glob("*.json"))
+    assert "Fresh answer after compaction." in output_text
+
+
+def test_pa_chat_runtime_promotes_explicit_durable_rule_into_agents_md(tmp_path: Path) -> None:
+    """Description:
+    Verify explicit durable-rule language is persisted into the project AGENTS.md during normal PA chat.
+
+    Requirements:
+        - This test is needed to prove durable rules move into project instructions instead of depending on conversational memory alone.
+        - Verify the PA persists the rule, tells the user it was added, and records the promotion in the audit or session history.
+
+    :param tmp_path: Temporary project root used for prompt, session, and audit persistence.
+    """
+
+    fake_redis = FakeRedis()
+    audit_logger = AuditLogger(logs_dir=tmp_path / "logs")
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=fake_redis,
+        llm_client=FakeLLMClient("I will follow that from now on."),
+        model_name="ollama/llama3:8b",
+        prompt_store=pa_app_module.ProjectAgentPromptStore(project_root=tmp_path),
+        session_manager=pa_app_module.SessionManager(project_root=tmp_path),
+        audit_logger=audit_logger,
+    )
+
+    asyncio.run(
+        runtime._handle_payload(
+            {
+                "type": "user_input",
+                "message_id": "msg-rule-001",
+                "message": "I have a new rule for you: always answer in bullet points.",
+            }
+        )
+    )
+
+    output_frames = [
+        json.loads(payload)
+        for channel, payload in fake_redis.published
+        if channel == "agent:project-agent:output"
+    ]
+    output_text = "".join(
+        frame.get("text", "") for frame in output_frames if frame.get("type") == "output"
+    )
+    prompt_text = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    audit_entries = audit_logger.read_entries(limit=10)
+    active_task = runtime.session_manager.get_active_task()
+
+    assert "always answer in bullet points." in prompt_text
+    assert "added it to AGENTS.md" in output_text
+    assert len(audit_entries) == 1
+    assert audit_entries[0].tool == "project_instructions"
+    assert audit_entries[0].action == "append_rule"
+    assert active_task is not None
+    assert "rule_promotion" in (active_task.path / "pa-user.log").read_text(encoding="utf-8")

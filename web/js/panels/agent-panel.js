@@ -10,6 +10,7 @@
 
 (function initialiseFaithAgentPanel(globalScope) {
   const AGENT_WS_PATH_PREFIX = "/ws/agent/";
+  const INPUT_PANEL_COMPACTION_STATE_EVENT = "faith:input-panel-compaction-state";
   const PROJECT_AGENT_TRANSCRIPT_PATH = "/api/pa/transcript";
   const MAX_RECONNECT_DELAY_MS = 8000;
   const INITIAL_RECONNECT_DELAY_MS = 400;
@@ -100,6 +101,20 @@
 
     /**
      * Description:
+     *   Capture whether the transcript was already pinned to the newest entry before one write mutates the DOM.
+     *
+     * Requirements:
+     *   - Measure the pre-write scroll state so live browsers do not misclassify the panel as "scrolled up"
+     *     once the newly appended entry increases the scroll height.
+     *
+     * @returns {boolean} True when the transcript was pinned to the latest content before the write.
+     */
+    function capturePinnedStateBeforeWrite() {
+      return typeof isPinnedToLatest === "function" ? isPinnedToLatest() : true;
+    }
+
+    /**
+     * Description:
      *   Finish any in-progress streamed assistant entry before another entry type is rendered.
      *
      * Requirements:
@@ -157,8 +172,9 @@
      *   - Keep fake DOM runtime tests able to simulate scroll growth.
      *   - Avoid relying on browser-only layout reads inside the adapter.
      */
-    function notifyContentChanged() {
-      const wasNearBottom = typeof isPinnedToLatest === "function" ? isPinnedToLatest() : true;
+    function notifyContentChanged(wasNearBottom) {
+      const wasPinnedBeforeWrite =
+        typeof wasNearBottom === "boolean" ? wasNearBottom : capturePinnedStateBeforeWrite();
       if (typeof host.clientHeight === "number" && typeof host.scrollHeight === "number") {
         host.scrollHeight = Math.max(
           host.clientHeight,
@@ -166,47 +182,53 @@
         );
       }
       if (typeof onContentChanged === "function") {
-        onContentChanged(wasNearBottom);
+        onContentChanged(wasPinnedBeforeWrite);
       }
     }
 
     return {
       write(text) {
+        const wasNearBottom = capturePinnedStateBeforeWrite();
         this.writeSystemLine(text);
-        notifyContentChanged();
+        notifyContentChanged(wasNearBottom);
       },
       writeLine(text) {
+        const wasNearBottom = capturePinnedStateBeforeWrite();
         this.writeSystemLine(text);
-        notifyContentChanged();
+        notifyContentChanged(wasNearBottom);
       },
       writeUserBubble(text) {
+        const wasNearBottom = capturePinnedStateBeforeWrite();
         closeActiveAssistantStream();
         const bubble = createTranscriptEntry("faith-agent-panel__message faith-agent-panel__message--user");
         bubble.textContent = text;
-        notifyContentChanged();
+        notifyContentChanged(wasNearBottom);
       },
       writeAssistantMessage(text) {
+        const wasNearBottom = capturePinnedStateBeforeWrite();
         closeActiveAssistantStream();
         const message = createTranscriptEntry(
           "faith-agent-panel__message faith-agent-panel__message--assistant",
         );
         message.textContent = text;
-        notifyContentChanged();
+        notifyContentChanged(wasNearBottom);
       },
       appendAssistantStream(text) {
+        const wasNearBottom = capturePinnedStateBeforeWrite();
         if (activeAssistantStream === null) {
           activeAssistantStream = createTranscriptEntry(
             "faith-agent-panel__message faith-agent-panel__message--assistant",
           );
         }
         activeAssistantStream.textContent += text;
-        notifyContentChanged();
+        notifyContentChanged(wasNearBottom);
       },
       writeSystemLine(text) {
+        const wasNearBottom = capturePinnedStateBeforeWrite();
         closeActiveAssistantStream();
         const line = createTranscriptEntry("faith-agent-panel__system-line");
         line.textContent = text;
-        notifyContentChanged();
+        notifyContentChanged(wasNearBottom);
       },
       clear() {
         messageList.replaceChildren();
@@ -354,6 +376,7 @@
 
     const SCROLL_BOTTOM_THRESHOLD_PX = 24;
     let hasUnreadBelow = false;
+    let pendingScrollToLatest = false;
 
     /**
      * Description:
@@ -380,9 +403,46 @@
      * @returns {void}
      */
     function scrollTranscriptToLatest() {
+      const transcriptRoot =
+        terminalHost.firstElementChild ||
+        (terminalHost.children && terminalHost.children.length > 0 ? terminalHost.children[0] : null);
+      const latestTranscriptEntry =
+        transcriptRoot && transcriptRoot.children && transcriptRoot.children.length > 0
+          ? transcriptRoot.children[transcriptRoot.children.length - 1]
+          : null;
+
+      if (latestTranscriptEntry && typeof latestTranscriptEntry.scrollIntoView === "function") {
+        latestTranscriptEntry.scrollIntoView(false);
+      }
       terminalHost.scrollTop = Math.max(0, terminalHost.scrollHeight - terminalHost.clientHeight);
       hasUnreadBelow = false;
       jumpToLatestButton.hidden = true;
+    }
+
+    /**
+     * Description:
+     *   Schedule a scroll-to-latest action after the browser has applied the newest layout.
+     *
+     * Requirements:
+     *   - Avoid reading stale scroll heights before the newly appended transcript content affects layout.
+     *   - Coalesce repeated requests during one render tick.
+     *
+     * @returns {void}
+     */
+    function scheduleScrollTranscriptToLatest() {
+      if (pendingScrollToLatest) {
+        return;
+      }
+      pendingScrollToLatest = true;
+      const onNextFrame = function onNextFrame() {
+        pendingScrollToLatest = false;
+        scrollTranscriptToLatest();
+      };
+      if (typeof globalScope.requestAnimationFrame === "function") {
+        globalScope.requestAnimationFrame(onNextFrame);
+        return;
+      }
+      globalScope.setTimeout(onNextFrame, 0);
     }
 
     /**
@@ -398,7 +458,7 @@
      */
     function handleTranscriptContentChanged(wasNearBottom) {
       if (wasNearBottom) {
-        scrollTranscriptToLatest();
+        scheduleScrollTranscriptToLatest();
         return;
       }
       hasUnreadBelow = true;
@@ -472,6 +532,19 @@
         terminal.writeSystemLine(`WARNING: ${message.message || message.text || "Runtime warning"}`);
         return;
       }
+      if (message.type === "compaction_state") {
+        if (typeof globalScope.dispatchEvent === "function" && typeof globalScope.CustomEvent === "function") {
+          globalScope.dispatchEvent(
+            new globalScope.CustomEvent(INPUT_PANEL_COMPACTION_STATE_EVENT, {
+              detail: {
+                active: Boolean(message.active),
+                diagnostic: message.diagnostic || "",
+              },
+            }),
+          );
+        }
+        return;
+      }
       const outputText = message.text || message.message || "";
       if (message.stream) {
         const streamText = outputText.startsWith("PA: ") ? outputText.slice(4) : outputText;
@@ -542,7 +615,7 @@
         }
         nextMessages.forEach(processSavedTranscriptMessage);
         savedTranscriptMessageCount = payload.messages.length;
-        scrollTranscriptToLatest();
+        scheduleScrollTranscriptToLatest();
       } catch (error) {
         return;
       }
@@ -678,7 +751,7 @@
     });
 
     jumpToLatestButton.addEventListener("click", function onJumpToLatestClick() {
-      scrollTranscriptToLatest();
+      scheduleScrollTranscriptToLatest();
     });
 
     if (panelState.agentId === "project-agent") {

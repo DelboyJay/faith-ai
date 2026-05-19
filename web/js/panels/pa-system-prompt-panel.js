@@ -1,10 +1,10 @@
 /**
  * Description:
- *   Render the Project Agent system prompt editor panel inside the browser workspace.
+ *   Render the Project Agent project-instruction editor panel inside the browser workspace.
  *
  * Requirements:
- *   - Load the active PA prompt and metadata from the server.
- *   - Support edit, save, reload, and reset actions.
+ *   - Load the active `AGENTS.md` project-instruction layer and metadata from the server.
+ *   - Support edit, save, reload, and reset actions for the editable project layer only.
  *   - Keep unsaved changes visible and warn before destructive local actions.
  */
 
@@ -173,7 +173,7 @@
       textarea.value = lastSavedPrompt;
       renderMetadata(payload);
       refreshDirtyState();
-      setStatus(`Loaded ${payload.source || "active"} prompt.`, "saved");
+      setStatus("Loaded project instructions from AGENTS.md.", "saved");
     }
 
     /**
@@ -189,7 +189,7 @@
       if (hasUnsavedChanges() && !globalScope.confirm("Discard unsaved prompt edits and reload?")) {
         return;
       }
-      setStatus("Loading prompt...", "loading");
+      setStatus("Loading project instructions...", "loading");
       try {
         const response = await globalScope.fetch(PROMPT_PATH);
         applyPromptPayload(await parsePromptResponse(response));
@@ -208,7 +208,7 @@
      * @returns {Promise<void>} Promise that resolves when saving completes.
      */
     async function savePrompt() {
-      setStatus("Saving prompt...", "loading");
+      setStatus("Saving project instructions...", "loading");
       try {
         const response = await globalScope.fetch(PROMPT_PATH, {
           method: "PUT",
@@ -225,7 +225,7 @@
             },
           }),
         );
-        setStatus("Prompt saved. Future PA messages will use it.", "saved");
+        setStatus("Project instructions saved. Future PA messages will use them.", "saved");
       } catch (error) {
         setStatus(String(error.message || error), "error");
       }
@@ -241,10 +241,14 @@
      * @returns {Promise<void>} Promise that resolves when reset completes.
      */
     async function resetPrompt() {
-      if (!globalScope.confirm("Reset the Project Agent prompt to the built-in default?")) {
+      if (
+        !globalScope.confirm(
+          "Reset the editable AGENTS.md project instructions to an empty instruction layer?",
+        )
+      ) {
         return;
       }
-      setStatus("Resetting prompt...", "loading");
+      setStatus("Resetting project instructions...", "loading");
       try {
         const response = await globalScope.fetch(RESET_PATH, { method: "POST" });
         const payload = await parsePromptResponse(response);
@@ -252,12 +256,12 @@
         globalScope.dispatchEvent(
           new globalScope.CustomEvent("faith:pa-system-prompt-updated", {
             detail: {
-              source: payload.source || "default",
+              source: payload.source || "project",
               updated_at: payload.updated_at || null,
             },
           }),
         );
-        setStatus("Prompt reset to the default.", "saved");
+        setStatus("Project instructions reset to an empty AGENTS.md layer.", "saved");
       } catch (error) {
         setStatus(String(error.message || error), "error");
       }

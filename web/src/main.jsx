@@ -41,8 +41,10 @@ const COMPONENT_TYPES = Object.freeze({
   SESSION_HISTORY: "session-history-panel",
   TOKEN_USAGE: "token-usage-panel",
   APPROVAL_HISTORY: "approval-history-panel",
+  EFFECTIVE_CONTEXT: "effective-context-panel",
   PA_SYSTEM_PROMPT: "pa-system-prompt-panel",
   USER_SETTINGS: "user-settings-panel",
+  MODEL_SETTINGS: "model-settings-panel",
 });
 
 const SHELL_PANEL_OPTIONS = Object.freeze([
@@ -107,6 +109,13 @@ const SHELL_PANEL_OPTIONS = Object.freeze([
     componentState: {},
   },
   {
+    label: "Effective Context",
+    id: "effective-context",
+    title: "Effective Context",
+    componentType: COMPONENT_TYPES.EFFECTIVE_CONTEXT,
+    componentState: {},
+  },
+  {
     label: "Token Usage",
     id: "token-usage",
     title: "Token Usage",
@@ -132,6 +141,13 @@ const SHELL_PANEL_OPTIONS = Object.freeze([
     id: "user-settings",
     title: "User Settings",
     componentType: COMPONENT_TYPES.USER_SETTINGS,
+    componentState: {},
+  },
+  {
+    label: "Model Settings",
+    id: "model-settings",
+    title: "Model Settings",
+    componentType: COMPONENT_TYPES.MODEL_SETTINGS,
     componentState: {},
   },
   {
@@ -249,7 +265,17 @@ function getDefaultWorkspaceDescriptor() {
   }
   return {
     version: "v1",
-    upperGroup: {
+    upperLeftGroup: {
+      panels: [
+        {
+          id: "session-history",
+          componentType: COMPONENT_TYPES.SESSION_HISTORY,
+          title: "Session History",
+          componentState: {},
+        },
+      ],
+    },
+    upperRightGroup: {
       panels: [
         {
           id: "project-agent",
@@ -384,6 +410,8 @@ function buildPanelDescriptorFromDockviewPanel(panel) {
  */
 function getDefaultRestorePlacement(panelDescriptor) {
   switch (panelDescriptor.id) {
+    case "session-history":
+      return { referencePanelId: "agent:project-agent", direction: "left" };
     case "system-status":
       return { referencePanelId: "agent:project-agent", direction: "within" };
     case "input":
@@ -488,7 +516,8 @@ function ensurePanel(api, panelDescriptor, position, inactive = false) {
  *   Apply the canonical first-load workspace arrangement to Dockview.
  *
  * Requirements:
- *   - Keep Project Agent and System Status in one tab group.
+ *   - Keep Session History beside the Project Agent workspace in the upper region.
+ *   - Keep Project Agent and System Status in one upper-right tab group.
  *   - Keep Input and User Settings in one lower-left tab group.
  *   - Keep Approvals in the lower-right split beneath the upper group.
  *
@@ -496,26 +525,54 @@ function ensurePanel(api, panelDescriptor, position, inactive = false) {
  */
 function applyDefaultWorkspace(api) {
   const workspaceDescriptor = getDefaultWorkspaceDescriptor();
-  const upperPanels =
-    workspaceDescriptor.upperGroup && Array.isArray(workspaceDescriptor.upperGroup.panels)
-      ? workspaceDescriptor.upperGroup.panels
+  const upperLeftPanels =
+    workspaceDescriptor.upperLeftGroup && Array.isArray(workspaceDescriptor.upperLeftGroup.panels)
+      ? workspaceDescriptor.upperLeftGroup.panels
+      : [];
+  const upperRightPanels =
+    workspaceDescriptor.upperRightGroup && Array.isArray(workspaceDescriptor.upperRightGroup.panels)
+      ? workspaceDescriptor.upperRightGroup.panels
       : [];
   const lowerPanels =
     workspaceDescriptor.lowerGroup && Array.isArray(workspaceDescriptor.lowerGroup.panels)
       ? workspaceDescriptor.lowerGroup.panels
       : [];
 
-  if (upperPanels.length === 0) {
+  if (upperLeftPanels.length === 0 && upperRightPanels.length === 0) {
     return;
   }
 
-  const primaryUpperPanel = ensurePanel(api, upperPanels[0]);
-  upperPanels.slice(1).forEach(function addUpperTab(panelDescriptor) {
+  const primaryUpperRightPanel = ensurePanel(
+    api,
+    upperRightPanels.length > 0 ? upperRightPanels[0] : upperLeftPanels[0],
+  );
+
+  upperRightPanels.slice(1).forEach(function addUpperTab(panelDescriptor) {
     ensurePanel(
       api,
       panelDescriptor,
       {
-        referencePanel: primaryUpperPanel.id,
+        referencePanel: primaryUpperRightPanel.id,
+        direction: "within",
+      },
+      true,
+    );
+  });
+
+  const primaryUpperLeftPanel =
+    upperLeftPanels.length > 0
+      ? ensurePanel(api, upperLeftPanels[0], {
+          referencePanel: primaryUpperRightPanel.id,
+          direction: "left",
+        })
+      : primaryUpperRightPanel;
+
+  upperLeftPanels.slice(1).forEach(function addUpperLeftTab(panelDescriptor) {
+    ensurePanel(
+      api,
+      panelDescriptor,
+      {
+        referencePanel: primaryUpperLeftPanel.id,
         direction: "within",
       },
       true,
@@ -527,7 +584,7 @@ function applyDefaultWorkspace(api) {
   }
 
   const lowerPrimaryPanel = ensurePanel(api, lowerPanels[0], {
-    referencePanel: primaryUpperPanel.id,
+    referencePanel: primaryUpperRightPanel.id,
     direction: "below",
   });
   const stackedLowerPanels = Array.isArray(lowerPanels[0].stackedPanels)
@@ -1411,9 +1468,35 @@ function FaithWorkspaceApp() {
                   );
                 }}
               >
+              <LegacyPanelBridge
+                namespace="faithSessionHistoryPanel"
+                panelId="session-history"
+                params={{}}
+              />
+            </PanelActionFrame>
+          );
+        },
+          [COMPONENT_TYPES.EFFECTIVE_CONTEXT]: function EffectiveContextPanelComponent(props) {
+            return (
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("effective-context", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "effective-context",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.EFFECTIVE_CONTEXT,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
                 <LegacyPanelBridge
-                  namespace="faithSessionHistoryPanel"
-                  panelId="session-history"
+                  namespace="faithEffectiveContextPanel"
+                  panelId="effective-context"
                   params={{}}
                 />
               </PanelActionFrame>
@@ -1518,6 +1601,32 @@ function FaithWorkspaceApp() {
                 <LegacyPanelBridge
                   namespace="faithUserSettingsPanel"
                   panelId="user-settings"
+                  params={{}}
+                />
+              </PanelActionFrame>
+            );
+          },
+          [COMPONENT_TYPES.MODEL_SETTINGS]: function ModelSettingsPanelComponent(props) {
+            return (
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("model-settings", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "model-settings",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.MODEL_SETTINGS,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge
+                  namespace="faithModelSettingsPanel"
+                  panelId="model-settings"
                   params={{}}
                 />
               </PanelActionFrame>

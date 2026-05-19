@@ -50,6 +50,13 @@ class TokenEntry(BaseModel):
     estimated_cost: float
     price_source: str
     price_age_days: int
+    cache_hit: bool | None = None
+    cached_input_tokens: int | None = None
+    cached_output_tokens: int | None = None
+    effective_context_snapshot_id: str | None = None
+    effective_context_turn_id: str | None = None
+    context_window_percentage: int | None = None
+    context_files: list[dict[str, Any]] = Field(default_factory=list)
 
     def to_json_line(self) -> str:
         """Description:
@@ -109,6 +116,7 @@ class TokenLogger:
         self._pricing_breakdown: dict[str, tuple[float, float, str, int]] = {}
         self._session_total_cost_usd = 0.0
         self._warning_emitted = False
+        self._cache_diagnostics: dict[str, dict[str, int | bool | None]] = {}
 
     def set_pricing_data(
         self, model: str, cost_per_token: float, source: str, age_days: int
@@ -159,6 +167,33 @@ class TokenLogger:
             source,
             age_days,
         )
+
+    def set_cache_diagnostics(
+        self,
+        model: str,
+        *,
+        cache_hit: bool | None = None,
+        cached_input_tokens: int | None = None,
+        cached_output_tokens: int | None = None,
+    ) -> None:
+        """Description:
+            Cache optional prompt-caching diagnostics for one model.
+
+        Requirements:
+            - Preserve diagnostics only when the provider reports them.
+            - Leave cost estimation unchanged when the provider has no cache data.
+
+        :param model: Model name.
+        :param cache_hit: Whether the provider reported a cache hit.
+        :param cached_input_tokens: Input tokens served from cache.
+        :param cached_output_tokens: Output tokens served from cache.
+        """
+
+        self._cache_diagnostics[model] = {
+            "cache_hit": cache_hit,
+            "cached_input_tokens": cached_input_tokens,
+            "cached_output_tokens": cached_output_tokens,
+        }
 
     def get_pricing(self, model: str) -> tuple[float, str, int] | None:
         """Description:
@@ -302,6 +337,13 @@ class TokenLogger:
         estimated_cost: float | None = None,
         price_source: str | None = None,
         price_age_days: int | None = None,
+        cache_hit: bool | None = None,
+        cached_input_tokens: int | None = None,
+        cached_output_tokens: int | None = None,
+        effective_context_snapshot_id: str | None = None,
+        effective_context_turn_id: str | None = None,
+        context_window_percentage: int | None = None,
+        context_files: list[dict[str, Any]] | None = None,
     ) -> TokenEntry:
         """Description:
             Create and persist one token log entry.
@@ -319,6 +361,13 @@ class TokenLogger:
         :param estimated_cost: Optional precomputed cost.
         :param price_source: Optional explicit price source.
         :param price_age_days: Optional explicit price age.
+        :param cache_hit: Optional provider-reported cache-hit flag.
+        :param cached_input_tokens: Optional provider-reported cached input-token count.
+        :param cached_output_tokens: Optional provider-reported cached output-token count.
+        :param effective_context_snapshot_id: Optional persisted effective-context snapshot identifier.
+        :param effective_context_turn_id: Optional turn identifier associated with the effective-context snapshot.
+        :param context_window_percentage: Optional estimated context-window usage percentage.
+        :param context_files: Optional per-file context attribution payload.
         :returns: Persisted token entry.
         """
 
@@ -326,6 +375,7 @@ class TokenLogger:
             estimated_cost, price_source, price_age_days = self.estimate_cost(
                 model, input_tokens, output_tokens
             )
+        cache_diagnostics = self._cache_diagnostics.get(model, {})
         entry = TokenEntry(
             session_id=session_id,
             task_id=task_id,
@@ -336,6 +386,17 @@ class TokenLogger:
             estimated_cost=estimated_cost,
             price_source=price_source or "unavailable",
             price_age_days=price_age_days or 0,
+            cache_hit=cache_hit if cache_hit is not None else cache_diagnostics.get("cache_hit"),
+            cached_input_tokens=cached_input_tokens
+            if cached_input_tokens is not None
+            else cache_diagnostics.get("cached_input_tokens"),
+            cached_output_tokens=cached_output_tokens
+            if cached_output_tokens is not None
+            else cache_diagnostics.get("cached_output_tokens"),
+            effective_context_snapshot_id=effective_context_snapshot_id,
+            effective_context_turn_id=effective_context_turn_id,
+            context_window_percentage=context_window_percentage,
+            context_files=list(context_files or []),
         )
         self.write(entry)
         self._session_total_cost_usd += estimated_cost

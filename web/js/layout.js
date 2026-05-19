@@ -36,6 +36,8 @@
     APPROVAL: "approval-panel",
     STATUS: "status-panel",
     DOCKER_RUNTIME: "docker-runtime-panel",
+    SESSION_HISTORY: "session-history-panel",
+    EFFECTIVE_CONTEXT: "effective-context-panel",
     PA_SYSTEM_PROMPT: "pa-system-prompt-panel",
     USER_SETTINGS: "user-settings-panel",
   });
@@ -57,6 +59,8 @@
       componentType === COMPONENT_TYPES.INPUT ||
       componentType === COMPONENT_TYPES.APPROVAL ||
       componentType === COMPONENT_TYPES.STATUS ||
+      componentType === COMPONENT_TYPES.SESSION_HISTORY ||
+      componentType === COMPONENT_TYPES.EFFECTIVE_CONTEXT ||
       componentType === COMPONENT_TYPES.PA_SYSTEM_PROMPT ||
       componentType === COMPONENT_TYPES.USER_SETTINGS
     ) {
@@ -119,6 +123,7 @@
        * Requirements:
        *   - Mirror the baseline first-load workspace so the browser remains functional.
        *   - Preserve stable panel identities expected by later helpers.
+       *   - Keep Session History beside the Project Agent workspace in the top region.
        *   - Keep Input and User Settings stacked together in the lower-left group.
        *
        * @returns {object} Fallback workspace descriptor.
@@ -126,7 +131,25 @@
       buildDefaultWorkspaceDescriptor() {
         return {
           version: "v1",
-          upperGroup: {
+          upperLeftGroup: {
+            panels: [
+              {
+                id: "session-history",
+                componentType: COMPONENT_TYPES.SESSION_HISTORY,
+                title: "Session History",
+                size: 50,
+                componentState: {},
+              },
+              {
+                id: "effective-context",
+                componentType: COMPONENT_TYPES.EFFECTIVE_CONTEXT,
+                title: "Effective Context",
+                size: 50,
+                componentState: {},
+              },
+            ],
+          },
+          upperRightGroup: {
             panels: [
               {
                 id: "project-agent",
@@ -186,15 +209,21 @@
    *   - Translate the shared descriptor into the currently mounted layout runtime.
    *   - Keep the browser-visible first-load workspace stable while the Dockview
      *     shell is introduced incrementally.
+   *   - Keep Session History beside the Project Agent workspace in the top region.
    *   - Keep Input and User Settings stacked together in the lower-left group.
    *
    * @returns {object} GoldenLayout configuration for the default workspace.
    */
   function buildDefaultLayoutConfig() {
     const workspaceDescriptor = getWorkspaceConfigApi().buildDefaultWorkspaceDescriptor();
-    const upperPanels = workspaceDescriptor.upperGroup && Array.isArray(workspaceDescriptor.upperGroup.panels)
-      ? workspaceDescriptor.upperGroup.panels
-      : [];
+    const upperLeftPanels =
+      workspaceDescriptor.upperLeftGroup && Array.isArray(workspaceDescriptor.upperLeftGroup.panels)
+        ? workspaceDescriptor.upperLeftGroup.panels
+        : [];
+    const upperRightPanels =
+      workspaceDescriptor.upperRightGroup && Array.isArray(workspaceDescriptor.upperRightGroup.panels)
+        ? workspaceDescriptor.upperRightGroup.panels
+        : [];
     const lowerPanels = workspaceDescriptor.lowerGroup && Array.isArray(workspaceDescriptor.lowerGroup.panels)
       ? workspaceDescriptor.lowerGroup.panels
       : [];
@@ -204,16 +233,31 @@
         type: "column",
         content: [
           {
-            type: "stack",
+            type: "row",
             size: 58,
-            content: upperPanels.map(function mapUpperPanel(panel) {
-              return {
-                type: "component",
-                componentType: panel.componentType,
-                title: panel.title,
-                componentState: panel.componentState || {},
-              };
-            }),
+            content: [
+              ...upperLeftPanels.map(function mapUpperLeftPanel(panel) {
+                return {
+                  type: "component",
+                  size: panel.size,
+                  componentType: panel.componentType,
+                  title: panel.title,
+                  componentState: panel.componentState || {},
+                };
+              }),
+              {
+                type: "stack",
+                size: 50,
+                content: upperRightPanels.map(function mapUpperRightPanel(panel) {
+                  return {
+                    type: "component",
+                    componentType: panel.componentType,
+                    title: panel.title,
+                    componentState: panel.componentState || {},
+                  };
+                }),
+              },
+            ],
           },
           {
             type: "row",
@@ -405,6 +449,49 @@
       target.replaceChildren(buildPlaceholderPanel("tool", "Docker Runtime"));
     });
 
+    layout.registerComponentFactoryFunction(COMPONENT_TYPES.SESSION_HISTORY, function mountSessionHistoryPanel(container) {
+      const target = resolveContainerElement(container);
+      target.dataset.faithPanelKey = buildPanelIdentityKey(COMPONENT_TYPES.SESSION_HISTORY, {});
+      if (typeof target.__faithCleanup === "function") {
+        target.__faithCleanup();
+        target.__faithCleanup = null;
+      }
+      if (
+        globalScope.faithSessionHistoryPanel &&
+        typeof globalScope.faithSessionHistoryPanel.mountPanel === "function"
+      ) {
+        const panel = globalScope.faithSessionHistoryPanel.mountPanel(target);
+        if (panel && typeof panel.destroy === "function") {
+          target.__faithCleanup = panel.destroy;
+        }
+        return;
+      }
+      target.replaceChildren(buildPlaceholderPanel("tool", "Session History"));
+    });
+
+    layout.registerComponentFactoryFunction(
+      COMPONENT_TYPES.EFFECTIVE_CONTEXT,
+      function mountEffectiveContextPanel(container) {
+        const target = resolveContainerElement(container);
+        target.dataset.faithPanelKey = buildPanelIdentityKey(COMPONENT_TYPES.EFFECTIVE_CONTEXT, {});
+        if (typeof target.__faithCleanup === "function") {
+          target.__faithCleanup();
+          target.__faithCleanup = null;
+        }
+        if (
+          globalScope.faithEffectiveContextPanel &&
+          typeof globalScope.faithEffectiveContextPanel.mountPanel === "function"
+        ) {
+          const panel = globalScope.faithEffectiveContextPanel.mountPanel(target);
+          if (panel && typeof panel.destroy === "function") {
+            target.__faithCleanup = panel.destroy;
+          }
+          return;
+        }
+        target.replaceChildren(buildPlaceholderPanel("tool", "Effective Context"));
+      },
+    );
+
     layout.registerComponentFactoryFunction(COMPONENT_TYPES.PA_SYSTEM_PROMPT, function mountPaSystemPromptPanel(container) {
       const target = resolveContainerElement(container);
       target.dataset.faithPanelKey = buildPanelIdentityKey(COMPONENT_TYPES.PA_SYSTEM_PROMPT, {});
@@ -516,6 +603,7 @@
       componentType === COMPONENT_TYPES.INPUT ||
       componentType === COMPONENT_TYPES.APPROVAL ||
       componentType === COMPONENT_TYPES.STATUS ||
+      componentType === COMPONENT_TYPES.EFFECTIVE_CONTEXT ||
       componentType === COMPONENT_TYPES.PA_SYSTEM_PROMPT
     ) {
       return true;
@@ -759,6 +847,8 @@
       [COMPONENT_TYPES.APPROVAL]: "Approvals",
       [COMPONENT_TYPES.STATUS]: "System Status",
       [COMPONENT_TYPES.DOCKER_RUNTIME]: "Docker Runtime",
+      [COMPONENT_TYPES.SESSION_HISTORY]: "Session History",
+      [COMPONENT_TYPES.EFFECTIVE_CONTEXT]: "Effective Context",
       [COMPONENT_TYPES.PA_SYSTEM_PROMPT]: "PA System Prompt",
     };
     addComponentToLayout(layout, {
@@ -804,6 +894,7 @@
       { label: "Approval Panel", type: COMPONENT_TYPES.APPROVAL },
       { label: "Status Panel", type: COMPONENT_TYPES.STATUS },
       { label: "Docker Runtime Panel", type: COMPONENT_TYPES.DOCKER_RUNTIME },
+      { label: "Effective Context", type: COMPONENT_TYPES.EFFECTIVE_CONTEXT },
       { label: "PA System Prompt", type: COMPONENT_TYPES.PA_SYSTEM_PROMPT },
     ];
 

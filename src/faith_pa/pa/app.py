@@ -20,9 +20,11 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from httpx import AsyncClient
 from pydantic import BaseModel, Field, field_validator
 
 from faith_pa import __version__
+from faith_pa.agent.caching import apply_cache_hints, detect_provider
 from faith_pa.agent.llm_client import LLMClient
 from faith_pa.config import (
     ConfigLoadError,
@@ -33,11 +35,16 @@ from faith_pa.config import (
     ServiceStatus,
     build_config_summary,
     data_dir,
+    load_all_agent_configs,
     load_system_config,
     logs_dir,
     update_system_config_fields,
 )
 from faith_pa.logging import EventLogWriter, LogRotator, TokenLogger
+from faith_pa.model_catalog import (
+    OPENROUTER_MODELS_API_URL,
+    ModelCatalog,
+)
 from faith_pa.pa.chat_tool_loop import (
     ProjectAgentMCPToolExecutor,
     build_mcp_inventory_answer,
@@ -48,6 +55,13 @@ from faith_pa.pa.chat_tool_loop import (
     parse_chat_tool_call,
 )
 from faith_pa.pa.container_manager import ContainerManager
+from faith_pa.pa.context_compaction import (
+    ContextCompactionController,
+    ContextCompactionDecision,
+    ContextCompactionMode,
+)
+from faith_pa.pa.effective_context import ProjectAgentContextCompiler
+from faith_pa.pa.rule_promotion import assess_rule_promotion
 from faith_pa.pa.session import SessionManager
 from faith_pa.runtime_time_context import (
     RuntimeTimeContextProvider,
@@ -61,6 +75,7 @@ from faith_pa.utils import (
     get_async_client,
     get_redis_url,
 )
+from faith_pa.utils.tokens import count_text_tokens
 from faith_shared.api import (
     RouteManifestEntry,
     ServiceRouteManifest,
@@ -114,9 +129,15 @@ DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT = (
 PROJECT_AGENT_SYSTEM_PROMPT = DEFAULT_PROJECT_AGENT_SYSTEM_PROMPT
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_PROJECT_AGENT_SESSION_ROOT_NAME = "pa-runtime"
+DEFAULT_PROJECT_AGENT_COMPACTION_MODEL = os.getenv(
+    "FAITH_PROJECT_AGENT_COMPACTION_MODEL", "ollama/llama3:8b"
+)
 MAX_PROJECT_AGENT_PROMPT_CHARS = 20_000
 MAX_PROJECT_AGENT_HISTORY = 12
 MAX_PROJECT_AGENT_TOOL_ITERATIONS = 3
+DEFAULT_PROJECT_AGENT_SOFT_COMPACTION_THRESHOLD_PCT = 80
+DEFAULT_PROJECT_AGENT_HARD_COMPACTION_THRESHOLD_PCT = 95
+DEFAULT_PROJECT_AGENT_RETAINED_HISTORY_MESSAGES = 4
 STREAM_CHUNK_SIZE = 24
 
 
@@ -217,6 +238,71 @@ class UserSettingsPayload(BaseModel):
     timezone_options_by_country: dict[str, list[SelectionOption]] = Field(default_factory=dict)
     path: str
     updated_at: str | None = None
+
+
+class SessionStartPayload(BaseModel):
+    """Description:
+        Represent the browser-facing payload returned after starting a fresh Project Agent session.
+
+    Requirements:
+        - Preserve both the new active session identifier and the immediately previous session when one existed.
+        - Expose enough metadata for the Session History panel to refresh and select the new session.
+    """
+
+    session_id: str
+    previous_session_id: str | None = None
+    status: str
+    started_at: str
+    task_count: int = 0
+
+
+class AgentModelOverridePayload(BaseModel):
+    """Description:
+        Represent one persisted per-agent model override exposed to the browser.
+
+    Requirements:
+        - Preserve the agent identifier, role, current override, and config path.
+    """
+
+    agent_id: str
+    role: str
+    model: str | None = None
+    path: str
+
+
+class ModelSettingsPayload(BaseModel):
+    """Description:
+        Represent the persisted model-settings payload returned to browser clients.
+
+    Requirements:
+        - Expose the active PA model, default agent model, model catalog, and per-agent overrides.
+        - Keep the response inspectable so diagnostics panels can show the exact persisted paths in use.
+    """
+
+    pa_model: str
+    default_agent_model: str
+    system_path: str
+    catalog_path: str
+    updated_at: str | None = None
+    model_options: list[dict[str, str]] = Field(default_factory=list)
+    catalog: list[dict[str, Any]] = Field(default_factory=list)
+    agent_overrides: list[AgentModelOverridePayload] = Field(default_factory=list)
+
+
+class ModelSettingsUpdate(BaseModel):
+    """Description:
+        Validate one model-settings update submitted through the PA API.
+
+    Requirements:
+        - Accept direct PA/default-agent model changes.
+        - Accept per-agent model overrides keyed by agent identifier.
+        - Accept context-window overrides keyed by fully qualified model identifier.
+    """
+
+    pa_model: str = Field(min_length=1)
+    default_agent_model: str = Field(min_length=1)
+    agent_overrides: dict[str, str | None] = Field(default_factory=dict)
+    context_window_overrides: dict[str, int | None] = Field(default_factory=dict)
 
 
 DEFAULT_USER_COUNTRY_CODE = "GB"
@@ -690,6 +776,330 @@ class UserSettingsStore:
         return payload
 
 
+class ModelSettingsStore:
+    """Description:
+        Load and persist model-management settings for the PA and specialist agents.
+
+    Requirements:
+        - Persist model-catalog metadata on the host-backed PA runtime volume.
+        - Persist PA/default-agent model choices in project ``system.yaml``.
+        - Persist per-agent model overrides in each agent ``config.yaml`` file.
+
+    :param project_root: Project root that contains the `.faith` configuration directory.
+    """
+
+    def __init__(self, *, project_root: Path | None = None) -> None:
+        """Description:
+            Initialise the model-settings store.
+
+        Requirements:
+            - Resolve the project config path and host-backed model-catalog path eagerly.
+
+        :param project_root: Project root that contains the `.faith` configuration directory.
+        """
+
+        self.project_root = Path(project_root or PROJECT_ROOT).resolve()
+        self.system_path = self.project_root / ".faith" / "system.yaml"
+        self.catalog_path = _project_agent_session_root() / "model-catalog.json"
+
+    def read(
+        self,
+        *,
+        openrouter_payload: dict[str, Any] | None = None,
+        llm_client: LLMClient | None = None,
+    ) -> ModelSettingsPayload:
+        """Description:
+            Load the current persisted model settings and merged model catalog.
+
+        Requirements:
+            - Merge current project model choices into the catalog even when provider discovery is unavailable.
+            - Merge pricing-derived context-window hints and optional OpenRouter discovery metadata.
+            - Keep the payload stable for the browser model-settings panel.
+
+        :param openrouter_payload: Optional OpenRouter models API payload already fetched by the caller.
+        :param llm_client: Optional live PA LLM client used to derive local runtime diagnostics.
+        :returns: Current persisted model-settings payload.
+        """
+
+        system_config = load_system_config(root=self.project_root)
+        agent_configs = load_all_agent_configs(root=self.project_root)
+        catalog = self._load_catalog()
+        self._merge_pricing_hints(catalog)
+        self._merge_project_models(catalog, system_config, agent_configs)
+        if openrouter_payload is not None:
+            catalog.merge_openrouter_models_payload(openrouter_payload)
+        self._apply_runtime_diagnostics(catalog, llm_client)
+        self._save_catalog(catalog)
+        metadata_candidates = [
+            path for path in (self.system_path, self.catalog_path) if path.exists()
+        ]
+        updated_at = None
+        if metadata_candidates:
+            updated_at = datetime.fromtimestamp(
+                max(path.stat().st_mtime for path in metadata_candidates),
+                tz=timezone.utc,
+            ).isoformat()
+        return ModelSettingsPayload(
+            pa_model=system_config.pa.model,
+            default_agent_model=system_config.default_agent_model,
+            system_path=self.system_path.as_posix(),
+            catalog_path=self.catalog_path.as_posix(),
+            updated_at=updated_at,
+            model_options=catalog.model_options(),
+            catalog=[
+                entry.model_dump(mode="json") | {"key": entry.key}
+                for entry in catalog.sorted_entries()
+            ],
+            agent_overrides=[
+                AgentModelOverridePayload(
+                    agent_id=agent_id,
+                    role=config.role,
+                    model=config.model,
+                    path=(
+                        self.project_root / ".faith" / "agents" / agent_id / "config.yaml"
+                    ).as_posix(),
+                )
+                for agent_id, config in sorted(agent_configs.items())
+            ],
+        )
+
+    def update(self, settings: ModelSettingsUpdate) -> ModelSettingsPayload:
+        """Description:
+            Persist one browser-submitted model-settings update.
+
+        Requirements:
+            - Rewrite the PA and default-agent model settings through the validated system-config path.
+            - Rewrite per-agent model overrides in the project agent config files.
+            - Persist context-window overrides in the host-backed model catalog.
+
+        :param settings: Validated model-settings update payload.
+        :returns: Updated persisted model-settings payload.
+        """
+
+        update_system_config_fields(
+            {
+                "pa": {"model": settings.pa_model},
+                "default_agent_model": settings.default_agent_model,
+            },
+            root=self.project_root,
+        )
+        for agent_id, model_name in settings.agent_overrides.items():
+            self._update_agent_override(agent_id, model_name)
+        catalog = self._load_catalog()
+        self._merge_pricing_hints(catalog)
+        for model_key, value in settings.context_window_overrides.items():
+            if value is None:
+                continue
+            catalog.apply_context_window_override(model_key, value)
+        self._save_catalog(catalog)
+        return self.read()
+
+    def resolve_context_window(self, model_key: str) -> int | None:
+        """Description:
+            Return the best known context-window size for one fully qualified model key.
+
+        Requirements:
+            - Prefer the persisted model-catalog value when available.
+            - Return `None` when the model is unknown or has no reliable context-window value.
+
+        :param model_key: Fully qualified model key such as ``ollama/llama3:8b``.
+        :returns: Best known context-window size for the model, if available.
+        """
+
+        catalog = self._load_catalog()
+        self._merge_pricing_hints(catalog)
+        entry = catalog.entries.get(model_key)
+        if entry is None or entry.context_window.value <= 0:
+            return None
+        safe_usable_context = entry.runtime.get("safe_usable_context")
+        if isinstance(safe_usable_context, int) and safe_usable_context > 0:
+            return safe_usable_context
+        return entry.context_window.value
+
+    def _load_catalog(self) -> ModelCatalog:
+        """Description:
+            Load the persisted model catalog from disk.
+
+        Requirements:
+            - Return an empty catalog when no catalog has been saved yet.
+
+        :returns: Loaded model catalog.
+        """
+
+        return ModelCatalog.load(self.catalog_path)
+
+    def _save_catalog(self, catalog: ModelCatalog) -> None:
+        """Description:
+            Persist one model catalog to disk.
+
+        Requirements:
+            - Ensure the host-backed parent directory exists before writing.
+
+        :param catalog: Catalog to persist.
+        """
+
+        catalog.dump(self.catalog_path)
+
+    def _merge_pricing_hints(self, catalog: ModelCatalog) -> None:
+        """Description:
+            Merge persisted FAITH pricing context-window hints into the model catalog.
+
+        Requirements:
+            - Prefer the cached pricing file when it exists.
+            - Fall back to the bundled default pricing file otherwise.
+
+        :param catalog: Catalog to augment.
+        """
+
+        for path in (
+            data_dir() / "model-prices.cache.json",
+            data_dir() / "model-prices.default.json",
+        ):
+            catalog.merge_pricing_catalog(path)
+
+    def _merge_project_models(
+        self,
+        catalog: ModelCatalog,
+        system_config: Any,
+        agent_configs: dict[str, Any],
+    ) -> None:
+        """Description:
+            Ensure current project model selections exist in the catalog.
+
+        Requirements:
+            - Seed the PA, default-agent, and per-agent model choices into the catalog even when discovery metadata is unavailable.
+
+        :param catalog: Catalog to augment.
+        :param system_config: Loaded validated project system config.
+        :param agent_configs: Loaded validated per-agent configs.
+        """
+
+        for model_key in [
+            system_config.pa.model,
+            system_config.default_agent_model,
+            *[config.model for config in agent_configs.values() if config.model],
+        ]:
+            if not model_key or "/" not in model_key:
+                continue
+            provider, model = model_key.split("/", 1)
+            catalog.ensure_entry(provider=provider, model=model)
+
+    def _apply_runtime_diagnostics(
+        self,
+        catalog: ModelCatalog,
+        llm_client: LLMClient | None,
+    ) -> None:
+        """Description:
+            Apply deterministic local runtime diagnostics to known Ollama catalog entries.
+
+        Requirements:
+            - Distinguish nominal context-window values from safe usable context estimates.
+            - Surface non-blocking warnings in entry runtime metadata when VRAM heuristics constrain the usable context.
+
+        :param catalog: Catalog to augment.
+        :param llm_client: Optional live PA LLM client.
+        """
+
+        if llm_client is None or not hasattr(llm_client, "build_model_context_diagnostic"):
+            return
+        usable_vram_mb = _read_int_env("FAITH_OLLAMA_USABLE_VRAM_MB")
+        for entry in catalog.sorted_entries():
+            if entry.provider != "ollama" or entry.context_window.value <= 0:
+                continue
+            diagnostic = llm_client.build_model_context_diagnostic(
+                nominal_context_window=entry.context_window.value,
+                usable_vram_mb=usable_vram_mb,
+                system_ram_mb=llm_client.system_ram_mb,
+                provenance=str(entry.context_window.provenance),
+                route_kind=getattr(
+                    getattr(llm_client, "ollama_resolution", None), "route_kind", "container"
+                ),
+            )
+            entry.runtime.update(
+                {
+                    "route_kind": getattr(
+                        getattr(llm_client, "ollama_resolution", None), "route_kind", "container"
+                    ),
+                    "safe_usable_context": diagnostic.safe_usable_context,
+                    "context_warning": diagnostic.warning,
+                    "system_ram_mb": llm_client.system_ram_mb,
+                    "usable_vram_mb": usable_vram_mb,
+                }
+            )
+
+    def _update_agent_override(self, agent_id: str, model_name: str | None) -> None:
+        """Description:
+            Persist one per-agent model override back into the agent config file.
+
+        Requirements:
+            - Reject unknown agent identifiers rather than silently creating new config files.
+            - Keep the stored agent config valid after the model change.
+
+        :param agent_id: Target agent identifier.
+        :param model_name: New fully qualified model value, or `None` to clear the override.
+        :raises ValueError: If the requested agent config does not exist.
+        """
+
+        config_path = self.project_root / ".faith" / "agents" / agent_id / "config.yaml"
+        if not config_path.exists():
+            raise ValueError(f"Unknown agent override target: {agent_id}")
+        current_payload = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(current_payload, dict):
+            raise ValueError(f"Invalid agent config root in {config_path}")
+        if model_name:
+            current_payload["model"] = model_name
+        else:
+            current_payload.pop("model", None)
+        config_path.write_text(json.dumps(current_payload, indent=2), encoding="utf-8")
+
+
+def _read_int_env(name: str) -> int | None:
+    """Description:
+        Read one integer environment hint safely.
+
+    Requirements:
+        - Return `None` when the variable is missing or malformed.
+
+    :param name: Environment variable name.
+    :returns: Parsed integer value, if valid.
+    """
+
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+async def _fetch_openrouter_models_payload(api_key: str | None) -> dict[str, Any] | None:
+    """Description:
+        Fetch the OpenRouter models catalog payload when a key is available.
+
+    Requirements:
+        - Degrade gracefully when no API key is configured or the request fails.
+        - Return only JSON-object payloads.
+
+    :param api_key: Optional OpenRouter API key.
+    :returns: Parsed OpenRouter models payload when available, otherwise `None`.
+    """
+
+    if not api_key:
+        return None
+    try:
+        async with AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                OPENROUTER_MODELS_API_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def _project_agent_session_root() -> Path:
     """Description:
         Resolve the persistent Project Agent session root directory.
@@ -715,13 +1125,12 @@ def _project_agent_session_root() -> Path:
 
 class ProjectAgentPromptStore:
     """Description:
-        Read, validate, persist, and reset the Project Agent system prompt.
+        Read, validate, persist, and reset the PA project-instruction surface.
 
     Requirements:
-        - Persist the edited prompt under the host-backed PA runtime volume when available.
-        - Fall back to `.faith/agents/project-agent/prompt.md` only for local development paths without runtime-volume configuration.
-        - Fall back to the built-in prompt when no custom prompt file exists.
-        - Reject invalid prompt updates before mutating the active prompt file.
+        - Map the editable PA prompt UI surface to project-root `AGENTS.md`.
+        - Treat a missing `AGENTS.md` file as an empty instruction file rather than as an error.
+        - Reject invalid project-instruction updates before mutating the source file.
 
     :param project_root: Repository or FAITH workspace root containing `.faith`.
     :param default_prompt: Built-in prompt used when no custom prompt exists.
@@ -745,26 +1154,16 @@ class ProjectAgentPromptStore:
 
         self.project_root = Path(project_root or PROJECT_ROOT)
         self.default_prompt = default_prompt
-        runtime_root = _project_agent_session_root()
-        if (
-            runtime_root == PROJECT_ROOT
-            and "FAITH_DATA_DIR" not in os.environ
-            and "FAITH_PA_SESSION_ROOT" not in os.environ
-        ):
-            self.prompt_path = (
-                self.project_root / ".faith" / "agents" / PROJECT_AGENT_ID / "prompt.md"
-            )
-        else:
-            self.prompt_path = runtime_root / "agents" / PROJECT_AGENT_ID / "prompt.md"
+        self.prompt_path = self.project_root / "AGENTS.md"
 
     def read(self) -> dict[str, Any]:
         """Description:
-            Return the active Project Agent prompt and editor metadata.
+            Return the active PA project-instruction text and editor metadata.
 
         Requirements:
-            - Report whether the active prompt came from disk or from the default.
-            - Include path, update metadata, and whether the active prompt
-              differs from the built-in default for the browser editor.
+            - Always report the project-root `AGENTS.md` path.
+            - Treat a missing file as an empty instruction layer.
+            - Report whether the file differs from the empty default.
 
         :returns: Active prompt metadata payload.
         """
@@ -777,15 +1176,15 @@ class ProjectAgentPromptStore:
             ).isoformat()
             return {
                 "prompt": prompt_text,
-                "source": "custom",
+                "source": "project",
                 "path": self.prompt_path.as_posix(),
                 "default_available": True,
-                "differs_from_default": prompt_text != self.default_prompt,
+                "differs_from_default": bool(prompt_text.strip()),
                 "updated_at": updated_at,
             }
         return {
-            "prompt": self.default_prompt,
-            "source": "default",
+            "prompt": "",
+            "source": "project",
             "path": self.prompt_path.as_posix(),
             "default_available": True,
             "differs_from_default": False,
@@ -794,12 +1193,12 @@ class ProjectAgentPromptStore:
 
     def get_active_prompt(self) -> str:
         """Description:
-            Return only the active prompt text for model calls.
+            Return only the active project-instruction text for model calls.
 
         Requirements:
             - Avoid exposing editor metadata to the chat runtime.
 
-        :returns: Active Project Agent system prompt text.
+        :returns: Active project-instruction text.
         """
 
         return str(self.read()["prompt"])
@@ -824,12 +1223,12 @@ class ProjectAgentPromptStore:
 
     def reset(self) -> dict[str, Any]:
         """Description:
-            Remove the custom prompt file and return the default prompt metadata.
+            Remove the project instruction file and return the empty metadata.
 
         Requirements:
             - Succeed even when no custom prompt file currently exists.
 
-        :returns: Default active prompt metadata.
+        :returns: Empty project-instruction metadata.
         """
 
         if self.prompt_path.exists():
@@ -875,9 +1274,11 @@ class ProjectAgentChatRuntime:
     :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
     :param user_context_provider: Optional runtime user-context provider used for prompt assembly.
     :param user_settings_store: Shared user-settings store used to load runtime user profile context.
+    :param model_settings_store: Shared model-settings store used to load runtime model diagnostics.
     :param session_manager: Shared session manager used for transcript persistence and recovery.
     :param token_logger: Shared token logger used for model-usage and cost accounting.
     :param audit_logger: Shared audit logger used for PA chat-time tool visibility.
+    :param compaction_llm_client: Optional local LLM client used only for history compaction summaries.
     :param output_channel: Redis output channel used by the Project Agent panel.
     """
 
@@ -892,9 +1293,11 @@ class ProjectAgentChatRuntime:
         time_context_provider: RuntimeTimeContextProvider | None = None,
         user_context_provider: RuntimeUserContextProvider | None = None,
         user_settings_store: UserSettingsStore | None = None,
+        model_settings_store: ModelSettingsStore | None = None,
         session_manager: SessionManager | None = None,
         token_logger: TokenLogger | None = None,
         audit_logger: AuditLogger | None = None,
+        compaction_llm_client: Any | None = None,
         output_channel: str = PROJECT_AGENT_OUTPUT_CHANNEL,
     ) -> None:
         """Description:
@@ -912,9 +1315,11 @@ class ProjectAgentChatRuntime:
         :param time_context_provider: Optional runtime time-context provider used for prompt assembly.
         :param user_context_provider: Optional runtime user-context provider used for prompt assembly.
         :param user_settings_store: Shared user-settings store used to load runtime user profile context.
+        :param model_settings_store: Shared model-settings store used to load runtime model diagnostics.
         :param session_manager: Shared session manager used for transcript persistence and recovery.
         :param token_logger: Shared token logger used for model-usage and cost accounting.
         :param audit_logger: Shared audit logger used for PA chat-time tool visibility.
+        :param compaction_llm_client: Optional local LLM client used only for history compaction summaries.
         :param output_channel: Redis output channel used by the Project Agent panel.
         """
 
@@ -926,6 +1331,9 @@ class ProjectAgentChatRuntime:
         self.user_settings_store = user_settings_store or UserSettingsStore(
             project_root=Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
         )
+        self.model_settings_store = model_settings_store or ModelSettingsStore(
+            project_root=Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
+        )
         self.time_context_provider = time_context_provider or RuntimeTimeContextProvider(
             configured_timezone=self._load_configured_timezone(),
         )
@@ -935,9 +1343,30 @@ class ProjectAgentChatRuntime:
         )
         self.token_logger = token_logger or _build_token_logger()
         self.audit_logger = audit_logger or _build_audit_logger()
+        self.context_compiler = ProjectAgentContextCompiler(
+            project_root=self.prompt_store.project_root,
+            model_name=self.model_name,
+            snapshot_root=_project_agent_session_root(),
+        )
+        self.compaction_llm_client = (
+            compaction_llm_client
+            or _build_project_agent_compaction_llm_client(base_llm_client=self.llm_client)
+        )
+        self.compaction_controller = ContextCompactionController(
+            model_name=self.model_name,
+            soft_threshold_pct=DEFAULT_PROJECT_AGENT_SOFT_COMPACTION_THRESHOLD_PCT,
+            hard_threshold_pct=DEFAULT_PROJECT_AGENT_HARD_COMPACTION_THRESHOLD_PCT,
+            retain_recent_messages=DEFAULT_PROJECT_AGENT_RETAINED_HISTORY_MESSAGES,
+        )
         self.output_channel = output_channel
         self.history: list[dict[str, str]] = []
         self.transcript_messages: list[dict[str, str]] = []
+        self.compacted_history_summary = ""
+        self._last_compaction_record: dict[str, Any] | None = None
+        self._last_effective_context_snapshot: dict[str, Any] | None = None
+        self._last_context_window_limit: int | None = (
+            self.model_settings_store.resolve_context_window(self.model_name)
+        )
         self._pubsub: Any | None = None
         self._running = False
         self._task: asyncio.Task | None = None
@@ -1065,15 +1494,27 @@ class ProjectAgentChatRuntime:
                 await self._publish_status("idle")
                 return
             requested_tool_family = get_explicit_tool_family_request(user_text)
+            promoted_rule_notice = self._maybe_promote_durable_rule(
+                user_text=user_text,
+                task_id=active_task.task_id,
+            )
+            await self._maybe_compact_before_turn(
+                user_text=user_text,
+                task_id=active_task.task_id,
+                requested_tool_family=requested_tool_family,
+            )
             messages = self._build_chat_messages(
                 user_text,
                 requested_tool_family=requested_tool_family,
+                task_id=active_task.task_id,
             )
             reply_text = await self._generate_reply_with_tools(
                 messages,
                 task_id=active_task.task_id,
                 requested_tool_family=requested_tool_family,
             )
+            if promoted_rule_notice:
+                reply_text = f"{promoted_rule_notice}\n\n{reply_text}".strip()
             if not reply_text:
                 reply_text = "I did not generate a reply for that message."
             self._append_history("user", user_text)
@@ -1125,6 +1566,7 @@ class ProjectAgentChatRuntime:
         user_text: str,
         *,
         requested_tool_family: str | None = None,
+        task_id: str | None = None,
     ) -> list[dict[str, str]]:
         """Description:
             Build the lightweight chat payload for one browser message.
@@ -1145,21 +1587,76 @@ class ProjectAgentChatRuntime:
                 f"- The user explicitly requested the `{requested_tool_family}` tool family for this turn.\n"
                 f"- Do not call any tool family other than `{requested_tool_family}` unless the user changes that instruction.\n\n"
             )
+        compaction_memory_block = ""
+        if self.compacted_history_summary.strip():
+            compaction_memory_block = (
+                f"[Compacted Working Memory]\n{self.compacted_history_summary.strip()}\n\n"
+            )
         messages: list[dict[str, str]] = [
             {
                 "role": "system",
-                "content": (
-                    f"{self.prompt_store.get_active_prompt()}\n\n"
-                    f"{self.user_context_provider.build_prompt_block()}\n\n"
-                    f"{self.time_context_provider.build_prompt_block()}\n\n"
-                    f"{tool_preference_block}"
-                    f"{build_tool_manifest_prompt()}"
+                "content": self._build_system_context(
+                    task_id=task_id,
+                    tool_preference_block=tool_preference_block,
+                    compaction_memory_block=compaction_memory_block,
                 ),
             },
             *self.history,
             {"role": "user", "content": user_text},
         ]
         return messages
+
+    def _build_system_context(
+        self,
+        *,
+        task_id: str | None,
+        tool_preference_block: str,
+        compaction_memory_block: str = "",
+    ) -> str:
+        """Description:
+            Build the compiled PA system-context text for one browser-chat turn.
+
+        Requirements:
+            - Keep protected FAITH core instructions outside project `AGENTS.md`.
+            - Apply the project instruction layer from `AGENTS.md` on every turn.
+            - Keep compacted working-memory notes separate from raw history when available.
+            - Persist a redacted effective-context snapshot when session and turn metadata are available.
+
+        :param task_id: Active task identifier for effective-context persistence.
+        :param tool_preference_block: Optional per-turn tool-preference instruction block.
+        :param compaction_memory_block: Optional compacted working-memory block derived from older resolved history.
+        :returns: Compiled PA system-context text.
+        """
+
+        runtime_user_block = self.user_context_provider.build_prompt_block()
+        runtime_time_block = self.time_context_provider.build_prompt_block()
+        tool_manifest_block = (
+            f"{compaction_memory_block}{tool_preference_block}{build_tool_manifest_prompt()}"
+        )
+        session_id = self.session_manager.session_id
+        if session_id and task_id:
+            snapshot = self.context_compiler.compile_for_turn(
+                session_id=session_id,
+                turn_id=task_id,
+                core_instructions=self.prompt_store.default_prompt,
+                runtime_user_block=runtime_user_block,
+                runtime_time_block=runtime_time_block,
+                tool_manifest_block=tool_manifest_block,
+            )
+            self._last_effective_context_snapshot = {
+                "snapshot_id": snapshot.context_hash,
+                "turn_id": task_id,
+                "context_files": self.context_compiler.describe_context_files(),
+            }
+            return snapshot.compiled_context
+
+        self._last_effective_context_snapshot = None
+        return self.context_compiler.compose_context_text(
+            core_instructions=self.prompt_store.default_prompt,
+            runtime_user_block=runtime_user_block,
+            runtime_time_block=runtime_time_block,
+            tool_manifest_block=tool_manifest_block,
+        )
 
     @staticmethod
     def _load_configured_timezone() -> str | None:
@@ -1215,6 +1712,291 @@ class ProjectAgentChatRuntime:
                 preferred_locale=system_config.preferred_locale,
             )
 
+    def _estimate_active_context_usage(
+        self,
+        *,
+        user_text: str,
+        task_id: str,
+        requested_tool_family: str | None,
+    ) -> ContextCompactionDecision:
+        """Description:
+            Estimate how full the active Project Agent context would be for the upcoming turn.
+
+        Requirements:
+            - Use the reliable configured context-window limit only when FAITH knows it.
+            - Keep the estimate free from effective-context snapshot persistence side effects.
+
+        :param user_text: Current user message text.
+        :param task_id: Active task identifier for the turn.
+        :param requested_tool_family: Optional explicit tool-family preference for the turn.
+        :returns: Deterministic compaction decision for the upcoming turn.
+        """
+
+        del task_id
+        tool_preference_block = ""
+        if requested_tool_family is not None:
+            tool_preference_block = (
+                "[Runtime Tool Preference]\n"
+                f"- The user explicitly requested the `{requested_tool_family}` tool family for this turn.\n"
+                f"- Do not call any tool family other than `{requested_tool_family}` unless the user changes that instruction.\n\n"
+            )
+        compaction_memory_block = ""
+        if self.compacted_history_summary.strip():
+            compaction_memory_block = (
+                f"[Compacted Working Memory]\n{self.compacted_history_summary.strip()}\n\n"
+            )
+        preview_messages = [
+            {
+                "role": "system",
+                "content": self.context_compiler.compose_context_text(
+                    core_instructions=self.prompt_store.default_prompt,
+                    runtime_user_block=self.user_context_provider.build_prompt_block(),
+                    runtime_time_block=self.time_context_provider.build_prompt_block(),
+                    tool_manifest_block=(
+                        f"{compaction_memory_block}{tool_preference_block}{build_tool_manifest_prompt()}"
+                    ),
+                ),
+            },
+            *self.history,
+            {"role": "user", "content": user_text},
+        ]
+        usage_percentage = self.compaction_controller.estimate_usage_percentage(
+            preview_messages,
+            context_window_limit=self._last_context_window_limit,
+        )
+        return self.compaction_controller.classify_usage(
+            usage_percentage=usage_percentage,
+            context_window_limit=self._last_context_window_limit,
+        )
+
+    async def _maybe_compact_before_turn(
+        self,
+        *,
+        user_text: str,
+        task_id: str,
+        requested_tool_family: str | None,
+    ) -> None:
+        """Description:
+            Run soft or hard Project Agent history compaction before the next turn when thresholds demand it.
+
+        Requirements:
+            - Trigger hard compaction automatically at or above the hard threshold before the turn is processed.
+            - Allow soft compaction to run without blocking the Input panel UI.
+
+        :param user_text: Current user message text.
+        :param task_id: Active task identifier for the turn.
+        :param requested_tool_family: Optional explicit tool-family preference for the turn.
+        """
+
+        decision = self._estimate_active_context_usage(
+            user_text=user_text,
+            task_id=task_id,
+            requested_tool_family=requested_tool_family,
+        )
+        if decision.mode is ContextCompactionMode.NONE:
+            return
+        await self._run_history_compaction(
+            task_id=task_id,
+            mode=decision.mode,
+            usage_before_pct=decision.usage_percentage,
+        )
+
+    async def _run_history_compaction(
+        self,
+        *,
+        task_id: str,
+        mode: ContextCompactionMode,
+        usage_before_pct: int | None,
+    ) -> None:
+        """Description:
+            Compact older Project Agent history into the retained working-memory summary.
+
+        Requirements:
+            - Compact only history layers and never the protected system-context layers.
+            - Persist an inspectable compaction record under the active session.
+            - Emit a visible blocked-state signal only during hard compaction.
+
+        :param task_id: Active task identifier receiving compaction diagnostics.
+        :param mode: Chosen compaction mode.
+        :param usage_before_pct: Estimated usage percentage before compaction when known.
+        """
+
+        selection = self.compaction_controller.select_history_for_compaction(self.history)
+        if not selection.compacted_messages:
+            self._last_compaction_record = {
+                "mode": mode.value,
+                "usage_before_pct": usage_before_pct,
+                "usage_after_pct": usage_before_pct,
+                "summary": self.compacted_history_summary,
+                "retained_messages": selection.retained_messages,
+                "compacted_messages": [],
+            }
+            return
+
+        if mode is ContextCompactionMode.HARD:
+            await self._publish_compaction_state(
+                active=True,
+                diagnostic="Compaction is temporarily pausing new sends.",
+            )
+
+        summary_prompt = self.compaction_controller.build_summary_prompt(
+            existing_summary=self.compacted_history_summary,
+            compacted_messages=selection.compacted_messages,
+        )
+        summary_response = await self.compaction_llm_client.chat(
+            [
+                {
+                    "role": "system",
+                    "content": "You are a concise Project Agent history compactor.",
+                },
+                {"role": "user", "content": summary_prompt},
+            ],
+            model=getattr(self.compaction_llm_client, "model", None),
+            temperature=0.0,
+        )
+        summary_text = str(getattr(summary_response, "content", "")).strip()
+        self.compacted_history_summary = summary_text or self.compacted_history_summary
+
+        retained_messages = list(selection.retained_messages)
+        retained_messages.insert(
+            0,
+            {
+                "role": "system",
+                "content": self.compaction_controller.build_compaction_note(
+                    compacted_messages=len(selection.compacted_messages)
+                ),
+                "retain": True,
+            },
+        )
+        self.history = retained_messages[-MAX_PROJECT_AGENT_HISTORY:]
+
+        usage_after_pct = self.compaction_controller.estimate_usage_percentage(
+            self._build_chat_messages(
+                "",
+                requested_tool_family=None,
+                task_id=task_id,
+            ),
+            context_window_limit=self._last_context_window_limit,
+        )
+        self._last_compaction_record = self._persist_compaction_record(
+            task_id=task_id,
+            mode=mode,
+            usage_before_pct=usage_before_pct,
+            usage_after_pct=usage_after_pct,
+            selection=selection,
+            summary_text=self.compacted_history_summary,
+        )
+        self.session_manager.append_channel_message(
+            task_id=task_id,
+            channel_name="pa-user",
+            sender=PROJECT_AGENT_ID,
+            recipient=PROJECT_AGENT_ID,
+            msg_type="context_compaction",
+            summary=(
+                f"Project Agent compacted active history in {mode.value} mode. "
+                f"Usage before: {usage_before_pct}%."
+            ),
+            status="success",
+        )
+        await self._publish_warning(
+            "Project Agent compacted the active context to keep the next turn within the model context window."
+        )
+        if mode is ContextCompactionMode.HARD:
+            await self._publish_compaction_state(active=False, diagnostic="")
+
+    def _persist_compaction_record(
+        self,
+        *,
+        task_id: str,
+        mode: ContextCompactionMode,
+        usage_before_pct: int | None,
+        usage_after_pct: int | None,
+        selection: Any,
+        summary_text: str,
+    ) -> dict[str, Any]:
+        """Description:
+            Persist one inspectable Project Agent compaction record under the active session.
+
+        Requirements:
+            - Store the retained and compacted history split together with the working summary.
+            - Keep the record under the host-backed session tree for later debugging.
+
+        :param task_id: Active task identifier receiving the compaction record.
+        :param mode: Chosen compaction mode.
+        :param usage_before_pct: Estimated usage percentage before compaction.
+        :param usage_after_pct: Estimated usage percentage after compaction.
+        :param selection: Retained-versus-compacted history split.
+        :param summary_text: Current compacted working-memory summary.
+        :returns: Persisted compaction record payload.
+        """
+
+        session_id = self.session_manager.session_id or "unknown-session"
+        record_dir = self.session_manager.sessions_dir / session_id / "compaction"
+        record_dir.mkdir(parents=True, exist_ok=True)
+        record_index = len(list(record_dir.glob("*.json"))) + 1
+        record_path = record_dir / f"{task_id}-{record_index:03d}.json"
+        payload = {
+            "session_id": session_id,
+            "task_id": task_id,
+            "mode": mode.value,
+            "usage_before_pct": usage_before_pct,
+            "usage_after_pct": usage_after_pct,
+            "summary": summary_text,
+            "retained_messages": selection.retained_messages,
+            "compacted_messages": selection.compacted_messages,
+            "path": record_path.as_posix(),
+        }
+        record_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        return payload
+
+    def _maybe_promote_durable_rule(self, *, user_text: str, task_id: str) -> str:
+        """Description:
+            Persist one explicitly durable user rule into the project AGENTS.md instruction file.
+
+        Requirements:
+            - Auto-promote only clearly declarative durable rules.
+            - Avoid duplicating rules already present in the project instruction file.
+            - Record the promotion in both audit and session history.
+
+        :param user_text: Current user message text.
+        :param task_id: Active task identifier receiving the audit trail.
+        :returns: User-facing promotion notice, or an empty string when no promotion happened.
+        """
+
+        assessment = assess_rule_promotion(user_text)
+        if not assessment.should_promote or not assessment.candidate_rule_text:
+            return ""
+
+        existing_prompt = self.prompt_store.get_active_prompt().strip()
+        if assessment.candidate_rule_text in existing_prompt:
+            return "That rule was already present in AGENTS.md."
+
+        updated_prompt = (
+            f"{existing_prompt}\n\n{assessment.candidate_rule_text}\n"
+            if existing_prompt
+            else f"{assessment.candidate_rule_text}\n"
+        )
+        self.prompt_store.update(updated_prompt)
+        self.audit_logger.log_tool_operation(
+            agent=PROJECT_AGENT_ID,
+            tool="project_instructions",
+            action="append_rule",
+            target=assessment.candidate_rule_text,
+            channel="pa-user",
+        )
+        self.session_manager.append_channel_message(
+            task_id=task_id,
+            channel_name="pa-user",
+            sender=PROJECT_AGENT_ID,
+            recipient=PROJECT_AGENT_ID,
+            msg_type="rule_promotion",
+            summary=(
+                f"Promoted durable user rule into AGENTS.md: {assessment.candidate_rule_text}"
+            ),
+            status="success",
+        )
+        return "I automatically added it to AGENTS.md so it persists for future turns."
+
     async def _generate_reply_with_tools(
         self,
         messages: list[dict[str, str]],
@@ -1239,8 +2021,16 @@ class ProjectAgentChatRuntime:
 
         working_messages = list(messages)
         for _ in range(MAX_PROJECT_AGENT_TOOL_ITERATIONS):
+            request_messages = apply_cache_hints(
+                list(working_messages),
+                provider=detect_provider(
+                    self.model_name,
+                    getattr(self.llm_client, "ollama_host", ""),
+                ),
+                cag_present=bool(self.context_compiler.read_project_instructions().strip()),
+            )
             response = await self.llm_client.chat(
-                working_messages,
+                request_messages,
                 model=self.model_name,
                 temperature=0.2,
             )
@@ -1296,6 +2086,12 @@ class ProjectAgentChatRuntime:
             return
         if self.session_manager.session_id is None:
             return
+        cache_diagnostics = self._extract_cache_diagnostics(response)
+        context_window_percentage = None
+        if self._last_context_window_limit and self._last_context_window_limit > 0:
+            context_window_percentage = round(
+                (input_tokens / self._last_context_window_limit) * 100
+            )
         token_entry = self.token_logger.log_api_call(
             session_id=self.session_manager.session_id,
             task_id=task_id,
@@ -1303,6 +2099,15 @@ class ProjectAgentChatRuntime:
             model=self.model_name,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cache_hit=cache_diagnostics["cache_hit"],
+            cached_input_tokens=cache_diagnostics["cached_input_tokens"],
+            cached_output_tokens=cache_diagnostics["cached_output_tokens"],
+            effective_context_snapshot_id=(self._last_effective_context_snapshot or {}).get(
+                "snapshot_id"
+            ),
+            effective_context_turn_id=(self._last_effective_context_snapshot or {}).get("turn_id"),
+            context_window_percentage=context_window_percentage,
+            context_files=(self._last_effective_context_snapshot or {}).get("context_files", []),
         )
         self.session_manager.record_token_usage(
             task_id=task_id,
@@ -1329,6 +2134,45 @@ class ProjectAgentChatRuntime:
             else:
                 warning += " You can switch it to a cheaper model to reduce cost."
             await self._publish_warning(warning)
+
+    def _extract_cache_diagnostics(self, response: Any) -> dict[str, Any]:
+        """Description:
+            Extract provider cache diagnostics from one raw LLM response payload.
+
+        Requirements:
+            - Return explicit cache-hit metadata when the provider reports cached prompt tokens.
+            - Fall back cleanly when the provider response carries no cache details.
+
+        :param response: Raw LLM response object exposing an optional provider payload.
+        :returns: Cache-diagnostic mapping with hit and cached-token counts.
+        """
+
+        raw_response = getattr(response, "raw_response", None)
+        if not isinstance(raw_response, dict):
+            return {
+                "cache_hit": None,
+                "cached_input_tokens": None,
+                "cached_output_tokens": None,
+            }
+        usage = raw_response.get("usage")
+        if not isinstance(usage, dict):
+            return {
+                "cache_hit": None,
+                "cached_input_tokens": None,
+                "cached_output_tokens": None,
+            }
+        prompt_details = usage.get("prompt_tokens_details")
+        cached_input_tokens = None
+        if isinstance(prompt_details, dict) and isinstance(
+            prompt_details.get("cached_tokens"), int
+        ):
+            cached_input_tokens = int(prompt_details["cached_tokens"])
+        cache_hit = None if cached_input_tokens is None else cached_input_tokens > 0
+        return {
+            "cache_hit": cache_hit,
+            "cached_input_tokens": cached_input_tokens,
+            "cached_output_tokens": None,
+        }
 
     def _record_tool_visibility(
         self,
@@ -1426,6 +2270,40 @@ class ProjectAgentChatRuntime:
         self.user_context_provider.country_code = settings.country_code
         self.user_context_provider.preferred_locale = settings.preferred_locale
 
+    def update_model_settings(self, settings: ModelSettingsPayload) -> None:
+        """Description:
+            Apply updated model settings to the live Project Agent runtime.
+
+        Requirements:
+            - Refresh the active PA model, live LLM client model, and compiler model immediately.
+            - Refresh the cached context-window limit used for token diagnostics.
+
+        :param settings: Persisted model-settings payload returned by the store.
+        """
+
+        self.model_name = settings.pa_model
+        self.llm_client.model = settings.pa_model
+        self.context_compiler.model_name = settings.pa_model
+        self.compaction_controller.model_name = settings.pa_model
+        self._last_context_window_limit = self.model_settings_store.resolve_context_window(
+            settings.pa_model
+        )
+
+    def _estimate_project_instruction_tokens(self) -> int:
+        """Description:
+            Return the estimated token count for the raw project instruction file.
+
+        Requirements:
+            - Treat a missing `AGENTS.md` file as zero tokens.
+
+        :returns: Estimated token count for the raw project instruction file.
+        """
+
+        project_text = self.context_compiler.read_project_instructions()
+        if not project_text.strip():
+            return 0
+        return count_text_tokens(project_text, self.context_compiler.model_name)
+
     async def _ensure_active_session(self) -> None:
         """Description:
             Ensure the Project Agent transcript has an active session before writing new messages.
@@ -1439,6 +2317,37 @@ class ProjectAgentChatRuntime:
             return
         await self.session_manager.start_session(trigger="web-ui")
         self.token_logger.reset_session_total()
+
+    async def start_new_session(self) -> dict[str, Any]:
+        """Description:
+            End any current Project Agent browser-chat session and start a fresh empty one immediately.
+
+        Requirements:
+            - Persist the previous session end state before starting the next session.
+            - Clear transcript and bounded chat history so the next turn starts cleanly.
+            - Reset session-scoped token totals for the live Project Agent runtime.
+
+        :returns: Browser-facing metadata for the new active session.
+        """
+
+        previous_session_id = self.session_manager.session_id
+        if self.session_manager.current_session is not None:
+            await self.session_manager.end_session()
+        self.transcript_messages = []
+        self.history = []
+        self.compacted_history_summary = ""
+        self._last_compaction_record = None
+        await self.session_manager.start_session(trigger="web-ui")
+        self.token_logger.reset_session_total()
+        return {
+            "session_id": self.session_manager.session_id,
+            "previous_session_id": previous_session_id,
+            "status": "active",
+            "started_at": self.session_manager.current_session.started_at
+            if self.session_manager.current_session is not None
+            else datetime.now(timezone.utc).isoformat(),
+            "task_count": 0,
+        }
 
     def _ensure_active_task(self) -> Any:
         """Description:
@@ -1584,6 +2493,28 @@ class ProjectAgentChatRuntime:
                 "type": "warning",
                 "agent": PROJECT_AGENT_ID,
                 "message": message,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
+    async def _publish_compaction_state(self, *, active: bool, diagnostic: str) -> None:
+        """Description:
+            Publish one Project Agent hard-compaction state frame for the browser runtime.
+
+        Requirements:
+            - Let the Input panel block new sends while hard compaction is underway.
+            - Clear the blocked state immediately once hard compaction completes.
+
+        :param active: Whether hard compaction is currently active.
+        :param diagnostic: Optional user-facing compaction diagnostic text.
+        """
+
+        await self._publish_frame(
+            {
+                "type": "compaction_state",
+                "agent": PROJECT_AGENT_ID,
+                "active": active,
+                "diagnostic": diagnostic,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         )
@@ -1842,6 +2773,34 @@ def _build_project_agent_llm_client() -> LLMClient:
     )
 
 
+def _build_project_agent_compaction_llm_client(*, base_llm_client: Any | None = None) -> LLMClient:
+    """Description:
+        Build the local-only LLM client used for Project Agent history compaction summaries.
+
+    Requirements:
+        - Always target a local Ollama model rather than a paid remote model.
+        - Reuse the resolved Ollama host from the main PA client when one is available.
+
+    :param base_llm_client: Optional existing PA LLM client whose Ollama host can be reused.
+    :returns: Configured local-only compaction LLM client.
+    """
+
+    inherited_ollama_host = getattr(base_llm_client, "ollama_host", None)
+    try:
+        system_config = load_system_config()
+    except Exception:
+        return LLMClient(
+            model=DEFAULT_PROJECT_AGENT_COMPACTION_MODEL,
+            ollama_host=inherited_ollama_host,
+        )
+    return LLMClient(
+        model=DEFAULT_PROJECT_AGENT_COMPACTION_MODEL,
+        ollama_host=(
+            system_config.ollama.endpoint if system_config.ollama.enabled else inherited_ollama_host
+        ),
+    )
+
+
 def _build_token_logger() -> TokenLogger:
     """Description:
         Build the shared token logger used by the Project Agent browser-chat runtime.
@@ -2023,11 +2982,29 @@ def _build_route_manifest() -> ServiceRouteManifest:
             RouteManifestEntry(
                 service="faith-project-agent",
                 protocol="http",
+                method="POST",
+                path="/api/pa/session/new",
+                summary="End the current Project Agent browser-chat session and start a fresh empty one.",
+                expected_status_codes=[200],
+                implementation=describe_route_implementation(api_start_project_agent_session),
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
                 method="GET",
                 path="/api/user-settings",
                 summary="Return persisted user settings for the Web UI settings panel.",
                 expected_status_codes=[200],
                 implementation=describe_route_implementation(api_get_user_settings),
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
+                method="GET",
+                path="/api/model-settings",
+                summary="Return persisted model settings and model catalog metadata for the Web UI model-settings panel.",
+                expected_status_codes=[200],
+                implementation=describe_route_implementation(api_get_model_settings),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -2048,6 +3025,15 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 summary="Validate and persist user settings and refresh the live Project Agent runtime.",
                 expected_status_codes=[200, 400],
                 implementation=describe_route_implementation(api_update_user_settings),
+            ),
+            RouteManifestEntry(
+                service="faith-project-agent",
+                protocol="http",
+                method="PUT",
+                path="/api/model-settings",
+                summary="Validate and persist model settings and refresh the live Project Agent runtime.",
+                expected_status_codes=[200, 400],
+                implementation=describe_route_implementation(api_update_model_settings),
             ),
             RouteManifestEntry(
                 service="faith-project-agent",
@@ -2169,6 +3155,26 @@ def _get_user_settings_store(app: FastAPI) -> UserSettingsStore:
     return settings_store
 
 
+def _get_model_settings_store(app: FastAPI) -> ModelSettingsStore:
+    """Description:
+        Return the shared model-settings store for the PA application.
+
+    Requirements:
+        - Reuse the lifespan-created store when present.
+        - Lazily create a store for tests or direct module usage.
+
+    :param app: FastAPI application holding shared runtime state.
+    :returns: Shared model-settings store.
+    """
+
+    desired_root = Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
+    settings_store = getattr(app.state, "model_settings_store", None)
+    if settings_store is None or settings_store.project_root != desired_root:
+        settings_store = ModelSettingsStore(project_root=desired_root)
+        app.state.model_settings_store = settings_store
+    return settings_store
+
+
 def _apply_updated_user_settings(app: FastAPI, settings: UserSettingsPayload) -> None:
     """Description:
         Apply persisted user-settings changes to any live PA browser-chat runtime.
@@ -2184,6 +3190,23 @@ def _apply_updated_user_settings(app: FastAPI, settings: UserSettingsPayload) ->
     chat_runtime = getattr(app.state, "project_agent_chat_runtime", None)
     if chat_runtime is not None:
         chat_runtime.update_user_settings(settings)
+
+
+def _apply_updated_model_settings(app: FastAPI, settings: ModelSettingsPayload) -> None:
+    """Description:
+        Apply persisted model-settings changes to any live PA browser-chat runtime.
+
+    Requirements:
+        - Refresh the running Project Agent model and effective-context compiler immediately when present.
+        - Remain a no-op when the browser-chat runtime is not active.
+
+    :param app: FastAPI application holding shared runtime state.
+    :param settings: Persisted model-settings payload returned by the store.
+    """
+
+    chat_runtime = getattr(app.state, "project_agent_chat_runtime", None)
+    if chat_runtime is not None:
+        chat_runtime.update_model_settings(settings)
 
 
 @asynccontextmanager
@@ -2208,6 +3231,9 @@ async def lifespan(app: FastAPI):
     app.state.user_settings_store = UserSettingsStore(
         project_root=Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
     )
+    app.state.model_settings_store = ModelSettingsStore(
+        project_root=Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
+    )
     app.state.project_agent_token_logger = _build_token_logger()
     app.state.audit_logger = _build_audit_logger()
     app.state.event_log_writer = _build_event_log_writer()
@@ -2224,6 +3250,8 @@ async def lifespan(app: FastAPI):
             model_name=_build_project_agent_model_name(),
             prompt_store=app.state.project_agent_prompt_store,
             session_manager=app.state.project_agent_session_manager,
+            user_settings_store=app.state.user_settings_store,
+            model_settings_store=app.state.model_settings_store,
             token_logger=app.state.project_agent_token_logger,
             audit_logger=app.state.audit_logger,
         )
@@ -2337,6 +3365,36 @@ async def api_get_project_agent_transcript() -> dict[str, Any]:
     }
 
 
+@app.post("/api/pa/session/new", response_model=SessionStartPayload)
+async def api_start_project_agent_session() -> SessionStartPayload:
+    """Description:
+        End the current Project Agent browser-chat session and start a fresh one immediately.
+
+    Requirements:
+        - Work whether or not the Redis-backed browser-chat runtime is currently active.
+        - Clear the live transcript snapshot so the browser can start from a blank session.
+
+    :returns: Metadata for the newly started Project Agent session.
+    """
+
+    chat_runtime = getattr(app.state, "project_agent_chat_runtime", None)
+    if chat_runtime is not None:
+        return SessionStartPayload.model_validate(await chat_runtime.start_new_session())
+
+    session_manager = _get_project_agent_session_manager(app)
+    previous_session_id = session_manager.session_id
+    if session_manager.current_session is not None:
+        await session_manager.end_session()
+    session = await session_manager.start_session(trigger="web-ui")
+    return SessionStartPayload(
+        session_id=session.session_id,
+        previous_session_id=previous_session_id,
+        status="active",
+        started_at=session.started_at,
+        task_count=0,
+    )
+
+
 @app.get("/api/user-settings", response_model=UserSettingsPayload)
 async def api_get_user_settings() -> UserSettingsPayload:
     """Description:
@@ -2350,6 +3408,29 @@ async def api_get_user_settings() -> UserSettingsPayload:
     """
 
     return _get_user_settings_store(app).read()
+
+
+@app.get("/api/model-settings", response_model=ModelSettingsPayload)
+async def api_get_model_settings() -> ModelSettingsPayload:
+    """Description:
+        Return the persisted model settings used by the browser model-settings panel.
+
+    Requirements:
+        - Load the settings from the shared host-backed model-settings store.
+        - Merge optional OpenRouter and local runtime diagnostics when available.
+
+    :returns: Persisted model-settings payload.
+    """
+
+    chat_runtime = getattr(app.state, "project_agent_chat_runtime", None)
+    llm_client = getattr(chat_runtime, "llm_client", None)
+    openrouter_payload = await _fetch_openrouter_models_payload(
+        os.environ.get("OPENROUTER_API_KEY")
+    )
+    return _get_model_settings_store(app).read(
+        openrouter_payload=openrouter_payload,
+        llm_client=llm_client,
+    )
 
 
 @app.put("/api/pa/system-prompt")
@@ -2393,6 +3474,27 @@ async def api_update_user_settings(body: UserSettingsUpdate) -> UserSettingsPayl
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _apply_updated_user_settings(app, payload)
+    return payload
+
+
+@app.put("/api/model-settings", response_model=ModelSettingsPayload)
+async def api_update_model_settings(body: ModelSettingsUpdate) -> ModelSettingsPayload:
+    """Description:
+        Validate and persist one model-settings update.
+
+    Requirements:
+        - Persist PA/default-agent model changes and per-agent overrides.
+        - Refresh the live Project Agent runtime immediately after accepted updates.
+
+    :param body: User-submitted model-settings update payload.
+    :returns: Updated persisted model-settings payload.
+    """
+
+    try:
+        payload = _get_model_settings_store(app).update(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _apply_updated_model_settings(app, payload)
     return payload
 
 

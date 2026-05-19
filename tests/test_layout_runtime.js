@@ -265,9 +265,29 @@ assert(
 );
 
 const defaultLayout = window.faithLayout.buildDefaultLayoutConfig();
+const upperRow = defaultLayout.root.content[0];
+const upperLeftPanel = upperRow.content[0];
+const upperRightGroup = upperRow.content[1];
 const lowerRow = defaultLayout.root.content[1];
 const lowerLeftGroup = lowerRow.content[0];
 
+assert(upperRow.type === "row", "Expected the default upper workspace area to split Session History beside the Project Agent workspace.");
+assert(
+  upperLeftPanel.type === "component" && upperLeftPanel.title === "Session History",
+  "Expected Session History to appear as the upper-left default panel.",
+);
+assert(
+  upperRightGroup.type === "stack",
+  "Expected the Project Agent and System Status panels to remain tab-stacked on the upper-right.",
+);
+assert(
+  upperRightGroup.content.some((panel) => panel.title === "Project Agent"),
+  "Expected the upper-right stack to include the Project Agent panel.",
+);
+assert(
+  upperRightGroup.content.some((panel) => panel.title === "System Status"),
+  "Expected the upper-right stack to include the System Status panel.",
+);
 assert(lowerRow.type === "row", "Expected the default lower workspace area to remain a row.");
 assert(lowerLeftGroup.type === "stack", "Expected Input and User Settings to share a lower-left tab stack.");
 assert(

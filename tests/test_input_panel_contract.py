@@ -40,6 +40,7 @@ def test_input_panel_asset_targets_input_and_upload_routes() -> None:
     Requirements:
         - This test is needed to prove the panel posts text and uploads to the supported endpoints.
         - Verify the asset references both `/input` and `/upload`.
+        - Verify the asset includes the hard-compaction runtime hook and visible banner text.
     """
 
     client = TestClient(create_app(testing=True))
@@ -53,6 +54,8 @@ def test_input_panel_asset_targets_input_and_upload_routes() -> None:
     assert "paste" in response.text
     assert "Enter to send" in response.text
     assert "Alt+Enter" in response.text
+    assert "faith:input-panel-compaction-state" in response.text
+    assert "Compaction underway" in response.text
 
 
 def test_input_panel_runtime_behaviour() -> None:

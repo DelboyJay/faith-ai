@@ -144,6 +144,20 @@ class UserSettingsUpdate(BaseModel):
     timezone: str | None = None
 
 
+class ModelSettingsUpdate(BaseModel):
+    """Description:
+        Validate one model-settings update submitted through the Web UI proxy.
+
+    Requirements:
+        - Preserve PA/default-agent model changes, per-agent overrides, and context-window overrides before forwarding.
+    """
+
+    pa_model: str
+    default_agent_model: str
+    agent_overrides: dict[str, str | None] = Field(default_factory=dict)
+    context_window_overrides: dict[str, int | None] = Field(default_factory=dict)
+
+
 def _utc_now() -> str:
     """Description:
         Return the current UTC timestamp in ISO 8601 format.
@@ -369,6 +383,22 @@ async def get_project_agent_transcript(request: Request) -> dict[str, object]:
     return await _proxy_pa_request(request, "GET", "/api/pa/transcript")
 
 
+@router.post("/api/pa/session/new")
+async def start_project_agent_session(request: Request) -> dict[str, object]:
+    """Description:
+        Start a fresh Project Agent session through the Web UI same-origin API.
+
+    Requirements:
+        - Proxy the request to the PA new-session endpoint.
+        - Preserve the PA session metadata payload for the Session History panel.
+
+    :param request: Incoming FastAPI request object.
+    :returns: New Project Agent session metadata payload.
+    """
+
+    return await _proxy_pa_request(request, "POST", "/api/pa/session/new")
+
+
 @router.get("/api/user-settings")
 async def get_user_settings(request: Request) -> dict[str, object]:
     """Description:
@@ -382,6 +412,21 @@ async def get_user_settings(request: Request) -> dict[str, object]:
     """
 
     return await _proxy_pa_request(request, "GET", "/api/user-settings")
+
+
+@router.get("/api/model-settings")
+async def get_model_settings(request: Request) -> dict[str, object]:
+    """Description:
+        Return persisted model settings through the Web UI same-origin API.
+
+    Requirements:
+        - Proxy the request to the PA model-settings endpoint.
+
+    :param request: Incoming Web UI request object.
+    :returns: Persisted model-settings payload.
+    """
+
+    return await _proxy_pa_request(request, "GET", "/api/model-settings")
 
 
 @router.put("/api/pa/system-prompt")
@@ -427,6 +472,30 @@ async def update_user_settings(
         request,
         "PUT",
         "/api/user-settings",
+        json_body=body.model_dump(),
+    )
+
+
+@router.put("/api/model-settings")
+async def update_model_settings(
+    request: Request,
+    body: ModelSettingsUpdate,
+) -> dict[str, object]:
+    """Description:
+        Forward a model-settings update through the Web UI same-origin API.
+
+    Requirements:
+        - Preserve PA-side validation and persistence behaviour for model-settings updates.
+
+    :param request: Incoming Web UI request object.
+    :param body: Model-settings update payload submitted by the browser.
+    :returns: Updated persisted model-settings payload.
+    """
+
+    return await _proxy_pa_request(
+        request,
+        "PUT",
+        "/api/model-settings",
         json_body=body.model_dump(),
     )
 

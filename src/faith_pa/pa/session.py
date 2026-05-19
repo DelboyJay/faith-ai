@@ -777,6 +777,8 @@ class SessionManager:
         :returns: New session record.
         """
 
+        self.tasks = {}
+        self._task_log_writers = {}
         self._session_counter += 1
         now = _now()
         session_id = f"sess-{self._session_counter:04d}-{now.strftime('%Y%m%d%H%M%S')}"
@@ -828,7 +830,6 @@ class SessionManager:
         self.current_session = session
         self.session_id = session_id
         self.session_dir = session_path
-        self._task_log_writers = {}
         self._write_project_agent_sessions_index()
         if self._idle_task and not self._idle_task.done():
             self._idle_task.cancel()
@@ -1363,6 +1364,7 @@ class SessionManager:
         self.current_session = None
         self.session_id = None
         self.session_dir = None
+        self.tasks = {}
         self._task_log_writers = {}
 
 

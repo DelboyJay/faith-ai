@@ -2,8 +2,8 @@
     Verify the FAITH Project Agent system prompt editor panel contract.
 
 Requirements:
-    - Prove the browser shell loads the dedicated PA system prompt panel asset.
-    - Prove the host-side prompt panel runtime can load, edit, save, reload, and reset prompt state.
+    - Prove the browser shell loads the dedicated PA project-instructions panel asset.
+    - Prove the host-side prompt panel runtime can load, edit, save, reload, and reset AGENTS.md-backed instruction state.
 """
 
 from __future__ import annotations
@@ -18,10 +18,10 @@ from faith_web.app import create_app
 
 def test_index_includes_pa_system_prompt_panel_asset() -> None:
     """Description:
-        Verify the main Web UI page includes the PA system prompt panel JavaScript asset.
+        Verify the main Web UI page includes the PA project-instructions panel JavaScript asset.
 
     Requirements:
-        - This test is needed to prove the browser shell can load the dedicated prompt editor implementation.
+        - This test is needed to prove the browser shell can load the dedicated project-instruction editor implementation.
         - Verify the root page references the expected asset path.
     """
 
@@ -35,10 +35,10 @@ def test_index_includes_pa_system_prompt_panel_asset() -> None:
 
 def test_pa_system_prompt_panel_runtime_behaviour() -> None:
     """Description:
-        Verify the host-side PA system prompt panel runtime checks pass.
+        Verify the host-side PA project-instructions panel runtime checks pass.
 
     Requirements:
-        - This test is needed to prove prompt loading, dirty tracking, save, reload, and reset work together.
+        - This test is needed to prove AGENTS.md loading, dirty tracking, save, reload, and reset work together.
         - Verify the Node.js harness exits successfully.
     """
 

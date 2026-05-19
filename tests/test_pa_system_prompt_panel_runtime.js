@@ -3,8 +3,8 @@
  *   Execute a tiny host-side runtime check against the FAITH PA system prompt panel JavaScript.
  *
  * Requirements:
- *   - Prove the panel can load prompt metadata from the server.
- *   - Prove local edits become dirty, can be saved, can block reload when cancelled, and can be reset.
+ *   - Prove the panel can load AGENTS.md-backed project-instruction metadata from the server.
+ *   - Prove local edits become dirty, can be saved, can block reload when cancelled, and can be reset back to an empty project-instruction layer.
  */
 
 const fs = require("node:fs");
@@ -176,9 +176,9 @@ vm.runInThisContext(panelSource, { filename: "pa-system-prompt-panel.js" });
     ok: true,
     status: 200,
     json: {
-      prompt: "Default prompt text.",
-      source: "default",
-      path: ".faith/agents/project-agent/prompt.md",
+      prompt: "",
+      source: "project",
+      path: "E:/ClaudeSharedFolder/AI Agent Framework/AGENTS.md",
       default_available: true,
       differs_from_default: false,
       updated_at: null,
@@ -195,11 +195,11 @@ vm.runInThisContext(panelSource, { filename: "pa-system-prompt-panel.js" });
   const resetButton = findByText(target, "Reset");
 
   assert(fetchCalls[0].url === "/api/pa/system-prompt", "Expected mount to load the active prompt.");
-  assert(textarea.value === "Default prompt text.", "Expected the loaded prompt text to populate the editor.");
+  assert(textarea.value === "", "Expected the loaded project instructions to populate the editor.");
   assert(saveButton.disabled === true, "Expected Save to stay disabled until the prompt is edited.");
   assert(panel.getState().unsaved === false, "Expected the initial loaded prompt not to be dirty.");
 
-  textarea.value = "Edited custom prompt.";
+  textarea.value = "Always explain build steps briefly.\n";
   textarea.dispatch("input");
   assert(saveButton.disabled === false, "Expected local edits to enable Save.");
   assert(panel.getState().unsaved === true, "Expected local edits to mark the panel dirty.");
@@ -209,9 +209,9 @@ vm.runInThisContext(panelSource, { filename: "pa-system-prompt-panel.js" });
     ok: true,
     status: 200,
     json: {
-      prompt: "Edited custom prompt.",
-      source: "custom",
-      path: ".faith/agents/project-agent/prompt.md",
+      prompt: "Always explain build steps briefly.\n",
+      source: "project",
+      path: "E:/ClaudeSharedFolder/AI Agent Framework/AGENTS.md",
       default_available: true,
       differs_from_default: true,
       updated_at: "2026-04-26T10:20:00+00:00",
@@ -223,8 +223,8 @@ vm.runInThisContext(panelSource, { filename: "pa-system-prompt-panel.js" });
   assert(fetchCalls[1].url === "/api/pa/system-prompt", "Expected Save to call the PA prompt endpoint.");
   assert(fetchCalls[1].options.method === "PUT", "Expected Save to use PUT.");
   assert(
-    JSON.parse(fetchCalls[1].options.body).prompt === "Edited custom prompt.",
-    "Expected Save to submit the edited prompt text.",
+    JSON.parse(fetchCalls[1].options.body).prompt === "Always explain build steps briefly.\n",
+    "Expected Save to submit the edited AGENTS.md text.",
   );
   assert(panel.getState().unsaved === false, "Expected a successful save to clear dirty state.");
   assert(
@@ -244,9 +244,9 @@ vm.runInThisContext(panelSource, { filename: "pa-system-prompt-panel.js" });
     ok: true,
     status: 200,
     json: {
-      prompt: "Default prompt text.",
-      source: "default",
-      path: ".faith/agents/project-agent/prompt.md",
+      prompt: "",
+      source: "project",
+      path: "E:/ClaudeSharedFolder/AI Agent Framework/AGENTS.md",
       default_available: true,
       differs_from_default: false,
       updated_at: null,
@@ -259,7 +259,7 @@ vm.runInThisContext(panelSource, { filename: "pa-system-prompt-panel.js" });
   assert(fetchCalls[2].url === "/api/pa/system-prompt/reset", "Expected Reset to call the PA reset endpoint.");
   assert(fetchCalls[2].options.method === "POST", "Expected Reset to use POST.");
   assert(panel.getState().unsaved === false, "Expected reset to clear local dirty state.");
-  assert(textarea.value === "Default prompt text.", "Expected reset to restore the default prompt text.");
+  assert(textarea.value === "", "Expected reset to clear the editable AGENTS.md instruction layer.");
 
   textarea.value = "Leave page with draft.";
   textarea.dispatch("input");

@@ -67,6 +67,26 @@ class ChannelLogResponse(BaseModel):
     content: str
 
 
+class EffectiveContextSnapshotResponse(BaseModel):
+    """Description:
+        Represent one persisted effective-context snapshot payload.
+
+    Requirements:
+        - Preserve redacted context text, include graph, warnings, and snapshot metadata.
+        - Keep the payload read-only for browser inspection.
+    """
+
+    session_id: str
+    turn_id: str
+    snapshot_id: str
+    hash: str | None = None
+    compiled_context: str
+    include_graph: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    session_token_estimate: int | None = None
+    turn_token_estimate: int | None = None
+
+
 def _get_logs_dir(request: Request) -> Path:
     """Description:
         Resolve the active Web UI logs directory.
@@ -107,6 +127,75 @@ def _sessions_dir(request: Request) -> Path:
     """
 
     return _get_session_root(request) / ".faith" / "sessions"
+
+
+def _effective_context_dir(request: Request, session_id: str) -> Path:
+    """Description:
+        Resolve the effective-context snapshot directory for one session.
+
+    Requirements:
+        - Keep snapshots under the session-local `effective-context` folder.
+
+    :param request: Incoming FastAPI request object.
+    :param session_id: Persisted session identifier.
+    :returns: Effective-context snapshot directory path.
+    """
+
+    return _sessions_dir(request) / session_id / "effective-context"
+
+
+def _read_effective_context_snapshot(snapshot_path: Path) -> dict[str, Any] | None:
+    """Description:
+        Read one persisted effective-context snapshot payload safely.
+
+    Requirements:
+        - Return `None` when the file is missing or malformed.
+        - Preserve only JSON-object payloads.
+
+    :param snapshot_path: Candidate snapshot file path.
+    :returns: Parsed snapshot payload when valid, otherwise `None`.
+    """
+
+    if not snapshot_path.exists():
+        return None
+    try:
+        payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _find_effective_context_snapshot(
+    snapshot_dir: Path, turn_id: str
+) -> tuple[Path, dict[str, Any]] | None:
+    """Description:
+        Locate one effective-context snapshot by turn identifier.
+
+    Requirements:
+        - Support hash-named snapshot files that carry a `turn_ids` list.
+        - Prefer an exact filename match when one exists.
+        - Fall back to scanning persisted snapshot payloads for the matching turn.
+
+    :param snapshot_dir: Session-local effective-context snapshot directory.
+    :param turn_id: Turn identifier requested by the browser.
+    :returns: Matching snapshot path and parsed payload, if found.
+    """
+
+    direct_match = snapshot_dir / f"{turn_id}.json"
+    direct_payload = _read_effective_context_snapshot(direct_match)
+    if direct_payload is not None:
+        return direct_match, direct_payload
+
+    for snapshot_path in sorted(snapshot_dir.glob("*.json")):
+        payload = _read_effective_context_snapshot(snapshot_path)
+        if payload is None:
+            continue
+        turn_ids = payload.get("turn_ids")
+        if isinstance(turn_ids, list) and turn_id in turn_ids:
+            return snapshot_path, payload
+        if payload.get("turn_id") == turn_id:
+            return snapshot_path, payload
+    return None
 
 
 def _parse_timestamp(raw_value: object) -> datetime:
@@ -449,22 +538,133 @@ async def token_usage(
 
     by_model: dict[str, dict[str, Any]] = {}
     by_agent: dict[str, dict[str, Any]] = {}
+    session_context_files: dict[str, int] = {}
     for record in ordered:
         model_key = str(record.get("model", "unknown"))
         agent_key = str(record.get("agent", "unknown"))
-        by_model.setdefault(model_key, {"calls": 0, "input_tokens": 0, "output_tokens": 0})
-        by_agent.setdefault(agent_key, {"calls": 0, "input_tokens": 0, "output_tokens": 0})
+        by_model.setdefault(
+            model_key,
+            {
+                "calls": 0,
+                "context_input_tokens": 0,
+                "inference_output_tokens": 0,
+                "total_tokens": 0,
+            },
+        )
+        by_agent.setdefault(
+            agent_key,
+            {
+                "calls": 0,
+                "context_input_tokens": 0,
+                "inference_output_tokens": 0,
+                "total_tokens": 0,
+            },
+        )
         for bucket in (by_model[model_key], by_agent[agent_key]):
             bucket["calls"] += 1
-            bucket["input_tokens"] += int(record.get("input_tokens", 0) or 0)
-            bucket["output_tokens"] += int(record.get("output_tokens", 0) or 0)
+            context_input = int(record.get("input_tokens", 0) or 0)
+            inference_output = int(record.get("output_tokens", 0) or 0)
+            bucket["context_input_tokens"] += context_input
+            bucket["inference_output_tokens"] += inference_output
+            bucket["total_tokens"] += context_input + inference_output
+        for file_entry in record.get("context_files", []):
+            if not isinstance(file_entry, dict):
+                continue
+            path = str(file_entry.get("path", "unknown"))
+            tokens = int(file_entry.get("tokens", 0) or 0)
+            session_context_files[path] = session_context_files.get(path, 0) + tokens
+
+    latest = ordered[0] if ordered else {}
+    session_summary = {
+        "session_id": session_id,
+        "context_input_tokens": sum(int(record.get("input_tokens", 0) or 0) for record in ordered),
+        "inference_output_tokens": sum(
+            int(record.get("output_tokens", 0) or 0) for record in ordered
+        ),
+        "total_tokens": sum(
+            int(record.get("input_tokens", 0) or 0) + int(record.get("output_tokens", 0) or 0)
+            for record in ordered
+        ),
+        "context_window_percentage": latest.get("context_window_percentage"),
+        "effective_context_snapshot_id": latest.get("effective_context_snapshot_id"),
+        "effective_context_turn_id": latest.get("effective_context_turn_id"),
+        "cached_input_tokens": latest.get("cached_input_tokens"),
+        "cache_hit": latest.get("cache_hit"),
+        "context_files": [
+            {"path": path, "tokens": tokens}
+            for path, tokens in sorted(session_context_files.items())
+        ],
+    }
+    last_message_summary = {
+        "message_id": latest.get("message_id") or latest.get("task_id") or "",
+        "context_input_tokens": int(latest.get("input_tokens", 0) or 0),
+        "inference_output_tokens": int(latest.get("output_tokens", 0) or 0),
+        "total_tokens": int(latest.get("input_tokens", 0) or 0)
+        + int(latest.get("output_tokens", 0) or 0),
+        "context_window_percentage": latest.get("context_window_percentage"),
+        "effective_context_snapshot_id": latest.get("effective_context_snapshot_id"),
+        "effective_context_turn_id": latest.get("effective_context_turn_id"),
+        "cached_input_tokens": latest.get("cached_input_tokens"),
+        "cache_hit": latest.get("cache_hit"),
+        "context_files": latest.get("context_files", []),
+    }
 
     return _paginate_records(
         ordered,
         page=page,
         page_size=page_size,
-        summary={"by_model": by_model, "by_agent": by_agent},
+        summary={
+            "by_model": by_model,
+            "by_agent": by_agent,
+            "session": session_summary,
+            "last_message": last_message_summary,
+        },
     )
+
+
+@router.get(
+    "/api/logs/effective-context/{session_id}/{turn_id}",
+    response_model=EffectiveContextSnapshotResponse,
+)
+async def effective_context_snapshot(
+    request: Request,
+    session_id: str,
+    turn_id: str,
+) -> EffectiveContextSnapshotResponse:
+    """Description:
+        Return one persisted effective-context snapshot for browser inspection.
+
+    Requirements:
+        - Reject unsafe path segments before touching the filesystem.
+        - Return HTTP 404 when the requested snapshot file does not exist.
+
+    :param request: Incoming FastAPI request object.
+    :param session_id: Persisted session identifier.
+    :param turn_id: Persisted turn identifier.
+    :raises HTTPException: If the identifiers are invalid or the snapshot is missing.
+    :returns: Read-only effective-context snapshot payload.
+    """
+
+    safe_session_id = _safe_leaf_name(session_id, label="session identifier")
+    safe_turn_id = _safe_leaf_name(turn_id, label="turn identifier")
+    snapshot_dir = _effective_context_dir(request, safe_session_id)
+    if not snapshot_dir.exists():
+        raise HTTPException(status_code=404, detail="Effective-context snapshot not found")
+    snapshot_match = _find_effective_context_snapshot(snapshot_dir, safe_turn_id)
+    if snapshot_match is None:
+        raise HTTPException(status_code=404, detail="Effective-context snapshot not found")
+    snapshot_path, payload = snapshot_match
+    payload.setdefault("session_id", safe_session_id)
+    payload.setdefault("turn_id", safe_turn_id)
+    payload.setdefault("snapshot_id", snapshot_path.stem)
+    payload.setdefault("hash", payload.get("context_hash"))
+    payload.setdefault(
+        "compiled_context",
+        payload.get("compiled_context") or payload.get("redacted_context") or "",
+    )
+    payload.setdefault("include_graph", payload.get("include_entries") or [])
+    payload.setdefault("warnings", [])
+    return EffectiveContextSnapshotResponse.model_validate(payload)
 
 
 @router.get("/api/logs/approvals", response_model=PaginatedLogResponse)

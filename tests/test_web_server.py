@@ -286,7 +286,7 @@ def test_index_renders_visible_web_ui_version(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert 'class="faith-toolbar__version"' in response.text
-    assert "v0.18.1" in response.text
+    assert "v0.20.1" in response.text
 
 
 def test_index_route_uses_non_deprecated_template_signature(client: TestClient) -> None:
@@ -403,6 +403,30 @@ def test_dockview_bundle_assets_are_served(client: TestClient) -> None:
     js_response = client.get("/static/dist/faith-ui.js")
     assert css_response.status_code == 200
     assert js_response.status_code == 200
+
+
+def test_workspace_config_places_session_history_left_of_project_agent_by_default(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the canonical workspace descriptor places Session History beside the Project Agent in the top workspace region.
+
+    Requirements:
+        - This test is needed to prove the default Dockview layout matches the agreed top-left Session History arrangement.
+        - Verify the top workspace descriptor includes Session History on the left and the Project Agent/System Status stack on the right.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    del client
+    project_root = Path(__file__).resolve().parents[1]
+    source = (project_root / "web" / "js" / "workspace-config.js").read_text(encoding="utf-8")
+
+    assert "upperLeftGroup" in source
+    assert '"session-history"' in source
+    assert "upperRightGroup" in source
+    assert '"project-agent"' in source
+    assert '"system-status"' in source
 
 
 def test_frontend_package_manifest_pins_radix_dependencies(client: TestClient) -> None:
@@ -1375,6 +1399,70 @@ def test_api_docker_runtime_returns_pa_snapshot(app) -> None:
     assert payload["containers"][0]["role"] == "Project Agent"
 
 
+def test_token_usage_panel_contract_mentions_context_diagnostics() -> None:
+    """Description:
+        Verify the token usage panel asset advertises the richer context diagnostics contract.
+
+    Requirements:
+        - This test is needed to prove the browser token panel will surface context/input, inference/output, and effective-context links.
+        - Verify the shipped asset references the expected labels and snapshot correlation fields.
+    """
+
+    client = TestClient(create_app(testing=True))
+    response = client.get("/static/js/panels/token-usage.js")
+
+    assert response.status_code == 200
+    assert "Context/input tokens" in response.text
+    assert "Inference/output tokens" in response.text
+    assert "Effective-context snapshot" in response.text
+
+
+@pytest.mark.asyncio
+async def test_api_effective_context_returns_snapshot_payload(app, tmp_path: Path) -> None:
+    """Description:
+        Verify the Web UI exposes persisted effective-context snapshots through its local same-origin route.
+
+    Requirements:
+        - This test is needed to prove the browser can inspect redacted compiled context from the host-backed session store without proxying through the PA.
+        - Verify the route resolves hash-named snapshot files by `turn_id`, then returns the snapshot text, include graph, warnings, hash metadata, and session/turn IDs.
+
+    :param app: Test-configured Web UI application.
+    :param tmp_path: Temporary runtime root used to hold one persisted effective-context snapshot.
+    """
+
+    session_root = tmp_path / "runtime"
+    effective_context_dir = session_root / ".faith" / "sessions" / "sess-0001" / "effective-context"
+    effective_context_dir.mkdir(parents=True)
+    (effective_context_dir / "abc123.json").write_text(
+        json.dumps(
+            {
+                "session_id": "sess-0001",
+                "turn_id": "turn-0001",
+                "turn_ids": ["turn-0001"],
+                "context_hash": "abc123",
+                "redacted_context": "redacted context",
+                "include_entries": [{"relative_path": "AGENTS.md", "token_estimate": 42}],
+                "warnings": ["missing include target"],
+                "session_token_estimate": 1200,
+                "turn_token_estimate": 300,
+            }
+        ),
+        encoding="utf-8",
+    )
+    app.state.pa_session_root = session_root
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        response = await async_client.get("/api/logs/effective-context/sess-0001/turn-0001")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session_id"] == "sess-0001"
+    assert payload["turn_id"] == "turn-0001"
+    assert payload["compiled_context"] == "redacted context"
+    assert payload["hash"] == "abc123"
+    assert payload["warnings"] == ["missing include target"]
+
+
 def test_health_returns_503_when_redis_missing(app) -> None:
     """Description:
         Verify the web health endpoint returns HTTP 503 when Redis is unavailable.
@@ -1575,6 +1663,52 @@ async def test_pa_transcript_proxy_returns_saved_transcript(app) -> None:
 
 
 @pytest.mark.asyncio
+async def test_pa_session_new_proxy_forwards_request(app) -> None:
+    """Description:
+        Verify the Web UI forwards new-session requests through the same-origin proxy route.
+
+    Requirements:
+        - This test is needed to prove the Session History panel can start a new session without calling the PA service cross-origin.
+        - Verify the proxied request preserves the expected PA route and returns the new session metadata.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    async def _fake_pa_prompt_fetcher(method: str, path: str, *, json_body=None):
+        """Description:
+            Return one deterministic new-session payload for the Web UI proxy test.
+
+        Requirements:
+            - Preserve the proxied method and route for assertion.
+
+        :param method: Proxied HTTP method.
+        :param path: Proxied upstream PA path.
+        :param json_body: Optional proxied request body.
+        :returns: Deterministic new-session payload.
+        """
+
+        del json_body
+        assert method == "POST"
+        assert path == "/api/pa/session/new"
+        return {
+            "session_id": "sess-0002-20260511143000",
+            "previous_session_id": "sess-0001-20260511142500",
+            "status": "active",
+            "started_at": "2026-05-11T14:30:00Z",
+            "task_count": 0,
+        }
+
+    app.state.pa_prompt_request_proxy = _fake_pa_prompt_fetcher
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        response = await async_client.post("/api/pa/session/new")
+
+    assert response.status_code == 200
+    assert response.json()["session_id"] == "sess-0002-20260511143000"
+    assert response.json()["task_count"] == 0
+
+
+@pytest.mark.asyncio
 async def test_user_settings_proxy_returns_saved_settings(app) -> None:
     """Description:
         Verify the Web UI exposes persisted user settings through a same-origin proxy route.
@@ -1699,3 +1833,153 @@ async def test_user_settings_proxy_forwards_updates(app) -> None:
 
     assert response.status_code == 200
     assert response.json()["preferred_locale"] == "en-GB"
+
+
+@pytest.mark.asyncio
+async def test_model_settings_proxy_returns_saved_settings(app) -> None:
+    """Description:
+        Verify the Web UI exposes model settings through a same-origin proxy route.
+
+    Requirements:
+        - This test is needed to prove the browser model-settings panel can preload values without calling the PA cross-origin.
+        - Verify the proxied response preserves PA model, agent overrides, and catalog metadata.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    async def _fake_pa_prompt_fetcher(method: str, path: str, *, json_body=None):
+        """Description:
+            Return one deterministic model-settings payload for the Web UI proxy test.
+
+        Requirements:
+            - Preserve the proxied route path for assertion.
+
+        :param method: Proxied HTTP method.
+        :param path: Proxied upstream PA path.
+        :param json_body: Optional proxied request body.
+        :returns: Deterministic model-settings payload.
+        """
+
+        del method, json_body
+        assert path == "/api/model-settings"
+        return {
+            "pa_model": "ollama/llama3:8b",
+            "default_agent_model": "openrouter/openai/gpt-4o",
+            "system_path": ".faith/system.yaml",
+            "catalog_path": "data/pa-runtime/model-catalog.json",
+            "updated_at": "2026-05-18T12:00:00+00:00",
+            "model_options": [
+                {"value": "ollama/llama3:8b", "label": "ollama/llama3:8b"},
+                {"value": "openrouter/openai/gpt-4o", "label": "openrouter/openai/gpt-4o"},
+            ],
+            "catalog": [
+                {
+                    "key": "ollama/llama3:8b",
+                    "provider": "ollama",
+                    "model": "llama3:8b",
+                    "context_window": {"value": 8192, "provenance": "discovered"},
+                    "runtime": {
+                        "safe_usable_context": 7168,
+                        "warning": "usable_context_limited_by_vram",
+                    },
+                }
+            ],
+            "agent_overrides": [
+                {
+                    "agent_id": "researcher",
+                    "role": "Researcher",
+                    "model": "ollama/mistral:7b",
+                    "path": ".faith/agents/researcher/config.yaml",
+                }
+            ],
+        }
+
+    app.state.pa_prompt_request_proxy = _fake_pa_prompt_fetcher
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        response = await async_client.get("/api/model-settings")
+
+    assert response.status_code == 200
+    assert response.json()["pa_model"] == "ollama/llama3:8b"
+    assert response.json()["agent_overrides"][0]["agent_id"] == "researcher"
+
+
+@pytest.mark.asyncio
+async def test_model_settings_proxy_forwards_updates(app) -> None:
+    """Description:
+        Verify the Web UI forwards model-settings updates through the same-origin proxy route.
+
+    Requirements:
+        - This test is needed to prove the browser model-settings panel can persist edits without direct PA-origin calls.
+        - Verify the proxied request preserves PA model, per-agent overrides, and context-window overrides.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    async def _fake_pa_prompt_fetcher(method: str, path: str, *, json_body=None):
+        """Description:
+            Echo one deterministic saved model-settings payload for the proxy update test.
+
+        Requirements:
+            - Preserve the proxied method, path, and submitted body for assertion.
+
+            :param method: Proxied HTTP method.
+            :param path: Proxied upstream PA path.
+            :param json_body: Optional proxied request body.
+            :returns: Deterministic saved model-settings payload.
+        """
+
+        assert method == "PUT"
+        assert path == "/api/model-settings"
+        assert json_body == {
+            "pa_model": "openrouter/anthropic/claude-3.5-sonnet",
+            "default_agent_model": "openrouter/openai/gpt-4o",
+            "agent_overrides": {"researcher": "ollama/mistral:7b"},
+            "context_window_overrides": {"openrouter/anthropic/claude-3.5-sonnet": 200000},
+        }
+        return {
+            "pa_model": "openrouter/anthropic/claude-3.5-sonnet",
+            "default_agent_model": "openrouter/openai/gpt-4o",
+            "system_path": ".faith/system.yaml",
+            "catalog_path": "data/pa-runtime/model-catalog.json",
+            "updated_at": "2026-05-18T12:00:00+00:00",
+            "model_options": [
+                {
+                    "value": "openrouter/anthropic/claude-3.5-sonnet",
+                    "label": "openrouter/anthropic/claude-3.5-sonnet",
+                }
+            ],
+            "catalog": [
+                {
+                    "key": "openrouter/anthropic/claude-3.5-sonnet",
+                    "provider": "openrouter",
+                    "model": "anthropic/claude-3.5-sonnet",
+                    "context_window": {"value": 200000, "provenance": "user_override"},
+                    "runtime": {},
+                }
+            ],
+            "agent_overrides": [
+                {
+                    "agent_id": "researcher",
+                    "role": "Researcher",
+                    "model": "ollama/mistral:7b",
+                    "path": ".faith/agents/researcher/config.yaml",
+                }
+            ],
+        }
+
+    app.state.pa_prompt_request_proxy = _fake_pa_prompt_fetcher
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        response = await async_client.put(
+            "/api/model-settings",
+            json={
+                "pa_model": "openrouter/anthropic/claude-3.5-sonnet",
+                "default_agent_model": "openrouter/openai/gpt-4o",
+                "agent_overrides": {"researcher": "ollama/mistral:7b"},
+                "context_window_overrides": {"openrouter/anthropic/claude-3.5-sonnet": 200000},
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["catalog"][0]["context_window"]["provenance"] == "user_override"

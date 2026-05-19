@@ -10,6 +10,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const allElements = [];
+const animationFrameQueue = [];
 
 function FakeHTMLElement(tagName) {
   this.tagName = tagName.toUpperCase();
@@ -28,7 +30,8 @@ function FakeHTMLElement(tagName) {
   this.eventListeners = {};
   this.scrollTop = 0;
   this.clientHeight = 120;
-  this.scrollHeight = 120;
+  this._scrollHeight = 120;
+  this._pendingScrollHeight = null;
   this.classList = {
     values: new Set(),
     add: (...names) => names.forEach((name) => this.classList.values.add(name)),
@@ -44,6 +47,7 @@ function FakeHTMLElement(tagName) {
     },
     contains: (name) => this.classList.values.has(name),
   };
+  allElements.push(this);
 }
 
 /**
@@ -62,12 +66,26 @@ FakeHTMLElement.prototype.setAttribute = function setAttribute(name, value) {
 };
 
 FakeHTMLElement.prototype.appendChild = function appendChild(child) {
+  child.parentNode = this;
+  child.parentElement = this;
   this.children.push(child);
+  let ancestor = this;
+  while (ancestor) {
+    if ((ancestor.className || "").split(/\s+/).includes("faith-agent-panel__terminal")) {
+      ancestor._scrollHeight += 24;
+      break;
+    }
+    ancestor = ancestor.parentNode || null;
+  }
   return child;
 };
 
 FakeHTMLElement.prototype.replaceChildren = function replaceChildren(...children) {
   this.children = children;
+  for (const child of children) {
+    child.parentNode = this;
+    child.parentElement = this;
+  }
 };
 
 FakeHTMLElement.prototype.addEventListener = function addEventListener(name, handler) {
@@ -91,6 +109,15 @@ FakeHTMLElement.prototype.dispatch = function dispatch(name, event = {}) {
 FakeHTMLElement.prototype.scrollIntoView = function scrollIntoView() {
   this.didScrollIntoView = true;
 };
+
+Object.defineProperty(FakeHTMLElement.prototype, "scrollHeight", {
+  get() {
+    return this._scrollHeight;
+  },
+  set(value) {
+    this._pendingScrollHeight = value;
+  },
+});
 
 function findByText(root, text) {
   if (root.textContent === text) {
@@ -142,6 +169,19 @@ function assert(condition, message) {
   }
 }
 
+function flushAnimationFrames() {
+  allElements.forEach((element) => {
+    if (typeof element._pendingScrollHeight === "number") {
+      element._scrollHeight = element._pendingScrollHeight;
+      element._pendingScrollHeight = null;
+    }
+  });
+  while (animationFrameQueue.length > 0) {
+    const callback = animationFrameQueue.shift();
+    callback();
+  }
+}
+
 global.HTMLElement = FakeHTMLElement;
 global.document = {
   body: new FakeHTMLElement("body"),
@@ -151,6 +191,8 @@ global.document = {
 };
 global.window = global;
 global.location = { href: "http://localhost:8080/" };
+const runtimeEvents = [];
+const globalEventListeners = {};
 global.navigator = {
   clipboard: {
     written: "",
@@ -181,8 +223,28 @@ global.setTimeout = (handler) => {
   return 1;
 };
 global.clearTimeout = () => {};
-global.addEventListener = () => {};
-global.removeEventListener = () => {};
+global.requestAnimationFrame = (callback) => {
+  animationFrameQueue.push(callback);
+  return animationFrameQueue.length;
+};
+global.cancelAnimationFrame = () => {};
+global.addEventListener = function addEventListener(name, handler) {
+  globalEventListeners[name] = globalEventListeners[name] || [];
+  globalEventListeners[name].push(handler);
+};
+global.removeEventListener = function removeEventListener(name, handler) {
+  globalEventListeners[name] = (globalEventListeners[name] || []).filter(
+    (candidate) => candidate !== handler,
+  );
+};
+global.dispatchEvent = function dispatchEvent(event) {
+  runtimeEvents.push(event);
+  (globalEventListeners[event.type] || []).forEach((handler) => handler(event));
+};
+global.CustomEvent = function CustomEvent(type, options = {}) {
+  this.type = type;
+  this.detail = options.detail;
+};
 
 class FakeTerminal {
   constructor() {
@@ -262,6 +324,7 @@ async function main() {
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
+  flushAnimationFrames();
 
   const socket = FakeWebSocket.instances[0];
   assert(socket.url.includes("/ws/agent/project-agent"), "Expected the agent panel to target the agent websocket.");
@@ -307,17 +370,34 @@ async function main() {
   assert(thinkingIndicator.hidden === true, "Expected idle status to hide the thinking indicator.");
 
   socket.emit("message", { data: JSON.stringify({ type: "status", status: "running", model: "ollama/test" }) });
+  socket.emit("message", {
+    data: JSON.stringify({
+      type: "compaction_state",
+      active: true,
+      diagnostic: "Compaction is temporarily pausing new sends.",
+    }),
+  });
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "hello world" }) });
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "streamed ", stream: true }) });
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "reply", stream: true }) });
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "User: show me the files" }) });
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "PA: here is the list" }) });
   socket.emit("message", { data: JSON.stringify([{ type: "output", text: "batch one" }, { type: "output", text: "batch two" }]) });
+  flushAnimationFrames();
 
   const statusBadge = findByClass(target, "faith-agent-panel__status");
   const modelLabel = findByClass(target, "faith-agent-panel__model");
   assert(statusBadge.textContent === "running", "Expected status updates to change the visible badge.");
   assert(modelLabel.textContent === "ollama/test", "Expected model updates to change the visible label.");
+  assert(
+    runtimeEvents.some(
+      (event) =>
+        event.type === "faith:input-panel-compaction-state" &&
+        event.detail &&
+        event.detail.active === true,
+    ),
+    "Expected compaction-state frames to be forwarded as browser runtime events.",
+  );
 
   socket.emit("message", { data: JSON.stringify({ type: "protocol", text: "compact:task:update" }) });
   socket.emit("message", { data: "not-json" });
@@ -344,18 +424,25 @@ async function main() {
 
   const resumeButton = findByText(target, "Resume");
   resumeButton.dispatch("click");
+  flushAnimationFrames();
   assert(collectText(terminal).includes("queued while paused"), "Expected queued output to flush on resume.");
 
   const terminalHost = findByClass(target, "faith-agent-panel__terminal");
+  const messageList = findByClass(target, "faith-agent-panel__message-list");
   assert(terminalHost, "Expected the transcript host element to exist.");
   assert(
     terminalHost.scrollTop === terminalHost.scrollHeight - terminalHost.clientHeight,
     "Expected the transcript to stay pinned to the bottom while new output arrives.",
   );
+  assert(
+    messageList.children[messageList.children.length - 1].didScrollIntoView === true,
+    "Expected the newest transcript entry to be scrolled into view while new output arrives.",
+  );
 
   terminalHost.scrollTop = 0;
   terminalHost.dispatch("scroll");
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "newest while reading history" }) });
+  flushAnimationFrames();
   assert(
     terminalHost.scrollTop === 0,
     "Expected new output not to steal the user's scroll position when they have scrolled upward.",
@@ -365,9 +452,14 @@ async function main() {
   assert(jumpButton, "Expected the panel to render a jump-to-latest control.");
   assert(jumpButton.hidden === false, "Expected the jump-to-latest control to appear when unread text exists.");
   jumpButton.dispatch("click");
+  flushAnimationFrames();
   assert(
     terminalHost.scrollTop === terminalHost.scrollHeight - terminalHost.clientHeight,
     "Expected the jump-to-latest control to scroll to the newest transcript content.",
+  );
+  assert(
+    messageList.children[messageList.children.length - 1].didScrollIntoView === true,
+    "Expected the jump-to-latest control to scroll the newest transcript entry into view.",
   );
   assert(jumpButton.hidden === true, "Expected the jump-to-latest control to hide once the transcript is back at the bottom.");
 
@@ -391,6 +483,7 @@ async function main() {
   recoveredSocket.emit("open", {});
   await Promise.resolve();
   await Promise.resolve();
+  flushAnimationFrames();
   assert(
     collectText(terminal).includes("Question sent while websocket was down."),
     "Expected reconnect to rehydrate user transcript entries created while the websocket was disconnected.",
@@ -400,6 +493,7 @@ async function main() {
     "Expected reconnect to rehydrate assistant transcript entries created while the websocket was disconnected.",
   );
   recoveredSocket.emit("message", { data: JSON.stringify({ type: "output", text: "after reconnect" }) });
+  flushAnimationFrames();
   assert(
     collectText(terminal).includes("after reconnect"),
     "Expected the panel to keep rendering output after a reconnect.",

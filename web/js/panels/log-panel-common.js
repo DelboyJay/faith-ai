@@ -370,6 +370,8 @@
     [
       ["By model", summaryPayload.by_model || {}],
       ["By agent", summaryPayload.by_agent || {}],
+      ["Session total", summaryPayload.session || {}],
+      ["Last message", summaryPayload.last_message || {}],
     ].forEach(function appendSummaryColumn(entry) {
       const column = document.createElement("section");
       column.className = "faith-log-panel__summary-column";
@@ -381,7 +383,32 @@
       Object.entries(entry[1]).forEach(function appendSummaryItem(summaryEntry) {
         const item = document.createElement("p");
         item.className = "faith-log-panel__row";
-        item.textContent = `${summaryEntry[0]}: ${summaryEntry[1].calls} calls, ${summaryEntry[1].input_tokens} in, ${summaryEntry[1].output_tokens} out`;
+        const value = summaryEntry[1];
+        const contextInput = value.context_input_tokens ?? value.input_tokens ?? 0;
+        const inferenceOutput = value.inference_output_tokens ?? value.output_tokens ?? 0;
+        const total = value.total_tokens ?? contextInput + inferenceOutput;
+        const windowPct =
+          value.context_window_percentage === null || value.context_window_percentage === undefined
+            ? "unknown"
+            : `${value.context_window_percentage}%`;
+        const snapshotId = value.effective_context_snapshot_id || "—";
+        const turnId = value.effective_context_turn_id || "—";
+        const cacheSummary =
+          value.cache_hit === null || value.cache_hit === undefined
+            ? "cache unknown"
+            : value.cache_hit
+              ? `${value.cached_input_tokens || 0} cached input`
+              : "cache miss";
+        const contextFiles = Array.isArray(value.context_files)
+          ? value.context_files
+              .map(function mapContextFile(fileEntry) {
+                return `${fileEntry.path || "unknown"} (${fileEntry.tokens || 0})`;
+              })
+              .join(", ")
+          : "";
+        const calls = value.calls ? `${value.calls} calls, ` : "";
+        item.textContent =
+          `${summaryEntry[0]}: ${calls}${contextInput} context/input, ${inferenceOutput} inference/output, ${total} total, ${windowPct}, snapshot ${snapshotId}, turn ${turnId}, ${cacheSummary}${contextFiles ? `, files ${contextFiles}` : ""}`;
         column.appendChild(item);
       });
       block.appendChild(column);

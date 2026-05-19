@@ -9,6 +9,7 @@ Requirements:
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from faith_pa.logging.token_logger import DEFAULT_COST_THRESHOLD_USD, TokenEntry, TokenLogger
@@ -167,3 +168,24 @@ def test_token_logger_prefers_cached_pricing_catalog(tmp_path: Path) -> None:
     assert loaded is True
     assert estimated_cost == 0.0009
     assert price_source == "cache"
+
+
+def test_token_usage_panel_runtime_behaviour() -> None:
+    """Description:
+        Verify the host-side token usage panel runtime checks pass.
+
+    Requirements:
+        - This test is needed to prove the panel renders the richer context diagnostics contract.
+        - Verify the Node.js harness exits successfully.
+    """
+
+    project_root = Path(__file__).resolve().parents[1]
+    runtime_test = project_root / "tests" / "test_token_usage_panel_runtime.js"
+    result = subprocess.run(
+        ["node", str(runtime_test)],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout

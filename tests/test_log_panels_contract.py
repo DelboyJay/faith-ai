@@ -8,6 +8,8 @@ Requirements:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from faith_web.app import create_app
@@ -33,6 +35,7 @@ def test_index_includes_log_panel_assets() -> None:
     assert "/static/js/panels/session-history.js" in response.text
     assert "/static/js/panels/token-usage.js" in response.text
     assert "/static/js/panels/approval-history.js" in response.text
+    assert "/static/js/panels/effective-context-panel.js" in response.text
 
 
 def test_toolbar_lists_log_view_panels() -> None:
@@ -54,3 +57,5 @@ def test_toolbar_lists_log_view_panels() -> None:
     assert '"Session History"' in response.text
     assert '"Token Usage"' in response.text
     assert '"Approval History"' in response.text
+    source = Path("web/src/main.jsx").read_text(encoding="utf-8")
+    assert '"Effective Context"' in source

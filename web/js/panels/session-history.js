@@ -4,6 +4,7 @@
  *
  * Requirements:
  *   - Fetch session summaries from `/api/logs/sessions`.
+ *   - Allow the user to start a new session through the same-origin PA proxy route.
  *   - Load detailed session metadata and selected channel logs on demand.
  *   - Keep the main results area internally scrollable.
  */
@@ -38,6 +39,11 @@
 
       const header = document.createElement("div");
       header.className = "faith-log-panel__filters";
+      const newSessionButton = document.createElement("button");
+      newSessionButton.type = "button";
+      newSessionButton.className = "faith-toolbar__button";
+      newSessionButton.textContent = "New Session";
+      header.appendChild(newSessionButton);
       const refreshButton = document.createElement("button");
       refreshButton.type = "button";
       refreshButton.className = "faith-toolbar__button";
@@ -176,6 +182,7 @@
        *
        * Requirements:
        *   - Preserve the existing selected session when it still exists.
+       *   - Auto-select the newest session when no current selection exists.
        *
        * @returns {Promise<void>} Promise that resolves once the session list is refreshed.
        */
@@ -190,6 +197,15 @@
           }
           const payload = await response.json();
           state.sessions = payload.items || [];
+          const selectedSessionStillExists = state.sessions.some(function hasSelectedSession(session) {
+            return session.session_id === state.selectedSessionId;
+          });
+          if (!selectedSessionStillExists) {
+            state.selectedSessionId = state.sessions.length > 0 ? state.sessions[0].session_id : "";
+            state.selectedChannelName = "";
+            state.channelLog = null;
+            state.sessionDetail = null;
+          }
         } catch (error) {
           state.error = String(error.message || error);
         } finally {
@@ -197,6 +213,9 @@
           if (!state.destroyed) {
             render();
           }
+        }
+        if (!state.destroyed && state.selectedSessionId && state.sessionDetail === null) {
+          await loadSessionDetail(state.selectedSessionId);
         }
       }
 
@@ -267,15 +286,63 @@
         }
       }
 
+      /**
+       * Description:
+       *   Start a fresh Project Agent session through the same-origin API.
+       *
+       * Requirements:
+       *   - Clear the current detail view until the fresh session detail is reloaded.
+       *   - Refresh the summary list and select the new active session after creation.
+       *
+       * @returns {Promise<void>} Promise that resolves once the new session is visible.
+       */
+      async function startNewSession() {
+        state.loading = true;
+        state.error = "";
+        render();
+        try {
+          const response = await globalScope.fetch("/api/pa/session/new", {
+            method: "POST",
+          });
+          if (!response.ok) {
+            throw new Error(`New session failed with status ${response.status}`);
+          }
+          const payload = await response.json();
+          state.selectedSessionId = payload.session_id || "";
+          state.selectedChannelName = "";
+          state.channelLog = null;
+          state.sessionDetail = null;
+          await loadSessions();
+          if (!state.destroyed && state.selectedSessionId) {
+            await loadSessionDetail(state.selectedSessionId);
+          }
+          return;
+        } catch (error) {
+          state.error = String(error.message || error);
+        } finally {
+          state.loading = false;
+          if (!state.destroyed) {
+            render();
+          }
+        }
+      }
+
+      newSessionButton.addEventListener("click", function onNewSessionClick() {
+        void startNewSession();
+      });
       refreshButton.addEventListener("click", function onRefreshClick() {
         void loadSessions();
       });
 
       void loadSessions();
+      const refreshTimerId = globalScope.setInterval(function refreshSessionsInBackground() {
+        void loadSessions();
+      }, 5000);
 
       return {
         destroy() {
           state.destroyed = true;
+          globalScope.clearInterval(refreshTimerId);
         },
       };
     },

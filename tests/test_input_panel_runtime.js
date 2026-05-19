@@ -5,6 +5,7 @@
  * Requirements:
  *   - Prove the panel can send text, queue attachments, and remove attachments.
  *   - Prove duplicate send protection and validation state do not break the panel.
+ *   - Prove a hard-compaction event can block and then restore submission state.
  */
 
 const fs = require("node:fs");
@@ -112,6 +113,22 @@ global.document = {
 };
 global.window = global;
 
+const eventListeners = {};
+global.addEventListener = function addEventListener(name, handler) {
+  eventListeners[name] = eventListeners[name] || [];
+  eventListeners[name].push(handler);
+};
+global.removeEventListener = function removeEventListener(name, handler) {
+  eventListeners[name] = (eventListeners[name] || []).filter((candidate) => candidate !== handler);
+};
+global.dispatchEvent = function dispatchEvent(event) {
+  (eventListeners[event.type] || []).forEach((handler) => handler(event));
+};
+global.CustomEvent = function CustomEvent(type, options = {}) {
+  this.type = type;
+  this.detail = options.detail;
+};
+
 class FakeFormData {
   constructor() {
     this.items = [];
@@ -152,9 +169,13 @@ vm.runInThisContext(panelSource, { filename: "input-panel.js" });
   const wrapper = target.children[0];
   const sendButton = findByText(target, "Send");
   const helperText = findByText(target, "Enter to send. Alt+Enter for a newline.");
+  const compactionBanner = wrapper.children[3];
+  const compactionDiagnostic = findByText(target, "Compaction is temporarily pausing new sends.");
 
   assert(sendButton.disabled === true, "Expected Send to start disabled while the message is empty.");
   assert(helperText, "Expected the input panel to render the keyboard shortcut helper text.");
+  assert(compactionBanner.hidden === true, "Expected the compaction banner to stay hidden before hard compaction starts.");
+  assert(compactionDiagnostic === null, "Expected the compaction diagnostic to stay hidden before hard compaction starts.");
   textarea.value = "click send from browser";
   textarea.dispatch("input");
   assert(sendButton.disabled === false, "Expected typing in the textarea to enable Send.");
@@ -232,6 +253,47 @@ vm.runInThisContext(panelSource, { filename: "input-panel.js" });
   const invalid = panel.queueAttachments([{ name: "bad.exe", type: "application/octet-stream", size: 5 }]);
   assert(invalid === false, "Expected invalid attachments to be rejected.");
   assert(panel.getState().error.includes("Unsupported"), "Expected invalid attachment errors to be visible.");
+
+  global.dispatchEvent(
+    new global.CustomEvent("faith:input-panel-compaction-state", {
+      detail: {
+        active: true,
+        diagnostic: "Compaction is temporarily pausing new sends.",
+      },
+    }),
+  );
+  textarea.value = "blocked while compacting";
+  textarea.dispatch("input");
+  assert(sendButton.disabled === true, "Expected hard compaction to block Send immediately.");
+  assert(wrapper.classList.contains("faith-input-panel--compaction") === true, "Expected the panel to show a compaction state class while hard compaction runs.");
+  assert(findByText(target, "Compaction underway"), "Expected the compaction banner to become visible during hard compaction.");
+  assert(findByText(target, "Compaction is temporarily pausing new sends."), "Expected the compaction diagnostic to be visible during hard compaction.");
+  const fetchCountDuringCompaction = fetchCalls.length;
+  let blockedEnterPrevented = false;
+  textarea.dispatch("keydown", {
+    key: "Enter",
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    preventDefault() {
+      blockedEnterPrevented = true;
+    },
+  });
+  await flushAsyncTasks();
+  assert(blockedEnterPrevented === true, "Expected hard compaction to keep Enter from inserting a newline while the panel is blocked.");
+  assert(fetchCalls.length === fetchCountDuringCompaction, "Expected no submit request to be sent while hard compaction is underway.");
+
+  global.dispatchEvent(
+    new global.CustomEvent("faith:input-panel-compaction-state", {
+      detail: {
+        active: false,
+      },
+    }),
+  );
+  textarea.dispatch("input");
+  assert(wrapper.classList.contains("faith-input-panel--compaction") === false, "Expected the compaction class to clear when hard compaction completes.");
+  assert(panel.getState().compactionActive === false, "Expected the panel state to clear the hard-compaction flag immediately.");
+  assert(sendButton.disabled === false, "Expected Send to re-enable immediately after hard compaction completes.");
 
   global.fetch = async function pendingFetch(url, options = {}) {
     fetchCalls.push({ url, options });

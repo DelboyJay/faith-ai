@@ -5,11 +5,15 @@
  * Requirements:
  *   - Send text through `/input` and files through `/upload`.
  *   - Support drag-and-drop, clipboard image paste, attachment removal, and in-flight guards.
+ *   - Reflect hard-compaction state changes from the browser runtime.
  */
 
 (function initialiseFaithInputPanel(globalScope) {
   const INPUT_PATH = "/input";
   const UPLOAD_PATH = "/upload";
+  const COMPACTION_STATE_EVENT = "faith:input-panel-compaction-state";
+  const DEFAULT_COMPACTION_DIAGNOSTIC =
+    "Compaction is temporarily pausing new sends.";
   const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
   const ACCEPTED_UPLOAD_TYPES = new Set([
     "application/pdf",
@@ -97,6 +101,21 @@
     helperText.className = "faith-input-panel__hint";
     helperText.textContent = "Enter to send. Alt+Enter for a newline.";
 
+    const compactionBanner = document.createElement("div");
+    compactionBanner.className = "faith-input-panel__compaction";
+    compactionBanner.hidden = true;
+
+    const compactionIndicator = document.createElement("span");
+    compactionIndicator.className = "faith-input-panel__compaction-indicator";
+
+    const compactionText = document.createElement("span");
+    compactionText.className = "faith-input-panel__compaction-label";
+    compactionText.textContent = "Compaction underway";
+
+    const compactionDiagnostic = document.createElement("p");
+    compactionDiagnostic.className = "faith-input-panel__compaction-diagnostic";
+    compactionDiagnostic.hidden = true;
+
     const queue = document.createElement("ul");
     queue.className = "faith-input-panel__attachments";
 
@@ -123,6 +142,10 @@
     wrapper.appendChild(errorBanner);
     wrapper.appendChild(textarea);
     wrapper.appendChild(helperText);
+    compactionBanner.appendChild(compactionIndicator);
+    compactionBanner.appendChild(compactionText);
+    wrapper.appendChild(compactionBanner);
+    wrapper.appendChild(compactionDiagnostic);
     wrapper.appendChild(queue);
     wrapper.appendChild(controls);
     wrapper.appendChild(attachInput);
@@ -130,6 +153,8 @@
 
     const attachments = [];
     let isSending = false;
+    let isCompactionBlocked = false;
+    let compactionDiagnosticText = "";
 
     /**
      * Description:
@@ -151,11 +176,38 @@
      *
      * Requirements:
      *   - Allow send when there is text or at least one attachment and no request is in flight.
+     *   - Block submission while hard compaction is underway.
      *
      * @returns {boolean} True when the panel may submit.
      */
     function canSend() {
-      return !isSending && (textarea.value.trim().length > 0 || attachments.length > 0);
+      return !isSending && !isCompactionBlocked && (textarea.value.trim().length > 0 || attachments.length > 0);
+    }
+
+    /**
+     * Description:
+     *   Refresh the visible state of the submission controls.
+     *
+     * Requirements:
+     *   - Keep the Send and Attach actions disabled while hard compaction runs.
+     *   - Show the compact compaction banner only during the blocked state.
+     */
+    function syncInteractionState() {
+      const showCompaction = isCompactionBlocked;
+      if (showCompaction) {
+        wrapper.classList.add("faith-input-panel--compaction");
+      } else {
+        wrapper.classList.remove("faith-input-panel--compaction");
+      }
+      compactionBanner.hidden = !showCompaction;
+      compactionDiagnostic.hidden = !showCompaction;
+      compactionDiagnostic.textContent = showCompaction
+        ? compactionDiagnosticText || DEFAULT_COMPACTION_DIAGNOSTIC
+        : "";
+      sendButton.disabled = !canSend();
+      const interactionDisabled = isSending || isCompactionBlocked;
+      attachButton.disabled = interactionDisabled;
+      attachInput.disabled = interactionDisabled;
     }
 
     /**
@@ -186,7 +238,30 @@
         item.appendChild(removeButton);
         queue.appendChild(item);
       });
-      sendButton.disabled = !canSend();
+      syncInteractionState();
+    }
+
+    /**
+     * Description:
+     *   Apply the latest hard-compaction flag from the browser runtime.
+     *
+     * Requirements:
+     *   - Accept a tiny event payload with an ``active`` flag and optional diagnostic text.
+     *   - Clear the blocked state immediately when compaction ends.
+     *
+     * @param {object} state: Hard-compaction payload from the runtime.
+     */
+    function setCompactionState(state) {
+      isCompactionBlocked = Boolean(state && state.active);
+      if (isCompactionBlocked) {
+        compactionDiagnosticText =
+          state && typeof state.diagnostic === "string" && state.diagnostic.trim()
+            ? state.diagnostic.trim()
+            : DEFAULT_COMPACTION_DIAGNOSTIC;
+      } else {
+        compactionDiagnosticText = "";
+      }
+      syncInteractionState();
     }
 
     /**
@@ -195,11 +270,15 @@
      *
      * Requirements:
      *   - Stop and surface the first validation error encountered.
+     *   - Refuse to queue new inference inputs while hard compaction is active.
      *
      * @param {Array<File>} files: Files to queue.
      * @returns {boolean} True when all files were queued successfully.
      */
     function queueAttachments(files) {
+      if (isCompactionBlocked) {
+        return false;
+      }
       for (const file of files) {
         const error = validateAttachment(file);
         if (error) {
@@ -211,6 +290,21 @@
       setError("");
       renderQueue();
       return true;
+    }
+
+    /**
+     * Description:
+     *   Read a hard-compaction payload from a browser event.
+     *
+     * Requirements:
+     *   - Support the custom event detail shape used by the runtime bridge.
+     *   - Fall back to the event object itself when the caller passes a bare payload.
+     *
+     * @param {Event|object} event: Browser event or payload object.
+     */
+    function onCompactionStateChange(event) {
+      const payload = event && typeof event.detail === "object" && event.detail !== null ? event.detail : event;
+      setCompactionState(payload || {});
     }
 
     /**
@@ -272,8 +366,7 @@
         return;
       }
       isSending = true;
-      sendButton.disabled = true;
-      attachButton.disabled = true;
+      syncInteractionState();
       setError("");
       try {
         if (attachments.length > 0) {
@@ -290,8 +383,7 @@
         setError(String(error.message || error));
       } finally {
         isSending = false;
-        attachButton.disabled = false;
-        sendButton.disabled = !canSend();
+        syncInteractionState();
       }
     }
 
@@ -342,14 +434,20 @@
       void submit();
     });
 
+    globalScope.addEventListener(COMPACTION_STATE_EVENT, onCompactionStateChange);
+
     renderQueue();
+    setCompactionState({ active: false });
 
     return {
       queueAttachments: queueAttachments,
+      setCompactionState: setCompactionState,
       submit: submit,
       getState() {
         return {
           attachmentCount: attachments.length,
+          compactionActive: isCompactionBlocked,
+          compactionDiagnostic: compactionDiagnostic.textContent,
           canSend: canSend(),
           error: errorBanner.textContent,
         };
@@ -359,6 +457,7 @@
 
   globalScope.faithInputPanel = {
     INPUT_PATH: INPUT_PATH,
+    COMPACTION_STATE_EVENT: COMPACTION_STATE_EVENT,
     UPLOAD_PATH: UPLOAD_PATH,
     extractClipboardImages: extractClipboardImages,
     mountPanel: mountPanel,

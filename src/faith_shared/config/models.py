@@ -202,6 +202,63 @@ class PAConfig(BaseModel):
     fallback_model: str | None = None
 
 
+class ModelProvenance(str, Enum):
+    """Description:
+        Define the provenance labels used for model metadata and diagnostics.
+
+    Requirements:
+        - Preserve the canonical discovered/configured/effective/manual override vocabulary.
+    """
+
+    DISCOVERED = "discovered"
+    CONFIGURED = "configured"
+    EFFECTIVE = "effective"
+    USER_OVERRIDE = "user_override"
+
+
+class ModelContextWindow(BaseModel):
+    """Description:
+        Describe one model context-window value and its provenance.
+
+    Requirements:
+        - Preserve the numeric context value and how FAITH learned it.
+    """
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    value: int = Field(default=0, ge=0)
+    provenance: ModelProvenance = ModelProvenance.DISCOVERED
+
+
+class ModelCatalogEntry(BaseModel):
+    """Description:
+        Describe one persisted model-catalog entry.
+
+    Requirements:
+        - Preserve provider identity, model identity, context metadata, and runtime notes.
+    """
+
+    model_config = ConfigDict(use_enum_values=True)
+
+    provider: str
+    model: str
+    context_window: ModelContextWindow = Field(default_factory=ModelContextWindow)
+    runtime: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def key(self) -> str:
+        """Description:
+            Return the stable provider-qualified key for the entry.
+
+        Requirements:
+            - Keep catalog keys deterministic across load/save cycles.
+
+        :returns: Provider-qualified key string.
+        """
+
+        return f"{self.provider}/{self.model}"
+
+
 class LoopDetectionConfig(BaseModel):
     """
     Description:
