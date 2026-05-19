@@ -44,6 +44,10 @@ PHASE_COLOURS = {
     13: ("#22315a", "#88a0ff"),
     14: ("#123c32", "#4fd1b5"),
     15: ("#4a2b12", "#ffb366"),
+    16: ("#2c244a", "#b8a1ff"),
+    17: ("#3b2f18", "#d9b36c"),
+    18: ("#1f3a2e", "#73d6a3"),
+    19: ("#3a2338", "#d68fd0"),
 }
 
 PHASE_NAMES = {
@@ -62,6 +66,10 @@ PHASE_NAMES = {
     13: "Web UI Workspace Migration",
     14: "Specialist-Agent Delegation from PA Chat",
     15: "Optional Voice & Avatar Experience",
+    16: "Project Instruction Context & Model Intelligence",
+    17: "Managed MCP Tool Acquisition & Governance",
+    18: "Runtime Context Compaction & Rule Promotion",
+    19: "Scoped File Storage & Deterministic Excerpt Retrieval",
 }
 
 COMPLEXITY_WEIGHTS = {"S": 0.5, "M": 2.0, "L": 4.0, "XL": 6.0}

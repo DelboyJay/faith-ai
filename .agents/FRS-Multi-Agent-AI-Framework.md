@@ -12,7 +12,7 @@
 1. [Introduction & Overview](#1-introduction--overview)
 2. [System Architecture](#2-system-architecture)
 3. [Agent Communication & Orchestration](#3-agent-communication--orchestration)
-4. [Tools & MCP Integration](#4-tools--mcp-integration) *(4.1–4.15 defined)*
+4. [Tools & MCP Integration](#4-tools--mcp-integration) *(4.1–4.16 defined)*
 5. [Security & Approval System](#5-security--approval-system)
 6. [Web UI](#6-web-ui)
 7. [Configuration Management](#7-configuration-management)
@@ -675,6 +675,7 @@ For every LLM API call, the agent assembles the following:
 
 ```
 [System Prompt]       — Full role definition from prompt.md (sent every time)
+[Project Instructions] — For the PA only: resolved project-root AGENTS.md instruction layer with validated includes
 [Runtime Time Context] — Current date/time resolved in the user's timezone for this turn
 [Role Reminder]       — 2-3 line reinforcement of role and protocol usage
 [Context Summary]     — Loaded from context.md (rolling summary of past work)
@@ -686,10 +687,58 @@ For every LLM API call, the agent assembles the following:
 This structure ensures:
 
 - The agent never forgets its role (system prompt + role reminder on every call).
+- For the PA, project-specific behavioural guidance comes from the project-root `AGENTS.md` file rather than being hard-coded into the editable prompt panel.
 - The agent has explicit awareness of the user's current local date, current local time, and timezone when reasoning about deadlines, recency, scheduling, and relative-date requests.
 - The timezone used for this runtime context must come from a resolved user-timezone setting rather than silently assuming the PA container timezone.
 - Historical context is preserved without filling the context window (context.md).
 - Recent conversation flow is available for immediate reasoning.
+
+#### 3.5.1.1 Project-Root `AGENTS.md` for the PA
+
+The Project Agent (PA) uses the **project-root `AGENTS.md`** file as its
+project-controlled instruction layer.
+
+- Scope is **PA only** in v1. Specialist agents may later receive their own
+  generated or user-authored `AGENTS.md`-style instruction files at creation
+  time, but that is separate from the PA rule.
+- If the project has no `AGENTS.md`, FAITH treats it as an empty instruction
+  file rather than as an error.
+- The editable "PA System Prompt" surface in the Web UI is the user-facing view
+  of this project instruction content, not of FAITH's protected internal
+  orchestration/safety prompt.
+- FAITH core/runtime instructions remain outside `AGENTS.md` and are appended by
+  the runtime when the final context is composed. FAITH core rules win if they
+  conflict with project instructions.
+- Changes to `AGENTS.md` must apply automatically on the **next PA turn**
+  without requiring a restart or a manual reload.
+- FAITH persists a compiled effective-context representation keyed by content
+  hash so stable project instructions can be reused across turns and inspected
+  later without rebuilding them unnecessarily.
+
+`AGENTS.md` may reference additional markdown files from the project workspace.
+FAITH must support both:
+
+- explicit include directives such as `!include path/to/file.md`
+- inferred include references such as markdown links or prose references like
+  "see coding_style.md", resolved by a deterministic/reference-normalisation
+  pass before compilation
+
+Include handling rules:
+
+- only files inside the project workspace may be included
+- cycles must be detected and reported
+- include depth/count limits must exist to prevent prompt explosion
+- missing referenced files must be surfaced as warnings, not silently ignored
+- FAITH must record the resolved include graph and per-file token estimates for
+  debugging
+
+When the user makes an explicitly durable rule declaration in normal inference
+(for example, "I have a new rule for you" or equivalent clear permanent
+instruction phrasing), FAITH should automatically persist that rule into the
+project `AGENTS.md` rather than requiring a second confirmation prompt. The PA
+must tell the user in its response that the new rule was added to `AGENTS.md`,
+and the change must be recorded in session/audit history. Ambiguous one-off
+requests must not be auto-promoted into permanent project instructions.
 
 #### 3.5.2 Rolling Context Summary
 
@@ -726,6 +775,10 @@ agents:
 - No risk of session abandonment due to full context.
 - Persistent to disk — survives container restarts.
 
+The rolling summary remains the normal background memory mechanism. Additional
+runtime active-context compaction is a higher-urgency guardrail for turns where
+the fully assembled live prompt is still approaching the model limit.
+
 #### 3.5.3 Context.md Format
 
 ```markdown
@@ -747,6 +800,46 @@ agents:
 ### Current Blockers
 - Waiting for FDS sign-off on rate limiting requirements
 ```
+
+#### 3.5.4 Runtime Active-Context Compaction
+
+FAITH must support explicit **active-context compaction** so the live prompt
+context can continue to grow safely without exhausting the model context window.
+
+- Compaction affects only the **active prompt context**, never the durable
+  underlying session history.
+- Full user inference messages, PA responses, tool activity, and logs remain
+  persisted and inspectable on disk even after compaction.
+- FAITH tracks active-context usage as a percentage of the selected model's
+  reliable context-window limit when known.
+- FAITH performs:
+  - **soft/background compaction** before the limit is reached
+  - **hard pre-turn compaction** automatically when active context usage is
+    **95% or higher** before the next user inference is processed
+- For v1, compaction applies only to **history layers**:
+  - prior user inference messages
+  - prior PA responses
+  - older conversational/task history already resolved
+- Compaction must **not** rewrite or compact:
+  - FAITH core/runtime instructions
+  - raw project `AGENTS.md` source
+  - stable included project-instruction files
+  - MCP tool information / tool-manifest context
+- Compaction uses a two-layer approach:
+  - deterministic retention rules keep facts that must not be lost
+  - a local free Ollama model may summarise older resolved history into compact
+    "done/decided" notes
+- Deterministically retained items include at least:
+  - the current active task
+  - unresolved blockers
+  - active approvals or pending security-relevant actions
+  - failures/errors still in play
+  - explicitly pinned facts
+  - durable user rules/preferences already promoted into project instructions
+- Compaction output must be inspectable rather than silent, so users can see
+  when compaction occurred and what summary replaced older live history.
+- Compaction never destroys history; it only changes what is kept in the live
+  prompt assembly.
 
 ### 3.6 LLM Model Selection
 
@@ -1896,6 +1989,70 @@ enabled: true
 
 **Design rule:** FAITH should align with the MCP standard rather than inventing a FAITH-only plugin protocol. FAITH adds orchestration, approvals, privacy checks, and lifecycle management on top of MCP; it does not replace MCP packaging or transport conventions.
 
+#### 4.11.2.1 Future Managed Tool Acquisition Beyond Registry-Only v1
+
+Beyond the narrow registry-only v1 flow, FAITH should support a richer managed
+third-party MCP installation experience while preserving explicit user control.
+
+- Additional future source types include:
+  - **GitHub repository URL**
+  - **local ZIP upload**
+- Third-party tools should live in a **host-backed managed tools directory**
+  that is mounted into the PA runtime so installs survive rebuilds and the full
+  tool path remains inspectable.
+- GitHub or ZIP-based installs must never proceed silently. FAITH stages the
+  candidate, inspects it, summarises what it found, and asks the user whether
+  to continue.
+- The review summary should include:
+  - source type and source location
+  - inferred runtime and entrypoint information
+  - notable risk findings from deterministic checks
+  - a best-effort local Ollama security/risk summary with `High`, `Medium`, and
+    `Low` concerns plus a recommendation
+- The review summary is advisory only and must not claim the tool is safe.
+- If FAITH cannot infer a workable runtime or entrypoint, it must stop and tell
+  the user exactly why installation cannot continue.
+- GitHub-provided vendor trust signals may be surfaced as advisory badges such
+  as `Verified Vendor`, but they must not be treated as proof the tool is safe.
+- Tool source badges such as `GitHub` and `ZIP` should be visible in the Manage
+  Tools UI so the source is always clear.
+
+**Future update and rollback rules:**
+
+- GitHub-backed tools may surface a non-blocking update notification when FAITH
+  detects a newer source revision.
+- Updates always require user approval and must pass through the same review
+  flow as a fresh install.
+- FAITH should archive prior tool versions and keep the last three versions so
+  the user can roll back to a known-good state.
+- Older archived versions beyond that retention limit may be pruned
+  automatically.
+
+**Future per-function policy rules:**
+
+- Each tool function should expose a configurable permission state:
+  - `Do not use`
+  - `Can use but prompt user each time`
+  - `Can use without permission`
+- Tool-level defaults may exist, but function-level overrides must be
+  supported.
+- Newly installed third-party tool functions should default to `Can use but
+  prompt user each time`.
+- When a function fails during real use, FAITH may use a **local Ollama-only**
+  classifier to judge whether the failure appears retryable or likely pointless
+  to retry, then suggest that the user mark the function `Do not use`.
+- The LLM may recommend; only the user may change the function permission state.
+- Function health should be tracked separately from permission state, for
+  example: `Untested`, `Working`, `Partially working`, `Previously failed`.
+
+**Dynamic activation rule:**
+
+- Installed, updated, removed, enabled, disabled, or permission-changed MCP
+  tools must become active on the **next user inference turn** without a FAITH
+  restart unless the underlying runtime makes that physically unavoidable.
+- Changes update the canonical MCP registry immediately, but in-flight turns are
+  not interrupted merely to refresh tool context.
+
 #### 4.11.3 Privacy Tier Enforcement
 
 Each external MCP server declares a minimum `privacy_tier`. If the active FAITH privacy profile is more restrictive than the server's tier, the server is not started and agents cannot access it. For example: a GitHub server marked `internal` is not available when the privacy profile is `confidential`.
@@ -2058,6 +2215,164 @@ The Web Search MCP server calls Tavily Search for result discovery and Tavily Ex
 | Privacy profile is `confidential` | Return an error immediately; do not call Tavily |
 | Empty query or URL | Return a validation error |
 | Excessive `max_results` or `max_chars` | Clamp to the configured maximum |
+
+---
+
+### 4.16 Deterministic Excerpt Retrieval & Scoped File Storage
+
+FAITH should provide a deterministic MCP capability for searching inside known
+user files and returning bounded excerpts without forcing agents to guess with
+repeated `cat`, `tail`, `sed`, or full-file reads.
+
+#### 4.16.1 Purpose
+
+- This is **not semantic RAG**. It is deterministic excerpt retrieval over
+  known files using explicit search terms and filetype-aware structural
+  boundaries.
+- The goal is to let an agent ask for “what matched” first, then ask for only
+  the exact sections, paragraphs, functions, or similar blocks it needs next.
+
+#### 4.16.2 MCP Contract Shape
+
+The capability should use at least two MCP functions:
+
+- **Discovery / summary**
+  - accepts search terms plus one or more files
+  - returns per-file match counts, supported block types, and stable match ids
+  - avoids dumping the full matching text on the first call
+- **Excerpt retrieval**
+  - accepts stable ids or equivalent deterministic references from discovery
+  - returns only the requested matching blocks
+
+If the caller requests a block type unsupported by that file's resolver group,
+the tool must fail clearly rather than guessing a fallback.
+
+#### 4.16.3 File Groups & Supported Boundary Types
+
+FAITH should classify files into deterministic resolver groups:
+
+- **Document files**
+  - examples: `md`, `txt`, `rst`, `pdf`, `docx`, `odt`, `xlsx`, `ods`,
+    `html`, `xml`
+  - typical excerpt types: `line`, `sentence`, `paragraph`, `section`
+- **Code files**
+  - examples: `py`, `js`, `ts`, `tsx`, `java`, `go`, and similar
+  - typical excerpt types: `line`, `module`, `class`, `function`
+- **Config/data files**
+  - examples: `yaml`, `yml`, `toml`, `json`, `ini`, `.env`
+  - typical excerpt types: `line`, `entry`, `object`, `section` where the
+    underlying format supports them deterministically
+
+The resolver framework should reuse existing FAITH parsing capability where
+possible instead of inventing duplicate parsers for code.
+
+#### 4.16.4 File Ingestion & Storage Scopes
+
+FAITH should support drag-and-drop file ingestion from:
+
+- the **Input** panel
+- a dedicated **Storage** panel
+
+Default behaviour:
+
+- Input-panel drag/drop defaults to **Session** scope
+- Storage-panel drag/drop defaults to **Global** scope
+- A user setting should allow all drag-and-drop files to default to **Global**
+  instead of context-sensitive behaviour
+
+Storage scopes:
+
+- **Global** — available to all sessions in the project
+- **Scoped** — available only to selected named sessions
+- **Session** — available only to the current session
+- **One-time** — available only for the current inference round, then removed
+
+One-time files are treated as transient/sensitive and should be removed once
+control returns to the user after the inference round completes.
+
+#### 4.16.5 Canonical File Identity & Deduplication
+
+- The canonical file identifier is the **SHA-256 of the file content**.
+- Identical content must never be stored twice physically.
+- When identical content is uploaded again:
+  - if filename, description, or requested scope differs, FAITH must stop and
+    ask the user to resolve the conflict
+  - FAITH must warn that the content already exists and that the existing stored
+    copy will be reused once the conflict is resolved
+- The storage registry should preserve at least:
+  - original filename
+  - short description
+  - SHA-256
+  - current sharing scope
+  - relevant session bindings
+
+#### 4.16.6 Storage Inventory, Trash, and Export
+
+FAITH should present a **global inventory-style Storage panel** showing all
+stored files while still enforcing per-scope access rules underneath.
+
+The Storage panel should support:
+
+- sortable columns
+- search by filename and/or description
+- inline scope editing via dropdown
+- bulk actions
+- per-row delete/trash action
+
+Deleting a stored file should move it into a FAITH-managed **trash** rather
+than hard-deleting it immediately.
+
+- Trashed files must stop being available to agents immediately.
+- A dedicated trash view/panel should allow review and restore.
+- On shutdown, or on next startup if shutdown cleanup failed, FAITH should ask
+  the user whether to hard-delete trashed files with:
+  - `Delete`
+  - `Show Me`
+- `Show Me` must take the user to the trash view.
+- In unattended/headless mode, the default trash-finalisation behaviour is
+  **Delete**.
+
+Session export should support:
+
+- `Session only`
+- `Session + linked files`
+
+When linked files are included, FAITH should include:
+
+- Global files
+- files explicitly scoped to that session
+- session-bound files for that session
+
+One-time files are excluded from export. If a linked file has already been
+deleted, FAITH must report that it can no longer be included.
+
+#### 4.16.7 Session Behaviour Related to Stored Files
+
+- Every session should have:
+  - a UUID identifier
+  - a user-visible name
+- The first session should be created automatically on first startup so the
+  user is immediately ready to ask the first question.
+- The user-visible session name should default from the first inference input.
+- Sessions must be renameable, archivable, deletable, and exportable from the
+  Session History panel.
+- Archived sessions remain persisted and inspectable but do not participate in
+  normal active-session flows until restored.
+- The Session History panel must always show at least one session.
+- The PA must be able to inspect both the session registry and the storage
+  registry so it can explain why a file is or is not available in the current
+  session.
+
+#### 4.16.8 MCP Audit Artifacts for File Search & Excerpt Retrieval
+
+- The main `audit.log` should remain a compact index-style log.
+- Full MCP request/response artifacts should live in structured per-call files
+  such as:
+  `logs/audit/tools/<session_uuid>/<tool_call_id>.json`
+- The main audit entry should record the tool call id and artifact location.
+- The artifact should preserve enough bounded request/response detail for the
+  user and PA to inspect exactly what was executed and prepare a rerun through
+  the normal approval path when appropriate.
 
 ---
 
@@ -2347,19 +2662,18 @@ Dockview manages the panel workspace. On first load, a default layout is rendere
 **Default layout on first load (illustrative):**
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  [Project Agent] [System Status]              [+]   │  ← upper tab stack
-├─────────────────────────────────────────────────────┤
-│                                                     │
-│  Project Agent / System Status workspace            │
-│                                                     │
-├───────────────────────────────┬─────────────────────┤
+┌──────────────────────────┬──────────────────────────┐
+│  Session History         │ [Project Agent][Status]  │  ← top row
+│  session browser         │ Project Agent workspace  │
+├──────────────────────────┴──────────────────────────┤
 │ [Input] [User Settings]       │  Approvals          │
 │ text + upload + settings      │  action panel       │
 └─────────────────────────────────────────────────────┘
 ```
 
-This is intentionally minimal. The default workspace may include the Project Agent, System Status, Input, User Settings, and Approvals surfaces, but specialist agent panels, tool-runtime panels, and workflow-specific panels must be created only after the PA has decided they are needed and has started those runtimes. The default layout must not assume a software-team workflow or pre-create Software Developer, QA, Security, or tool-specific panels before those runtimes exist.
+This is intentionally minimal. The default workspace may include the Session History, Project Agent, System Status, Input, User Settings, and Approvals surfaces, but specialist agent panels, tool-runtime panels, and workflow-specific panels must be created only after the PA has decided they are needed and has started those runtimes. The default layout must not assume a software-team workflow or pre-create Software Developer, QA, Security, or tool-specific panels before those runtimes exist.
+
+Session History should appear in the upper-left region beside the Project Agent workspace by default, using roughly half of the upper workspace width/height. It should auto-refresh often enough that the first user message causes the new session to appear without requiring a manual browser reload, and it must offer a visible `New Session` action that starts a fresh active PA session immediately.
 
 The workspace layout manager should be implemented with **Dockview** so panels can be docked, tab-stacked, reordered, resized, floated, and restored from saved layout state. Desktop-style menus and context menus should be implemented with **Radix UI** primitives rather than being re-created from scratch.
 
@@ -2369,7 +2683,7 @@ Phase ownership is split intentionally:
 
 **Implementation task anchors:**
 - Workspace-shell migration requirements derive the implementation task for replacing the legacy layout shell with a React + Dockview workspace shell.
-- Default layout requirements derive the implementation task for the Project Agent/System Status stack, lower Input/User Settings stack, and non-stacked Approvals placement.
+- Default layout requirements derive the implementation task for the Session History placement, the Project Agent/System Status stack, lower Input/User Settings stack, and non-stacked Approvals placement.
 - Minimized-panel tray requirements derive the implementation task for bottom-strip minimize/restore behaviour layered on top of Dockview state.
 - Radix UI menu requirements derive the implementation task for desktop-style menu bar and popup/context menu primitives in the Web UI.
 - Snap-grid refinement requirements derive the implementation task for tidy dashboard-like movement and resizing behaviour at the workspace-mechanics level.
@@ -2477,10 +2791,38 @@ A dedicated settings panel or window must allow the user to inspect and update u
 
 **Tool Panel**
 
-One panel per MCP tool. Shows all commands sent to the tool and the tool's responses.
+One panel per installed/enabled MCP tool. Shows all commands sent to the tool
+and the tool's responses.
 
 - Output format mirrors a shell session: command echoed, then output below.
 - Commands awaiting approval are shown with a `[PENDING APPROVAL]` indicator.
+- The Panels menu should expose tool panels under `Panels -> Tools`.
+- The initial `Panels -> Tools` list should include only MCP tools that are
+  currently installed and enabled.
+- `Panels -> Tools -> Manage` opens the management surface for installing,
+  reviewing, enabling, disabling, updating, rolling back, and removing
+  user-manageable tools.
+
+**Manage Tools Panel**
+
+The Manage Tools panel is the user-facing control surface for MCP tool
+inventory.
+
+- It should list built-in tools, installed tools, disabled tools, and any
+  explicitly known available tools without pretending that FAITH has a complete
+  public marketplace when it does not.
+- Every tool row should show: tool name, source badge (`Built-in`, `GitHub`,
+  `ZIP`), trust/status badges where applicable (`Required`, `Verified Vendor`,
+  `Unverified`), install state, overall health, and the full path to the tool's
+  main folder.
+- Built-in required tools must not be uninstallable or disableable. This must
+  be enforced in both the UI and backend.
+- Installed third-party tools should expose quick actions such as `Open`,
+  `Configure`, `Update`, `Enable/Disable`, `Rollback`, and `Remove` when
+  allowed.
+- Detailed tool views should show source URL or origin, inferred runtime and
+  entrypoint, version history, risk review summary, function-level permissions,
+  and function health/failure history.
 
 **Input Panel**
 
@@ -2490,6 +2832,10 @@ The Input panel is the primary text-entry surface for the Project Agent conversa
 - Pressing `Alt+Enter` must insert a newline into the current draft rather than sending it.
 - The UI must show compact helper text beneath the text box and above the action buttons describing the available keyboard shortcuts.
 - The helper text should remain visible but visually secondary so it informs without dominating the panel layout.
+- When hard compaction is underway, the Input panel must block further user
+  inference submission until compaction completes and must show a visible
+  `Compaction underway` state with a live/animated buffering indicator so the
+  user can see the system has not hung.
 - Completed commands show exit status (success / failure / timeout).
 
 **Input Panel**
@@ -2700,6 +3046,7 @@ All project config lives in `.faith/` within the project directory. These files 
 | `.faith/tools/{tool}.yaml` | Additional tool configs (Confluence, external MCP servers, etc.) | User only |
 | `.faith/agents/{id}/config.yaml` | Agent definition — model, tools, trust, file watches, listen tags | PA (generates), User (may edit) |
 | `.faith/agents/{id}/prompt.md` | Agent system prompt — role definition, behavioural instructions | PA (generates), User (may edit) |
+| `AGENTS.md` (project root) | Project-controlled PA instruction source, with optional markdown includes | User, PA (via UI/editor surface) |
 
 The PA is the primary author of agent `config.yaml` and `prompt.md` files. It generates these during project setup and updates them when the team evolves. The user may edit any file directly; the PA hot-reloads changes.
 
@@ -2740,6 +3087,7 @@ The PA watches all YAML files in `.faith/` and `config/` using SHA256 polling. E
 | `.faith/tools/*.yaml` | Diff against running state per tool: register new mounts/connections with existing runtimes; start or reconfigure project-scoped tool containers when needed; install/start/stop external MCP registrations inside `mcp-runtime`; update permission rules; toggle internet access on Python tool |
 | `.faith/agents/*/config.yaml` | Diff against running state: start containers for new agents; stop containers for removed agents; update model/tool/watch assignments for existing agents in place |
 | `.faith/agents/*/prompt.md` | PA detects the change, publishes `system:config_changed`; the updated prompt is automatically loaded on the agent's next LLM call (prompts are read fresh per call). PA surfaces a notification in the Web UI agent panel: *"[Agent name] system prompt updated — will take effect on next message."* |
+| `AGENTS.md` and referenced included markdown files | Re-resolve the PA instruction include graph, recompute the compiled effective PA instruction block, update the cached hash/snapshot, and apply the change automatically on the next PA turn. Missing or cyclic references surface warnings in the UI/debug view rather than halting the PA. |
 
 #### 7.3.2 Framework-Level Config (`config/`)
 
@@ -3032,6 +3380,24 @@ For paid models, `estimated_cost` is calculated by the Pricing MCP Tool (Section
 - Running estimated cost (paid models only)
 - Model currently assigned to each agent
 
+The token and context diagnostics surface must also distinguish:
+
+- **context/input prompt tokens**
+- **inference/output tokens**
+- **total tokens**
+
+These values should be visible for both the **last message** and the **current
+session total**, and should show model context-window usage percentage whenever
+FAITH has a reliable context-window value for the selected model.
+
+When FAITH does not have a reliable context-window limit for the active model,
+it must show the limit as `unknown` rather than guessing.
+
+For OpenRouter-backed paid models, FAITH should automatically take advantage of
+provider/model prompt-caching behaviour when supported and expose cache-hit
+information in the token diagnostics and logs so users can see when repeated
+stable context avoided extra token cost.
+
 **Proactive cost warning:** when session estimated cost crosses a configurable threshold (default: $1.00 in `system.yaml`), the PA surfaces a warning in the Web UI and suggests which agent is driving the most cost, with the option to switch it to a cheaper model.
 
 ---
@@ -3059,8 +3425,9 @@ The following log views are available in the Web UI:
 |---|---|---|
 | **Audit trail** | `audit.log` | Filter by agent, tool, action, date range; search by command |
 | **Event timeline** | `events.log` | Chronological event stream; filter by event type or agent |
-| **Session history** | `.faith/sessions/` | Browse sessions and tasks; open channel logs as read-only panels |
-| **Token usage** | `tokens.log` | Per-agent token chart; cumulative cost by model; session comparisons |
+| **Session history** | `.faith/sessions/` | Browse sessions and tasks; open channel logs as read-only panels; start a fresh PA session; auto-refresh when new sessions appear |
+| **Token usage** | `tokens.log` | Per-agent token chart; cumulative cost by model; session comparisons; context vs inference token split for last turn and session; context-window diagnostics where known |
+| **Effective context** | persisted redacted PA context snapshots | Inspect the exact redacted compiled PA context sent for a turn, the resolved `AGENTS.md` include graph, per-file token estimates, and the model/context metadata used |
 | **Approval history** | `audit.log` (filtered) | All approve/deny decisions with full context |
 
 ---
@@ -3199,6 +3566,11 @@ When a privacy profile is selected:
 - The user can accept the recommendation or choose differently.
 - This sets `default_agent_model` in `.faith/system.yaml`. No agents exist yet — the PA creates them per-project (see Step 5).
 - Per-agent model overrides are available after agents are created, via each agent's `config.yaml` or by asking the PA.
+- After setup, FAITH must provide a model-management UI where the user can:
+  - choose the PA model directly
+  - view known Ollama and OpenRouter model metadata including context-window information
+  - set manual per-agent model overrides
+  - override a discovered/effective context-window value when local runtime reality differs from provider metadata
 
 #### 9.3.5 Step 5 — First Project Setup
 
