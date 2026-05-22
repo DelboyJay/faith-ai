@@ -3393,6 +3393,14 @@ def _get_project_agent_session_manager(app: FastAPI) -> SessionManager:
     if session_manager is None:
         session_manager = SessionManager(project_root=_project_agent_session_root())
         app.state.project_agent_session_manager = session_manager
+    chat_runtime = getattr(app.state, "project_agent_chat_runtime", None)
+    if (
+        chat_runtime is not None
+        and getattr(chat_runtime, "session_manager", None) is not session_manager
+    ):
+        # Keep API endpoints and the live chat runtime pointed at the same
+        # session store when tests or host-side callers replace the manager.
+        chat_runtime.session_manager = session_manager
     return session_manager
 
 
@@ -3673,11 +3681,11 @@ async def api_start_project_agent_session() -> SessionStartPayload:
     :returns: Metadata for the newly started Project Agent session.
     """
 
+    session_manager = _get_project_agent_session_manager(app)
     chat_runtime = getattr(app.state, "project_agent_chat_runtime", None)
     if chat_runtime is not None:
         return SessionStartPayload.model_validate(await chat_runtime.start_new_session())
 
-    session_manager = _get_project_agent_session_manager(app)
     previous_session_id = session_manager.session_id
     if session_manager.current_session is not None:
         await session_manager.end_session()

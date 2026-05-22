@@ -29,6 +29,10 @@
 - HARD RULE: If an existing test must be changed because it conflicts with the current task, inform the user before changing it and obtain approval first.
 - HARD RULE: Treat frontend code as high risk for regressions. Do not change existing frontend code unless the current task genuinely requires it.
 - HARD RULE: If a required frontend change may alter the existing UI or UX look and feel, inform the user and seek approval first unless no other implementation path exists.
+- HARD RULE: Never run Git write operations that can contend for the index in parallel. Commands such as `git add`, `git commit`, `git merge`, `git rebase`, `git cherry-pick`, and similar index-writing operations must always be run sequentially.
+- HARD RULE: If a `.git/index.lock` issue appears, first assume it may be caused by concurrent or interrupted Git activity started during the current task. Check whether a live Git process is still running before taking action.
+- HARD RULE: If no Git process is running and `.git/index.lock` is confirmed to be stale, remove the stale lock and then retry the Git command sequentially.
+- HARD RULE: When reporting a failure, conflict, or regression, always explain whether the requirement, the test, or the implementation is correct, which side is wrong, and why. When possible, also give a focused recommendation for how to fix it so the user can make an informed decision.
 
 ## Hard Execution Rules
 
