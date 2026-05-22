@@ -15,12 +15,15 @@ import * as ContextMenu from "@radix-ui/react-context-menu";
 import { DockviewReact } from "dockview";
 import * as Menubar from "@radix-ui/react-menubar";
 import workspaceLayoutSnap from "./workspace-layout-snap.js";
+import "../js/panels/storage-panel.js";
 
 import "./faith-ui.css";
 
 const { normalizeLayoutForPersistence } = workspaceLayoutSnap;
 
 const LAYOUT_STORAGE_KEY = "faith_dockview_layout_v2";
+const SESSION_CHANGE_EVENT = "faith:workspace-session-change";
+const SESSION_STATE_STORAGE_KEY = "faith.workspace-session-state";
 const LEGACY_LAYOUT_STORAGE_KEYS = Object.freeze([
   "faith_dockview_layout_v1",
   "faith_layout_v1",
@@ -39,13 +42,64 @@ const COMPONENT_TYPES = Object.freeze({
   AUDIT_TRAIL: "audit-trail-panel",
   EVENT_TIMELINE: "event-timeline-panel",
   SESSION_HISTORY: "session-history-panel",
+  STORAGE: "storage-panel",
   TOKEN_USAGE: "token-usage-panel",
   APPROVAL_HISTORY: "approval-history-panel",
   EFFECTIVE_CONTEXT: "effective-context-panel",
+  TRASH: "trash-panel",
   PA_SYSTEM_PROMPT: "pa-system-prompt-panel",
   USER_SETTINGS: "user-settings-panel",
   MODEL_SETTINGS: "model-settings-panel",
 });
+
+/**
+ * Description:
+ *   Return the shared browser session state used by the session selector and session-bound panels.
+ *
+ * Requirements:
+ *   - Keep the current session selection and per-session drafts available across mounted panel bridges.
+ *
+ * @returns {object} Shared session state object.
+ */
+function getWorkspaceSessionState() {
+  if (!window.faithWorkspaceSessionState) {
+    let parsedState = {};
+    try {
+      const raw = window.localStorage.getItem(SESSION_STATE_STORAGE_KEY);
+      parsedState = raw ? JSON.parse(raw) : {};
+    } catch (error) {
+      parsedState = {};
+    }
+    window.faithWorkspaceSessionState = {
+      selectedSessionId: String(parsedState.selectedSessionId || ""),
+      selectedSessionName: String(parsedState.selectedSessionName || ""),
+      selectedSessionArchived: Boolean(parsedState.selectedSessionArchived),
+      selectedSessionStatus: String(parsedState.selectedSessionStatus || ""),
+      sessionDrafts: parsedState.sessionDrafts && typeof parsedState.sessionDrafts === "object"
+        ? parsedState.sessionDrafts
+        : {},
+    };
+  }
+  return window.faithWorkspaceSessionState;
+}
+
+/**
+ * Description:
+ *   Persist the shared browser session state used by the session selector and session-bound panels.
+ *
+ * Requirements:
+ *   - Ignore storage failures so the workspace stays usable in restricted browsers.
+ *
+ * @param {object} state Shared session state object.
+ * @returns {void}
+ */
+function persistWorkspaceSessionState(state) {
+  try {
+    window.localStorage.setItem(SESSION_STATE_STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    return;
+  }
+}
 
 const SHELL_PANEL_OPTIONS = Object.freeze([
   {
@@ -58,13 +112,6 @@ const SHELL_PANEL_OPTIONS = Object.freeze([
       displayName: "Project Agent",
       model: "ollama/llama3:8b",
     },
-  },
-  {
-    label: "System Status",
-    id: "system-status",
-    title: "System Status",
-    componentType: COMPONENT_TYPES.STATUS,
-    componentState: {},
   },
   {
     label: "Input",
@@ -106,6 +153,20 @@ const SHELL_PANEL_OPTIONS = Object.freeze([
     id: "session-history",
     title: "Session History",
     componentType: COMPONENT_TYPES.SESSION_HISTORY,
+    componentState: {},
+  },
+  {
+    label: "Storage Inventory",
+    id: "storage",
+    title: "Storage Inventory",
+    componentType: COMPONENT_TYPES.STORAGE,
+    componentState: {},
+  },
+  {
+    label: "Trash",
+    id: "trash",
+    title: "Trash",
+    componentType: COMPONENT_TYPES.TRASH,
     componentState: {},
   },
   {
@@ -287,12 +348,6 @@ function getDefaultWorkspaceDescriptor() {
             model: "ollama/llama3:8b",
           },
         },
-        {
-          id: "system-status",
-          componentType: COMPONENT_TYPES.STATUS,
-          title: "System Status",
-          componentState: {},
-        },
       ],
     },
     lowerGroup: {
@@ -412,8 +467,10 @@ function getDefaultRestorePlacement(panelDescriptor) {
   switch (panelDescriptor.id) {
     case "session-history":
       return { referencePanelId: "agent:project-agent", direction: "left" };
-    case "system-status":
-      return { referencePanelId: "agent:project-agent", direction: "within" };
+    case "storage":
+      return { referencePanelId: "session-history", direction: "within" };
+    case "trash":
+      return { referencePanelId: "storage", direction: "within" };
     case "input":
       return { referencePanelId: "agent:project-agent", direction: "below" };
     case "user-settings":
@@ -517,7 +574,7 @@ function ensurePanel(api, panelDescriptor, position, inactive = false) {
  *
  * Requirements:
  *   - Keep Session History beside the Project Agent workspace in the upper region.
- *   - Keep Project Agent and System Status in one upper-right tab group.
+ *   - Keep Project Agent in one upper-right tab group without the redundant status panel.
  *   - Keep Input and User Settings in one lower-left tab group.
  *   - Keep Approvals in the lower-right split beneath the upper group.
  *
@@ -720,9 +777,10 @@ function restoreSavedWorkspaceState(api) {
  * @param {string} namespace Global namespace that exposes `mountPanel`.
  * @param {string} panelId Stable panel ID used for lifecycle coordination.
  * @param {object} params Panel parameter object passed through Dockview.
+ * @param {string} sessionId Currently selected session identifier.
  * @returns {React.ReactElement} Mounted panel host element.
  */
-function LegacyPanelBridge({ namespace, panelId, params }) {
+function LegacyPanelBridge({ namespace, panelId, params, sessionId }) {
   const hostRef = React.useRef(null);
 
   React.useEffect(
@@ -731,7 +789,12 @@ function LegacyPanelBridge({ namespace, panelId, params }) {
       if (!runtime || typeof runtime.mountPanel !== "function" || !hostRef.current) {
         return undefined;
       }
-      const cleanup = runtime.mountPanel(hostRef.current, params || {});
+      hostRef.current.dataset.faithPanelId = panelId;
+      const nextParams = Object.assign({}, params || {});
+      if (sessionId) {
+        nextParams.sessionId = sessionId;
+      }
+      const cleanup = runtime.mountPanel(hostRef.current, nextParams);
       registerMountedPanelHandle(panelId, cleanup);
       if (typeof cleanup === "function") {
         return function cleanupLegacyPanelFunction() {
@@ -748,7 +811,7 @@ function LegacyPanelBridge({ namespace, panelId, params }) {
       unregisterMountedPanelHandle(panelId, cleanup);
       return undefined;
     },
-    [namespace, panelId, JSON.stringify(params || {})],
+    [namespace, panelId, sessionId, JSON.stringify(params || {})],
   );
 
   return <div className="faith-react-panel-host" ref={hostRef} />;
@@ -1020,14 +1083,60 @@ function MinimizedPanelTray(props) {
 function FaithWorkspaceApp() {
   const [dockviewApi, setDockviewApi] = React.useState(null);
   const [minimizedPanels, setMinimizedPanels] = React.useState([]);
+  const [selectedSessionId, setSelectedSessionId] = React.useState(function getInitialSelectedSessionId() {
+    return getWorkspaceSessionState().selectedSessionId || "";
+  });
   const hasInitialisedLayoutRef = React.useRef(false);
   const minimizedPanelsRef = React.useRef([]);
+  const sessionStateRef = React.useRef(getWorkspaceSessionState());
 
   React.useEffect(
     function syncMinimizedPanelsRef() {
       minimizedPanelsRef.current = minimizedPanels;
     },
     [minimizedPanels],
+  );
+
+  React.useEffect(
+    function syncSessionStateRef() {
+      sessionStateRef.current = getWorkspaceSessionState();
+    },
+    [],
+  );
+
+  React.useEffect(
+    function persistSessionState() {
+      const sessionState = getWorkspaceSessionState();
+      sessionState.selectedSessionId = selectedSessionId;
+      persistWorkspaceSessionState(sessionState);
+    },
+    [selectedSessionId],
+  );
+
+  React.useEffect(
+    function subscribeToSessionChanges() {
+      function handleSessionChange(event) {
+        const payload = event && event.detail ? event.detail : {};
+        const nextSessionId = String(payload.sessionId || "");
+        sessionStateRef.current = getWorkspaceSessionState();
+        sessionStateRef.current.selectedSessionId = nextSessionId;
+        sessionStateRef.current.selectedSessionName = String(payload.sessionName || "");
+        sessionStateRef.current.selectedSessionArchived = Boolean(payload.archived);
+        sessionStateRef.current.selectedSessionStatus = payload.archived ? "archived" : "active";
+        persistWorkspaceSessionState(sessionStateRef.current);
+        setSelectedSessionId(nextSessionId);
+      }
+
+      if (typeof window.addEventListener === "function") {
+        window.addEventListener(SESSION_CHANGE_EVENT, handleSessionChange);
+      }
+      return function unsubscribeSessionChanges() {
+        if (typeof window.removeEventListener === "function") {
+          window.removeEventListener(SESSION_CHANGE_EVENT, handleSessionChange);
+        }
+      };
+    },
+    [],
   );
 
   /**
@@ -1298,6 +1407,7 @@ function FaithWorkspaceApp() {
                   namespace="faithAgentPanel"
                   panelId={panelId}
                   params={props.params}
+                  sessionId={selectedSessionId}
                 />
               </PanelActionFrame>
             );
@@ -1320,7 +1430,7 @@ function FaithWorkspaceApp() {
                   );
                 }}
               >
-                <LegacyPanelBridge namespace="faithInputPanel" panelId="input" params={{}} />
+                <LegacyPanelBridge namespace="faithInputPanel" panelId="input" params={{}} sessionId={selectedSessionId} />
               </PanelActionFrame>
             );
           },
@@ -1350,12 +1460,12 @@ function FaithWorkspaceApp() {
             return (
               <PanelActionFrame
                 onClose={function onClose() {
-                  handleClosePanel("system-status", props.api);
+                  handleClosePanel("runtime-status", props.api);
                 }}
                 onMinimize={function onMinimize() {
                   handleMinimizePanel(
                     normalizePanelDescriptor({
-                      id: "system-status",
+                      id: "runtime-status",
                       title: props.api.title,
                       componentType: COMPONENT_TYPES.STATUS,
                       componentState: {},
@@ -1366,7 +1476,7 @@ function FaithWorkspaceApp() {
               >
                 <LegacyPanelBridge
                   namespace="faithDockerRuntimePanel"
-                  panelId="system-status"
+                  panelId="runtime-status"
                   params={{}}
                 />
               </PanelActionFrame>
@@ -1468,14 +1578,58 @@ function FaithWorkspaceApp() {
                   );
                 }}
               >
-              <LegacyPanelBridge
-                namespace="faithSessionHistoryPanel"
-                panelId="session-history"
-                params={{}}
-              />
-            </PanelActionFrame>
-          );
-        },
+                <LegacyPanelBridge
+                  namespace="faithSessionHistoryPanel"
+                  panelId="session-history"
+                  params={{}}
+                />
+              </PanelActionFrame>
+            );
+          },
+          [COMPONENT_TYPES.STORAGE]: function StoragePanelComponent(props) {
+            return (
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("storage", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "storage",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.STORAGE,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge namespace="faithStoragePanel" panelId="storage" params={{}} />
+              </PanelActionFrame>
+            );
+          },
+          [COMPONENT_TYPES.TRASH]: function TrashPanelComponent(props) {
+            return (
+              <PanelActionFrame
+                onClose={function onClose() {
+                  handleClosePanel("trash", props.api);
+                }}
+                onMinimize={function onMinimize() {
+                  handleMinimizePanel(
+                    normalizePanelDescriptor({
+                      id: "trash",
+                      title: props.api.title,
+                      componentType: COMPONENT_TYPES.TRASH,
+                      componentState: {},
+                    }),
+                    props.api,
+                  );
+                }}
+              >
+                <LegacyPanelBridge namespace="faithTrashPanel" panelId="trash" params={{}} />
+              </PanelActionFrame>
+            );
+          },
           [COMPONENT_TYPES.EFFECTIVE_CONTEXT]: function EffectiveContextPanelComponent(props) {
             return (
               <PanelActionFrame
@@ -1498,6 +1652,7 @@ function FaithWorkspaceApp() {
                   namespace="faithEffectiveContextPanel"
                   panelId="effective-context"
                   params={{}}
+                  sessionId={selectedSessionId}
                 />
               </PanelActionFrame>
             );

@@ -12,6 +12,7 @@ Requirements:
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import time
 from datetime import datetime, timezone
@@ -2754,3 +2755,64 @@ def test_pa_chat_runtime_promotes_explicit_durable_rule_into_agents_md(tmp_path:
     assert audit_entries[0].action == "append_rule"
     assert active_task is not None
     assert "rule_promotion" in (active_task.path / "pa-user.log").read_text(encoding="utf-8")
+
+
+def test_pa_chat_runtime_persists_uploaded_file_in_session_storage(tmp_path: Path) -> None:
+    """Description:
+    Verify browser-upload payloads enter the host-backed storage registry during normal PA chat handling.
+
+    Requirements:
+        - This test is needed to prove Input-panel drag-and-drop files become available through the scoped storage lifecycle instead of being treated as transcript text only.
+        - Verify session-scoped uploads bind to the active session and one-time uploads are removed once the inference round completes.
+
+    :param tmp_path: Temporary project root used for prompt, session, and storage persistence.
+    """
+
+    fake_redis = FakeRedis()
+    storage_registry = pa_app_module.FileStorageRegistry(project_root=tmp_path)
+    runtime = pa_app_module.ProjectAgentChatRuntime(
+        redis_client=fake_redis,
+        llm_client=FakeLLMClient("I reviewed the uploaded file."),
+        model_name="ollama/llama3:8b",
+        prompt_store=pa_app_module.ProjectAgentPromptStore(project_root=tmp_path),
+        session_manager=pa_app_module.SessionManager(project_root=tmp_path),
+        storage_registry=storage_registry,
+    )
+
+    asyncio.run(
+        runtime._handle_payload(
+            {
+                "type": "user_upload",
+                "message_id": "msg-upload-001",
+                "filename": "notes.txt",
+                "content_type": "text/plain",
+                "content_base64": base64.b64encode(b"session scoped upload\n").decode("ascii"),
+                "message": "Please review this file.",
+                "scope": "session",
+            }
+        )
+    )
+
+    session_records = storage_registry.list_files()
+    assert len(session_records) == 1
+    assert session_records[0]["filename"] == "notes.txt"
+    assert session_records[0]["scope"] == "session"
+    assert session_records[0]["session_bindings"] == [runtime.session_manager.session_id]
+
+    asyncio.run(
+        runtime._handle_payload(
+            {
+                "type": "user_upload",
+                "message_id": "msg-upload-002",
+                "filename": "secret.txt",
+                "content_type": "text/plain",
+                "content_base64": base64.b64encode(b"remove me after one turn\n").decode("ascii"),
+                "message": "Use this once only.",
+                "scope": "one-time",
+            }
+        )
+    )
+
+    remaining_files = storage_registry.list_files()
+    assert len(remaining_files) == 1
+    assert all(record["filename"] != "secret.txt" for record in remaining_files)

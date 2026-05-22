@@ -1,7 +1,7 @@
 # FAITH Epic — Dependency Graph & Implementation Schedule
 
 **Generated from:** `epic.yaml`
-**Date:** 2026-05-19
+**Date:** 2026-05-21
 
 ---
 
@@ -51,7 +51,7 @@
 | FAITH-041 | Input Panel & File Upload | 8 (Web UI) | DONE | FAITH-074, FAITH-078 | S | Haiku / GPT-5.4-mini |
 | FAITH-042 | Shared Web UI Theme System | 8 (Web UI) | DONE | FAITH-074, FAITH-077 | S | Haiku / GPT-5.4-mini |
 | FAITH-043 | Project Switcher UI | 8 (Web UI) | DONE | FAITH-015, FAITH-074 | S | Haiku / GPT-5.4-mini |
-| FAITH-044 | Web UI Log Views | 8 (Web UI) | IN PROGRESS | FAITH-021, FAITH-074 | M | Opus / GPT-5.4 high reasoning |
+| FAITH-044 | Web UI Log Views | 8 (Web UI) | DONE | FAITH-021, FAITH-074 | M | Opus / GPT-5.4 high reasoning |
 | FAITH-045 | Event Log Writer | 9 (Logging) | DONE | FAITH-009 | S | Haiku / GPT-5.4-mini |
 | FAITH-046 | Session & Task Log Writer | 9 (Logging) | DONE | FAITH-015 | M | Sonnet / GPT-5.4 |
 | FAITH-047 | Token & Cost Log | 9 (Logging) | DONE | FAITH-013, FAITH-030 | S | Haiku / GPT-5.4-mini |
@@ -59,7 +59,7 @@
 | FAITH-049 | First-Run Wizard: Multi-Step UI | 10 (First Run) | IN PROGRESS | FAITH-036, FAITH-003, FAITH-014, FAITH-057 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-050 | Privacy Profile Enforcement & Provider Knowledge Base | 10 (First Run) | TODO | FAITH-049, FAITH-057, FAITH-003 | M | Sonnet / GPT-5.4 |
 | FAITH-051 | Ollama Model Download Integration | 10 (First Run) | DONE | FAITH-049, FAITH-057 | S | Sonnet / GPT-5.4 |
-| FAITH-052 | Cloud Deployment Architecture | 12 (Cloud) | TODO | FAITH-001, FAITH-002, FAITH-003, FAITH-004, FAITH-005, FAITH-006, FAITH-007, FAITH-008, FAITH-009, FAITH-010, FAITH-011, FAITH-012, FAITH-013, FAITH-014, FAITH-015, FAITH-016, FAITH-017, FAITH-018, FAITH-019, FAITH-020, FAITH-021, FAITH-022, FAITH-023, FAITH-024, FAITH-025, FAITH-026, FAITH-027, FAITH-028, FAITH-029, FAITH-030, FAITH-031, FAITH-032, FAITH-033, FAITH-034, FAITH-035, FAITH-036, FAITH-038, FAITH-039, FAITH-040, FAITH-041, FAITH-042, FAITH-043, FAITH-044, FAITH-045, FAITH-046, FAITH-047, FAITH-048, FAITH-049, FAITH-050, FAITH-051, FAITH-053, FAITH-054, FAITH-055, FAITH-056, FAITH-057, FAITH-058, FAITH-059, FAITH-061, FAITH-062, FAITH-063, FAITH-064, FAITH-065, FAITH-066, FAITH-067, FAITH-068, FAITH-069, FAITH-070, FAITH-071, FAITH-072, FAITH-073, FAITH-074, FAITH-075, FAITH-076, FAITH-077, FAITH-078, FAITH-079, FAITH-080, FAITH-081, FAITH-082, FAITH-083, FAITH-084, FAITH-085, FAITH-086, FAITH-087, FAITH-088, FAITH-089, FAITH-090, FAITH-091, FAITH-092, FAITH-093, FAITH-094, FAITH-095, FAITH-096, FAITH-097, FAITH-098, FAITH-099, FAITH-100, FAITH-101, FAITH-102, FAITH-103, FAITH-104, FAITH-105, FAITH-106, FAITH-107, FAITH-108, FAITH-109, FAITH-110, FAITH-111, FAITH-112, FAITH-113, FAITH-114, FAITH-115, FAITH-116, FAITH-117, FAITH-118, FAITH-119, FAITH-120, FAITH-121, FAITH-122, FAITH-123, FAITH-124 | XL | Opus / GPT-5.4 high reasoning |
+| FAITH-052 | Cloud Deployment Architecture | 12 (Cloud) | TODO | FAITH-001, FAITH-002, FAITH-003, FAITH-004, FAITH-005, FAITH-006, FAITH-007, FAITH-008, FAITH-009, FAITH-010, FAITH-011, FAITH-012, FAITH-013, FAITH-014, FAITH-015, FAITH-016, FAITH-017, FAITH-018, FAITH-019, FAITH-020, FAITH-021, FAITH-022, FAITH-023, FAITH-024, FAITH-025, FAITH-026, FAITH-027, FAITH-028, FAITH-029, FAITH-030, FAITH-031, FAITH-032, FAITH-033, FAITH-034, FAITH-035, FAITH-036, FAITH-038, FAITH-039, FAITH-040, FAITH-041, FAITH-042, FAITH-043, FAITH-044, FAITH-045, FAITH-046, FAITH-047, FAITH-048, FAITH-049, FAITH-050, FAITH-051, FAITH-053, FAITH-054, FAITH-055, FAITH-056, FAITH-057, FAITH-058, FAITH-059, FAITH-062, FAITH-063, FAITH-064, FAITH-065, FAITH-066, FAITH-067, FAITH-068, FAITH-069, FAITH-070, FAITH-071, FAITH-072, FAITH-073, FAITH-074, FAITH-075, FAITH-076, FAITH-077, FAITH-078, FAITH-079, FAITH-080, FAITH-081, FAITH-082, FAITH-083, FAITH-084, FAITH-085, FAITH-086, FAITH-087, FAITH-088, FAITH-089, FAITH-090, FAITH-091, FAITH-092, FAITH-093, FAITH-094, FAITH-095, FAITH-096, FAITH-097, FAITH-098, FAITH-099, FAITH-100, FAITH-101, FAITH-102, FAITH-103, FAITH-104, FAITH-105, FAITH-106, FAITH-107, FAITH-108, FAITH-109, FAITH-110, FAITH-111, FAITH-112, FAITH-113, FAITH-114, FAITH-115, FAITH-116, FAITH-117, FAITH-118, FAITH-119, FAITH-120, FAITH-121, FAITH-122, FAITH-123, FAITH-124, FAITH-125 | XL | Opus / GPT-5.4 high reasoning |
 | FAITH-053 | First-Run Wizard: Detailed Specification | 10 (First Run) | TODO | FAITH-049, FAITH-057 | M | Sonnet / GPT-5.4 |
 | FAITH-054 | `faith run` Command & Task API | 11 (CLI & Skills) | TODO | FAITH-005, FAITH-036, FAITH-015 | M | Sonnet / GPT-5.4 |
 | FAITH-055 | Skill Definitions & Unattended Execution | 11 (CLI & Skills) | TODO | FAITH-054, FAITH-019 | M | Opus / GPT-5.4 high reasoning |
@@ -67,8 +67,7 @@
 | FAITH-057 | Disposable Sandbox Lifecycle & Scheduling | 4 (PA Core) | DONE | FAITH-014 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-058 | Docker Runtime & Image Panel | 8 (Web UI) | DONE | FAITH-014, FAITH-036, FAITH-074, FAITH-078 | M | Sonnet / GPT-5.4 |
 | FAITH-059 | Service Route Discovery & `faith show-urls` | 11 (CLI & Skills) | DONE | FAITH-005, FAITH-036 | S | Sonnet / GPT-5.4 |
-| FAITH-061 | Runtime Status Cards | 8 (Web UI) | IN PROGRESS | FAITH-040, FAITH-058, FAITH-074, FAITH-079 | M | Sonnet / GPT-5.4 |
-| FAITH-062 | Panel Lifecycle & Deduping | 8 (Web UI) | DONE | FAITH-074, FAITH-075, FAITH-061 | S | Haiku / GPT-5.4-mini |
+| FAITH-062 | Panel Lifecycle & Deduping | 8 (Web UI) | DONE | FAITH-074, FAITH-075 | S | Haiku / GPT-5.4-mini |
 | FAITH-063 | Snap-Grid Panel Layout Refinement | 13 (Web UI Workspace Migration) | DONE | FAITH-062, FAITH-074, FAITH-075 | M | Sonnet / GPT-5.4 |
 | FAITH-064 | Panel Title-Bar Actions | 8 (Web UI) | DONE | FAITH-074, FAITH-062 | S | Haiku / GPT-5.4-mini |
 | FAITH-065 | Docker Daemon Not Running Guidance | 10 (First Run) | TODO | FAITH-005 | S | Haiku / GPT-5.4-mini |
@@ -76,7 +75,7 @@
 | FAITH-067 | Ollama Management MCP Server | 10 (First Run) | DONE | FAITH-004, FAITH-013, FAITH-019, FAITH-051 | M | Sonnet / GPT-5.4 |
 | FAITH-068 | PA Chat MCP Tool-Calling Loop | 7 (CAG & External MCP) | DONE | FAITH-012, FAITH-016, FAITH-022, FAITH-036, FAITH-038, FAITH-081 | M | Sonnet / GPT-5.4 |
 | FAITH-069 | PA MCP Inventory Grounding | 7 (CAG & External MCP) | DONE | FAITH-068, FAITH-081 | S | Haiku / GPT-5.4-mini |
-| FAITH-070 | Theme-Aware Chat Transcript Bubbles | 8 (Web UI) | TODO | FAITH-038, FAITH-041, FAITH-064, FAITH-069 | M | Sonnet / GPT-5.4 |
+| FAITH-070 | Theme-Aware Chat Transcript Bubbles | 8 (Web UI) | DONE | FAITH-038, FAITH-041, FAITH-064, FAITH-069 | M | Sonnet / GPT-5.4 |
 | FAITH-071 | PA System Prompt Editor Panel | 8 (Web UI) | DONE | FAITH-036, FAITH-038, FAITH-074, FAITH-078 | M | Sonnet / GPT-5.4 |
 | FAITH-072 | PA Transcript Scroll Containment | 8 (Web UI) | DONE | FAITH-038, FAITH-070 | S | Haiku / GPT-5.4-mini |
 | FAITH-073 | Agent Runtime Date Time Prompt Injection | 8 (Web UI) | DONE | FAITH-010, FAITH-038, FAITH-071 | S | Haiku / GPT-5.4-mini |
@@ -86,7 +85,7 @@
 | FAITH-077 | Radix UI Menubar & Context Menu Integration | 13 (Web UI Workspace Migration) | DONE | FAITH-074 | M | Sonnet / GPT-5.4 |
 | FAITH-078 | Frontend Build Pipeline & Bundled Asset Integration | 13 (Web UI Workspace Migration) | DONE | FAITH-036 | M | Sonnet / GPT-5.4 |
 | FAITH-079 | Runtime Badge & Container Status Sync | 8 (Web UI) | DONE | FAITH-038, FAITH-040, FAITH-058, FAITH-074 | S | Sonnet / GPT-5.4 |
-| FAITH-080 | Speech-to-Text Dictation Input | 8 (Web UI) | TODO | FAITH-041, FAITH-074, FAITH-078 | M | Sonnet / GPT-5.4 |
+| FAITH-080 | Speech-to-Text Dictation Input | 8 (Web UI) | DONE | FAITH-041, FAITH-074, FAITH-078 | M | Sonnet / GPT-5.4 |
 | FAITH-081 | Canonical MCP Registry & Agent Tool Manifest Propagation | 7 (CAG & External MCP) | DONE | FAITH-012, FAITH-014, FAITH-035 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-082 | Project Agent Transcript Rehydration on Restart | 8 (Web UI) | DONE | FAITH-015, FAITH-038, FAITH-046, FAITH-074 | S | Sonnet / GPT-5.4 |
 | FAITH-083 | User Timezone Preference Resolution & Persistence | 10 (First Run) | IN PROGRESS | FAITH-003, FAITH-049, FAITH-073 | S | Sonnet / GPT-5.4 |
@@ -131,6 +130,7 @@
 | FAITH-122 | Storage Inventory, Trash, and Export Panels | 19 (Scoped File Storage & Deterministic Excerpt Retrieval) | TODO | FAITH-121, FAITH-084, FAITH-074 | L | Opus / GPT-5.4 high reasoning |
 | FAITH-123 | Session Naming, Scoped File Access, and Session Export Controls | 19 (Scoped File Storage & Deterministic Excerpt Retrieval) | TODO | FAITH-099, FAITH-121, FAITH-122 | M | Sonnet / GPT-5.4 |
 | FAITH-124 | Replay-Friendly MCP Tool Audit Artifacts | 19 (Scoped File Storage & Deterministic Excerpt Retrieval) | TODO | FAITH-021, FAITH-098, FAITH-120 | M | Sonnet / GPT-5.4 |
+| FAITH-125 | Session Selector, Session Details Panel, and Effective Context UX Cleanup | 8 (Web UI) | DONE | FAITH-044, FAITH-099, FAITH-103, FAITH-084 | M | Sonnet / GPT-5.4 |
 
 ---
 
@@ -200,17 +200,16 @@ flowchart TD
     FAITH-041["FAITH-041<br/>Input Panel & File Upload<br/>Phase 8 | DONE | S"]
     FAITH-042["FAITH-042<br/>Shared Web UI Theme System<br/>Phase 8 | DONE | S"]
     FAITH-043["FAITH-043<br/>Project Switcher UI<br/>Phase 8 | DONE | S"]
-    FAITH-044["FAITH-044<br/>Web UI Log Views<br/>Phase 8 | IN PROGRESS | M"]
+    FAITH-044["FAITH-044<br/>Web UI Log Views<br/>Phase 8 | DONE | M"]
     FAITH-058["FAITH-058<br/>Docker Runtime & Image Panel<br/>Phase 8 | DONE | M"]
-    FAITH-061["FAITH-061<br/>Runtime Status Cards<br/>Phase 8 | IN PROGRESS | M"]
     FAITH-062["FAITH-062<br/>Panel Lifecycle & Deduping<br/>Phase 8 | DONE | S"]
     FAITH-064["FAITH-064<br/>Panel Title-Bar Actions<br/>Phase 8 | DONE | S"]
-    FAITH-070["FAITH-070<br/>Theme-Aware Chat Transcript Bubbles<br/>Phase 8 | TODO | M"]
+    FAITH-070["FAITH-070<br/>Theme-Aware Chat Transcript Bubbles<br/>Phase 8 | DONE | M"]
     FAITH-071["FAITH-071<br/>PA System Prompt Editor Panel<br/>Phase 8 | DONE | M"]
     FAITH-072["FAITH-072<br/>PA Transcript Scroll Containment<br/>Phase 8 | DONE | S"]
     FAITH-073["FAITH-073<br/>Agent Runtime Date Time Prompt Injection<br/>Phase 8 | DONE | S"]
     FAITH-079["FAITH-079<br/>Runtime Badge & Container Status Sync<br/>Phase 8 | DONE | S"]
-    FAITH-080["FAITH-080<br/>Speech-to-Text Dictation Input<br/>Phase 8 | TODO | M"]
+    FAITH-080["FAITH-080<br/>Speech-to-Text Dictation Input<br/>Phase 8 | DONE | M"]
     FAITH-082["FAITH-082<br/>Project Agent Transcript Rehydration on Restart<br/>Phase 8 | DONE | S"]
     FAITH-084["FAITH-084<br/>User Settings Window & Profile Preferences<br/>Phase 8 | DONE | M"]
     FAITH-085["FAITH-085<br/>Input Panel Enter-to-Send & Newline Hint<br/>Phase 8 | DONE | S"]
@@ -220,6 +219,7 @@ flowchart TD
     FAITH-097["FAITH-097<br/>Project-Workspace Absolute Path Normalisation for Chat Tool Calls<br/>Phase 8 | DONE | S"]
     FAITH-098["FAITH-098<br/>PA Chat Tool Call Audit & Session Visibility<br/>Phase 8 | DONE | M"]
     FAITH-099["FAITH-099<br/>Session History Live Session Creation & Default Placement<br/>Phase 8 | DONE | M"]
+    FAITH-125["FAITH-125<br/>Session Selector, Session Details Panel, and Effective Context UX Cleanup<br/>Phase 8 | DONE | M"]
 
     %% ── Phase 9: Logging ──
     FAITH-045["FAITH-045<br/>Event Log Writer<br/>Phase 9 | DONE | S"]
@@ -446,7 +446,6 @@ flowchart TD
     FAITH-057 --> FAITH-052
     FAITH-058 --> FAITH-052
     FAITH-059 --> FAITH-052
-    FAITH-061 --> FAITH-052
     FAITH-062 --> FAITH-052
     FAITH-063 --> FAITH-052
     FAITH-064 --> FAITH-052
@@ -510,6 +509,7 @@ flowchart TD
     FAITH-122 --> FAITH-052
     FAITH-123 --> FAITH-052
     FAITH-124 --> FAITH-052
+    FAITH-125 --> FAITH-052
     FAITH-049 --> FAITH-053
     FAITH-057 --> FAITH-053
     FAITH-005 --> FAITH-054
@@ -526,13 +526,8 @@ flowchart TD
     FAITH-078 --> FAITH-058
     FAITH-005 --> FAITH-059
     FAITH-036 --> FAITH-059
-    FAITH-040 --> FAITH-061
-    FAITH-058 --> FAITH-061
-    FAITH-074 --> FAITH-061
-    FAITH-079 --> FAITH-061
     FAITH-074 --> FAITH-062
     FAITH-075 --> FAITH-062
-    FAITH-061 --> FAITH-062
     FAITH-062 --> FAITH-063
     FAITH-074 --> FAITH-063
     FAITH-075 --> FAITH-063
@@ -711,6 +706,10 @@ flowchart TD
     FAITH-021 --> FAITH-124
     FAITH-098 --> FAITH-124
     FAITH-120 --> FAITH-124
+    FAITH-044 --> FAITH-125
+    FAITH-099 --> FAITH-125
+    FAITH-103 --> FAITH-125
+    FAITH-084 --> FAITH-125
 
     %% ════════════════════════════════════
     %% PHASE COLOUR CODING
@@ -743,7 +742,7 @@ flowchart TD
     class FAITH-019,FAITH-020,FAITH-021 phase5
     class FAITH-022,FAITH-023,FAITH-024,FAITH-025,FAITH-026,FAITH-027,FAITH-028,FAITH-029,FAITH-030,FAITH-031,FAITH-032,FAITH-033 phase6
     class FAITH-034,FAITH-035,FAITH-066,FAITH-068,FAITH-069,FAITH-081 phase7
-    class FAITH-036,FAITH-038,FAITH-039,FAITH-040,FAITH-041,FAITH-042,FAITH-043,FAITH-044,FAITH-058,FAITH-061,FAITH-062,FAITH-064,FAITH-070,FAITH-071,FAITH-072,FAITH-073,FAITH-079,FAITH-080,FAITH-082,FAITH-084,FAITH-085,FAITH-086,FAITH-087,FAITH-096,FAITH-097,FAITH-098,FAITH-099 phase8
+    class FAITH-036,FAITH-038,FAITH-039,FAITH-040,FAITH-041,FAITH-042,FAITH-043,FAITH-044,FAITH-058,FAITH-062,FAITH-064,FAITH-070,FAITH-071,FAITH-072,FAITH-073,FAITH-079,FAITH-080,FAITH-082,FAITH-084,FAITH-085,FAITH-086,FAITH-087,FAITH-096,FAITH-097,FAITH-098,FAITH-099,FAITH-125 phase8
     class FAITH-045,FAITH-046,FAITH-047,FAITH-048 phase9
     class FAITH-049,FAITH-050,FAITH-051,FAITH-053,FAITH-065,FAITH-067,FAITH-083 phase10
     class FAITH-054,FAITH-055,FAITH-056,FAITH-059 phase11
@@ -841,7 +840,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-039 | Approval Panel Component | 8 (Web UI) | DONE | M |
 | FAITH-040 | System Status Panel & Health Summary | 8 (Web UI) | DONE | S |
 | FAITH-041 | Input Panel & File Upload | 8 (Web UI) | DONE | S |
-| FAITH-044 | Web UI Log Views | 8 (Web UI) | IN PROGRESS | M |
+| FAITH-044 | Web UI Log Views | 8 (Web UI) | DONE | M |
 | FAITH-049 | First-Run Wizard: Multi-Step UI | 10 (First Run) | IN PROGRESS | L |
 | FAITH-058 | Docker Runtime & Image Panel | 8 (Web UI) | DONE | M |
 | FAITH-076 | Minimized Panel Tray for Dockview | 13 (Web UI Workspace Migration) | DONE | M |
@@ -868,7 +867,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-054 | `faith run` Command & Task API | 11 (CLI & Skills) | TODO | M |
 | FAITH-071 | PA System Prompt Editor Panel | 8 (Web UI) | DONE | M |
 | FAITH-079 | Runtime Badge & Container Status Sync | 8 (Web UI) | DONE | S |
-| FAITH-080 | Speech-to-Text Dictation Input | 8 (Web UI) | TODO | M |
+| FAITH-080 | Speech-to-Text Dictation Input | 8 (Web UI) | DONE | M |
 | FAITH-085 | Input Panel Enter-to-Send & Newline Hint | 8 (Web UI) | DONE | S |
 | FAITH-088 | Runtime Specialist-Agent Materialisation & Lifecycle | 14 (Specialist-Agent Delegation from PA Chat) | TODO | L |
 
@@ -878,7 +877,6 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | FAITH-017 | Loop Detection | 4 (PA Core) | DONE | M |
 | FAITH-047 | Token & Cost Log | 9 (Logging) | DONE | S |
 | FAITH-055 | Skill Definitions & Unattended Execution | 11 (CLI & Skills) | TODO | M |
-| FAITH-061 | Runtime Status Cards | 8 (Web UI) | IN PROGRESS | M |
 | FAITH-066 | Project `cag/` Auto-Loading & Budget Guidance | 7 (CAG & External MCP) | DONE | M |
 | FAITH-067 | Ollama Management MCP Server | 10 (First Run) | DONE | M |
 | FAITH-068 | PA Chat MCP Tool-Calling Loop | 7 (CAG & External MCP) | DONE | M |
@@ -943,7 +941,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 ### Wave 15
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
-| FAITH-070 | Theme-Aware Chat Transcript Bubbles | 8 (Web UI) | TODO | M |
+| FAITH-070 | Theme-Aware Chat Transcript Bubbles | 8 (Web UI) | DONE | M |
 | FAITH-102 | Effective PA Context Compiler, Hash Cache, and Persistence | 16 (Project Instruction Context & Model Intelligence) | DONE | L |
 | FAITH-111 | Per-Function Tool Permissions, Health States, and Local Failure Classification | 17 (Managed MCP Tool Acquisition & Governance) | TODO | L |
 
@@ -959,6 +957,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | Task | Name | Phase | Status | Complexity |
 |------|------|-------|--------|------------|
 | FAITH-105 | Token Panel Context Diagnostics & Per-File Attribution | 16 (Project Instruction Context & Model Intelligence) | DONE | M |
+| FAITH-125 | Session Selector, Session Details Panel, and Effective Context UX Cleanup | 8 (Web UI) | DONE | M |
 
 ### Wave 18
 | Task | Name | Phase | Status | Complexity |
@@ -1001,7 +1000,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | **Wave 6** | FAITH-035, FAITH-057, FAITH-074 | Waves 1-5 | 3 |
 | **Wave 7** | FAITH-015, FAITH-022, FAITH-024, FAITH-026, FAITH-031, FAITH-038, FAITH-039, FAITH-040, FAITH-041, FAITH-044, FAITH-049, FAITH-058, FAITH-076, FAITH-077, FAITH-081 | Waves 1-6 | 15 |
 | **Wave 8** | FAITH-016, FAITH-018, FAITH-023, FAITH-027, FAITH-028, FAITH-030, FAITH-032, FAITH-034, FAITH-042, FAITH-043, FAITH-046, FAITH-050, FAITH-051, FAITH-053, FAITH-054, FAITH-071, FAITH-079, FAITH-080, FAITH-085, FAITH-088 | Waves 1-7 | 20 |
-| **Wave 9** | FAITH-017, FAITH-047, FAITH-055, FAITH-061, FAITH-066, FAITH-067, FAITH-068, FAITH-073, FAITH-082, FAITH-091, FAITH-118 | Waves 1-8 | 11 |
+| **Wave 9** | FAITH-017, FAITH-047, FAITH-055, FAITH-066, FAITH-067, FAITH-068, FAITH-073, FAITH-082, FAITH-091, FAITH-118 | Waves 1-8 | 10 |
 | **Wave 10** | FAITH-048, FAITH-056, FAITH-069, FAITH-083, FAITH-089, FAITH-097, FAITH-098, FAITH-099, FAITH-119 | Waves 1-9 | 9 |
 | **Wave 11** | FAITH-084, FAITH-090, FAITH-096, FAITH-120, FAITH-121 | Waves 1-10 | 5 |
 | **Wave 12** | FAITH-075, FAITH-086, FAITH-087, FAITH-095, FAITH-104, FAITH-108, FAITH-122, FAITH-124 | Waves 1-11 | 8 |
@@ -1009,7 +1008,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 | **Wave 14** | FAITH-063, FAITH-064, FAITH-093, FAITH-094, FAITH-101, FAITH-110 | Waves 1-13 | 6 |
 | **Wave 15** | FAITH-070, FAITH-102, FAITH-111 | Waves 1-14 | 3 |
 | **Wave 16** | FAITH-072, FAITH-103, FAITH-112, FAITH-117 | Waves 1-15 | 4 |
-| **Wave 17** | FAITH-105 | Waves 1-16 | 1 |
+| **Wave 17** | FAITH-105, FAITH-125 | Waves 1-16 | 2 |
 | **Wave 18** | FAITH-106, FAITH-107, FAITH-113 | Waves 1-17 | 3 |
 | **Wave 19** | FAITH-114 | Waves 1-18 | 1 |
 | **Wave 20** | FAITH-115 | Waves 1-19 | 1 |
@@ -1020,7 +1019,7 @@ Each wave contains tasks whose dependencies are fully satisfied by all prior wav
 
 ## Notes
 
-- **Total tasks:** 122 (FAITH-001 through FAITH-124)
+- **Total tasks:** 122 (FAITH-001 through FAITH-125)
 - **Minimum waves to completion (excl. cloud):** 21
 - **Maximum parallelism:** Wave 8 with 20 concurrent tasks
 - **Source of truth:** `epic.yaml`

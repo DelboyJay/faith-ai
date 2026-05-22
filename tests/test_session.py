@@ -12,11 +12,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
+import zipfile
 from pathlib import Path
 
 import pytest
 
 from faith_pa.config.models import PAConfig, PrivacyProfile, SystemConfig
+from faith_pa.pa.file_storage import FileStorageRegistry
 from faith_pa.pa.session import AgentState, SessionManager
 
 
@@ -93,7 +96,7 @@ async def test_session_manager_creates_session_and_task(
 
     activated = await manager.activate_task_phase(task, "design")
 
-    assert session.session_id.startswith("sess-0001-")
+    assert uuid.UUID(session.session_id)
     assert task.task_id.startswith("task-1-")
     assert activated == ["architect"]
     assert (task.path / "task.meta.json").exists()
@@ -208,6 +211,75 @@ async def test_session_manager_persists_task_and_session_metadata(
     assert task_meta["task_id"] == task.task_id
     assert task_meta["sandbox_id"] == "sbx-0001"
     assert "ch-phase4" in task_meta["channels"]
+
+
+@pytest.mark.asyncio
+async def test_session_manager_creates_uuid_session_and_default_name(
+    tmp_path: Path, system_config: SystemConfig
+) -> None:
+    """Description:
+    Verify a new session uses a UUID identifier and starts with a user-visible default name.
+
+    Requirements:
+        - This test is needed to prove Phase 19 session identity separates machine identifiers from user-facing names.
+        - Verify the session identifier parses as a UUID and the metadata includes a default session name.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
+    """
+
+    manager = SessionManager(project_root=tmp_path, system_config=system_config)
+    session = await manager.start_session(trigger="web-ui")
+    session_meta = json.loads((session.path / "session.meta.json").read_text(encoding="utf-8"))
+
+    assert uuid.UUID(session.session_id)
+    assert session_meta["name"] == "New Session"
+
+
+@pytest.mark.asyncio
+async def test_session_manager_renames_archives_restores_and_exports_session(
+    tmp_path: Path, system_config: SystemConfig
+) -> None:
+    """Description:
+    Verify a session can be renamed, archived, restored, and exported with linked stored files.
+
+    Requirements:
+        - This test is needed to prove Phase 19 session lifecycle operations are host-persisted and inspectable.
+        - Verify renaming updates session metadata, archiving toggles archived state, restoring reactivates it, and export can include linked files.
+
+    :param tmp_path: Temporary pytest directory fixture.
+    :param system_config: Baseline system configuration fixture.
+    """
+
+    manager = SessionManager(project_root=tmp_path, system_config=system_config)
+    storage = FileStorageRegistry(project_root=tmp_path)
+    session = await manager.start_session(trigger="web-ui")
+    manager.rename_session(session.session_id, "Auth cleanup")
+    storage.ingest_bytes(
+        filename="linked.txt",
+        content=b"linked export file\n",
+        scope="session",
+        session_bindings=[session.session_id],
+        description="Linked export file.",
+    )
+
+    manager.archive_session(session.session_id)
+    archived_meta = json.loads((session.path / "session.meta.json").read_text(encoding="utf-8"))
+    manager.restore_session(session.session_id)
+    restored_meta = json.loads((session.path / "session.meta.json").read_text(encoding="utf-8"))
+    export_path = manager.export_session_archive(
+        session.session_id,
+        mode="session_with_linked_files",
+        storage_registry=storage,
+    )
+
+    assert archived_meta["status"] == "archived"
+    assert restored_meta["status"] == "active"
+    assert restored_meta["name"] == "Auth cleanup"
+    with zipfile.ZipFile(export_path) as archive:
+        names = archive.namelist()
+    assert any(name.endswith("session.meta.json") for name in names)
+    assert any(name.endswith("linked.txt") for name in names)
 
 
 @pytest.mark.asyncio

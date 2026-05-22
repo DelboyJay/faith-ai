@@ -198,6 +198,27 @@ def _find_effective_context_snapshot(
     return None
 
 
+def _latest_effective_context_snapshot(snapshot_dir: Path) -> tuple[Path, dict[str, Any]] | None:
+    """Description:
+        Return the newest persisted effective-context snapshot from one session directory.
+
+    Requirements:
+        - Skip malformed snapshot payloads safely.
+        - Prefer the lexically newest snapshot filename when multiple valid snapshots exist.
+
+    :param snapshot_dir: Session-local effective-context snapshot directory.
+    :returns: Newest snapshot path and payload, if any valid snapshot exists.
+    """
+
+    newest_match: tuple[Path, dict[str, Any]] | None = None
+    for snapshot_path in sorted(snapshot_dir.glob("*.json")):
+        payload = _read_effective_context_snapshot(snapshot_path)
+        if payload is None:
+            continue
+        newest_match = (snapshot_path, payload)
+    return newest_match
+
+
 def _parse_timestamp(raw_value: object) -> datetime:
     """Description:
         Parse one timestamp-like value into a sortable UTC datetime.
@@ -346,6 +367,35 @@ def _sort_descending(
     )
 
 
+def _accumulate_token_summary_bucket(
+    bucket: dict[str, Any],
+    record: dict[str, Any],
+) -> None:
+    """Description:
+        Accumulate one token-usage record into an aggregate summary bucket.
+
+    Requirements:
+        - Keep call counts together with split context/input and inference/output totals.
+        - Preserve the newest timestamp seen for later comparison summaries.
+
+    :param bucket: Mutable aggregate bucket to update in place.
+    :param record: Structured token-usage record being folded into the bucket.
+    """
+
+    context_input = int(record.get("input_tokens", 0) or 0)
+    inference_output = int(record.get("output_tokens", 0) or 0)
+    bucket["calls"] += 1
+    bucket["context_input_tokens"] += context_input
+    bucket["inference_output_tokens"] += inference_output
+    bucket["total_tokens"] += context_input + inference_output
+    latest_seen = str(record.get("ts") or "")
+    if latest_seen and (
+        not bucket.get("latest_ts")
+        or _parse_timestamp(latest_seen) > _parse_timestamp(bucket.get("latest_ts"))
+    ):
+        bucket["latest_ts"] = latest_seen
+
+
 def _load_session_transcript(session_dir: Path) -> list[dict[str, str]]:
     """Description:
         Load the persisted Project Agent transcript for one session directory.
@@ -416,6 +466,19 @@ def _list_session_summaries(request: Request) -> list[dict[str, Any]]:
             continue
         payload["task_count"] = len(payload.get("tasks", {}))
         payload["session_dir"] = session_dir.name
+        session_id = str(payload.get("session_id", session_dir.name))
+        archived = str(payload.get("status", "")).lower() == "archived"
+        actions = {
+            "rename": f"/api/logs/sessions/{session_id}/rename",
+            "delete": f"/api/logs/sessions/{session_id}",
+            "export": f"/api/logs/sessions/{session_id}/export",
+        }
+        if archived:
+            actions["unarchive"] = f"/api/logs/sessions/{session_id}/unarchive"
+        else:
+            actions["archive"] = f"/api/logs/sessions/{session_id}/archive"
+        payload["actions"] = actions
+        payload["archived"] = archived
         summaries.append(payload)
     return _sort_descending(summaries, timestamp_key="started_at")
 
@@ -538,10 +601,12 @@ async def token_usage(
 
     by_model: dict[str, dict[str, Any]] = {}
     by_agent: dict[str, dict[str, Any]] = {}
+    by_session: dict[str, dict[str, Any]] = {}
     session_context_files: dict[str, int] = {}
     for record in ordered:
         model_key = str(record.get("model", "unknown"))
         agent_key = str(record.get("agent", "unknown"))
+        session_key = str(record.get("session_id", "unknown"))
         by_model.setdefault(
             model_key,
             {
@@ -549,6 +614,7 @@ async def token_usage(
                 "context_input_tokens": 0,
                 "inference_output_tokens": 0,
                 "total_tokens": 0,
+                "latest_ts": "",
             },
         )
         by_agent.setdefault(
@@ -558,21 +624,37 @@ async def token_usage(
                 "context_input_tokens": 0,
                 "inference_output_tokens": 0,
                 "total_tokens": 0,
+                "latest_ts": "",
             },
         )
-        for bucket in (by_model[model_key], by_agent[agent_key]):
-            bucket["calls"] += 1
-            context_input = int(record.get("input_tokens", 0) or 0)
-            inference_output = int(record.get("output_tokens", 0) or 0)
-            bucket["context_input_tokens"] += context_input
-            bucket["inference_output_tokens"] += inference_output
-            bucket["total_tokens"] += context_input + inference_output
+        by_session.setdefault(
+            session_key,
+            {
+                "session_id": session_key,
+                "calls": 0,
+                "context_input_tokens": 0,
+                "inference_output_tokens": 0,
+                "total_tokens": 0,
+                "latest_ts": "",
+            },
+        )
+        for bucket in (by_model[model_key], by_agent[agent_key], by_session[session_key]):
+            _accumulate_token_summary_bucket(bucket, record)
         for file_entry in record.get("context_files", []):
             if not isinstance(file_entry, dict):
                 continue
             path = str(file_entry.get("path", "unknown"))
             tokens = int(file_entry.get("tokens", 0) or 0)
             session_context_files[path] = session_context_files.get(path, 0) + tokens
+
+    session_comparisons = sorted(
+        by_session.values(),
+        key=lambda bucket: (
+            int(bucket.get("total_tokens", 0) or 0),
+            _parse_timestamp(bucket.get("latest_ts")),
+        ),
+        reverse=True,
+    )
 
     latest = ordered[0] if ordered else {}
     session_summary = {
@@ -616,10 +698,58 @@ async def token_usage(
         summary={
             "by_model": by_model,
             "by_agent": by_agent,
+            "session_comparisons": session_comparisons,
             "session": session_summary,
             "last_message": last_message_summary,
         },
     )
+
+
+@router.get(
+    "/api/logs/effective-context/{session_id}/latest",
+    response_model=EffectiveContextSnapshotResponse,
+)
+async def latest_effective_context_snapshot(
+    request: Request,
+    session_id: str,
+) -> EffectiveContextSnapshotResponse:
+    """Description:
+        Return the newest persisted effective-context snapshot for one session.
+
+    Requirements:
+        - Reject unsafe path segments before touching the filesystem.
+        - Return HTTP 404 when the requested session has no persisted snapshot.
+
+    :param request: Incoming FastAPI request object.
+    :param session_id: Persisted session identifier.
+    :raises HTTPException: If the identifier is invalid or the snapshot is missing.
+    :returns: Newest read-only effective-context snapshot payload.
+    """
+
+    safe_session_id = _safe_leaf_name(session_id, label="session identifier")
+    snapshot_dir = _effective_context_dir(request, safe_session_id)
+    if not snapshot_dir.exists():
+        raise HTTPException(status_code=404, detail="Effective-context snapshot not found")
+    snapshot_match = _latest_effective_context_snapshot(snapshot_dir)
+    if snapshot_match is None:
+        raise HTTPException(status_code=404, detail="Effective-context snapshot not found")
+    snapshot_path, payload = snapshot_match
+    payload.setdefault("session_id", safe_session_id)
+    payload.setdefault(
+        "turn_id",
+        payload.get("turn_ids", ["latest"])[0]
+        if isinstance(payload.get("turn_ids"), list) and payload.get("turn_ids")
+        else payload.get("turn_id", "latest"),
+    )
+    payload.setdefault("snapshot_id", snapshot_path.stem)
+    payload.setdefault("hash", payload.get("context_hash"))
+    payload.setdefault(
+        "compiled_context",
+        payload.get("compiled_context") or payload.get("redacted_context") or "",
+    )
+    payload.setdefault("include_graph", payload.get("include_entries") or [])
+    payload.setdefault("warnings", [])
+    return EffectiveContextSnapshotResponse.model_validate(payload)
 
 
 @router.get(
@@ -780,7 +910,24 @@ async def session_detail(request: Request, session_id: str) -> SessionDetailResp
                 tasks.append(task_payload)
 
     return SessionDetailResponse(
-        session=session_payload,
+        session={
+            **session_payload,
+            "archived": str(session_payload.get("status", "")).lower() == "archived",
+            "actions": {
+                "rename": f"/api/logs/sessions/{safe_session_id}/rename",
+                "delete": f"/api/logs/sessions/{safe_session_id}",
+                "export": f"/api/logs/sessions/{safe_session_id}/export",
+                (
+                    "unarchive"
+                    if str(session_payload.get("status", "")).lower() == "archived"
+                    else "archive"
+                ): (
+                    f"/api/logs/sessions/{safe_session_id}/unarchive"
+                    if str(session_payload.get("status", "")).lower() == "archived"
+                    else f"/api/logs/sessions/{safe_session_id}/archive"
+                ),
+            },
+        },
         tasks=_sort_descending(tasks, timestamp_key="started_at"),
         transcript=_load_session_transcript(session_dir),
     )

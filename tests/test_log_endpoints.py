@@ -287,6 +287,8 @@ async def test_event_and_token_views_filter_and_sort_descending(
     token_payload = token_response.json()
     assert [item["ts"] for item in token_payload["items"]] == ["2026-05-04T10:13:00Z"]
     assert token_payload["summary"]["by_model"]["ollama/llama3:8b"]["calls"] == 1
+    assert token_payload["summary"]["session_comparisons"][0]["session_id"] == "sess-2"
+    assert token_payload["summary"]["session_comparisons"][0]["total_tokens"] == 60
 
 
 @pytest.mark.asyncio

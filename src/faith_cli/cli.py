@@ -23,8 +23,10 @@ from faith_cli.docker import (
     compose_pull,
     compose_status,
     compose_up,
+    existing_bootstrap_containers,
     install_default_ollama_model,
     is_running,
+    remove_bootstrap_containers,
 )
 from faith_cli.host_worker import get_host_worker_status, start_host_worker, stop_host_worker
 from faith_cli.http_client import (
@@ -159,6 +161,35 @@ def _open_ui_message() -> None:
     """
 
     click.echo(f"Open {WEB_UI_URL} in your browser.")
+
+
+def _prepare_bootstrap_startup() -> bool:
+    """Description:
+        Normalise bootstrap-container state before starting FAITH services.
+
+    Requirements:
+        - Reuse the running stack when FAITH is already available.
+        - Remove stale/conflicting fixed-name bootstrap containers when they exist
+          without a live Project Agent.
+
+    :returns: ``True`` when the stack is already running and startup should be skipped.
+    """
+
+    if is_running():
+        return True
+
+    existing = existing_bootstrap_containers()
+    if existing.get("faith-pa") == "running":
+        return True
+    if existing:
+        click.secho(
+            "Found stale FAITH bootstrap containers from another compose project; cleaning them up.",
+            fg="yellow",
+        )
+        result = remove_bootstrap_containers(existing)
+        if result.returncode != 0:
+            raise click.ClickException("failed to clean up stale FAITH containers before startup")
+    return False
 
 
 def _validate_runtime_compatibility() -> None:
@@ -347,9 +378,13 @@ def init() -> None:
     _validate_runtime_compatibility()
     click.echo(f"Framework home ready at {faith_home()}")
 
-    result = compose_up()
-    if result.returncode != 0:
-        raise click.ClickException("docker compose up failed")
+    stack_already_running = _prepare_bootstrap_startup()
+    if stack_already_running:
+        click.echo("FAITH is already running.")
+    else:
+        result = compose_up()
+        if result.returncode != 0:
+            raise click.ClickException("docker compose up failed")
 
     click.echo(f"Installing default Ollama model {DEFAULT_OLLAMA_MODEL} for the Project Agent.")
     model_result = install_default_ollama_model()
@@ -391,7 +426,7 @@ def start() -> None:
     check_docker()
     _validate_runtime_compatibility()
 
-    if is_running():
+    if _prepare_bootstrap_startup():
         click.echo("FAITH is already running.")
         _open_ui_message()
         return

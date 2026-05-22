@@ -2673,7 +2673,7 @@ Dockview manages the panel workspace. On first load, a default layout is rendere
 
 This is intentionally minimal. The default workspace may include the Session History, Project Agent, System Status, Input, User Settings, and Approvals surfaces, but specialist agent panels, tool-runtime panels, and workflow-specific panels must be created only after the PA has decided they are needed and has started those runtimes. The default layout must not assume a software-team workflow or pre-create Software Developer, QA, Security, or tool-specific panels before those runtimes exist.
 
-Session History should appear in the upper-left region beside the Project Agent workspace by default, using roughly half of the upper workspace width/height. It should auto-refresh often enough that the first user message causes the new session to appear without requiring a manual browser reload, and it must offer a visible `New Session` action that starts a fresh active PA session immediately.
+Session History should appear in the upper-left region beside the Project Agent workspace by default, using roughly half of the upper workspace width/height. It should auto-refresh often enough that the first user message causes the new session to appear without requiring a manual browser reload, and it must offer a visible `New Session` action that starts a fresh active PA session immediately. Its primary view should behave like a conversation selector rather than a verbose technical record: the default list should show user-facing session names, not raw UUID-led entries, and selecting a session should immediately make that session the active conversation for future inference while updating the other session-bound panels. The selector should support grouped `Active Sessions` and optional `Archived Sessions`, per-list persisted ordering, case-insensitive contains-search, inline row actions appropriate to session state, and clear disabled-state tooltips when a session cannot currently be resumed.
 
 The workspace layout manager should be implemented with **Dockview** so panels can be docked, tab-stacked, reordered, resized, floated, and restored from saved layout state. Desktop-style menus and context menus should be implemented with **Radix UI** primitives rather than being re-created from scratch.
 
@@ -2701,6 +2701,8 @@ Phase ownership is split intentionally:
 - Speech-to-text input requirements derive the implementation task for microphone-driven dictation in the Input panel backed by a local transcription service.
 - Input composer keyboard-shortcut requirements derive the implementation task for Enter-to-send behaviour, Alt+Enter newline insertion, and visible shortcut help text in the Input panel.
 - Frontend build-pipeline requirements derive the implementation task for introducing the bundled React toolchain and compiled browser assets consumed by the Web UI service.
+- Session-selector refinement requirements derive the implementation task for name-first session switching, grouped archived/active list behaviour, per-session draft restore, safe backend session activation, and effective-context UX cleanup that hides raw IDs during normal use.
+- User-terminal requirements derive a later discussion-gated implementation task for a dedicated terminal panel that runs in the active agent or session runtime context only after execution-scope, approval, persistence, and audit behaviour have been defined properly.
 
 **Supported user interactions:**
 
@@ -2773,6 +2775,18 @@ A dedicated panel must allow the user to inspect and update the Project Agent sy
 - The panel must expose clear actions for Save, Reload from disk/server, and Reset to default where a safe default prompt exists.
 - Unsaved changes must be visible to the user before navigating away, resetting layout, or closing the panel.
 - Prompt changes should publish a Web UI notification or status event so the user can see that the PA will use the new prompt on the next turn.
+
+**Session Details Panel**
+
+A dedicated Session Details panel should present the deeper information for the
+currently selected session without overloading the Session History selector.
+
+- It should show the selected session transcript, metadata, task/channel detail,
+  and related deeper inspection content once a session has already been
+  selected.
+- It should update automatically when the active session selection changes.
+- It should be treated as a session-bound inspection surface rather than as the
+  primary session-switching affordance.
 
 **User Settings Panel**
 
@@ -2883,6 +2897,9 @@ Live overview of the framework state.
 - On first load, the panel should prioritise the bootstrap containers that define whether FAITH is usable: Project Agent, Web UI, Redis, Ollama, and MCP Registry. Agent, tool, runtime, and sandbox container cards appear dynamically as those containers exist.
 - The System Status panel must refresh FAITH-managed runtime/container state at least every 10 seconds, or sooner when a push/event feed provides newer information.
 - Runtime status shown in the System Status panel and runtime-derived badges elsewhere in the UI must be sourced from the same backend truth so the user does not see contradictory states.
+- If the Docker Runtime panel remains the clearer operational view, the default
+  workspace does not need to open System Status automatically until it provides
+  materially distinct value.
 
 **Docker Runtime Panel**
 
@@ -2895,6 +2912,19 @@ Dedicated operational overview for FAITH-managed Docker resources.
 - Updates in real time via a dedicated backend feed and remains read-only in v1.
 - If a pure push feed is not sufficient on its own, the UI/backend may combine event streaming with a periodic runtime refresh cycle no slower than every 10 seconds to keep container status accurate.
 - The status panel may show a compact subset of this information for quick operational awareness, while the dedicated Docker Runtime Panel remains the detailed operational view.
+
+**Effective Context Panel**
+
+The Effective Context panel is a debugging surface for the actual assembled
+context sent to the LLM for the selected session or turn.
+
+- The default user flow must not require typing raw session IDs or turn IDs.
+- The panel should bind automatically to the currently selected session and load
+  the latest available snapshot by default.
+- User-facing controls should use human-readable snapshot selection such as
+  latest/previous/next controls or readable timestamps.
+- Raw internal identifiers may still be exposed under an advanced/debug
+  affordance, but not as the primary interaction model.
 
 ---
 

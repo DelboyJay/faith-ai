@@ -3,8 +3,8 @@
  *   Execute a tiny host-side runtime check against the FAITH effective-context panel JavaScript.
  *
  * Requirements:
- *   - Prove the panel can fetch and render a redacted effective-context snapshot.
- *   - Prove the rendered card includes the session, turn, hash, include graph, and warnings fields.
+ *   - Prove the panel follows the currently selected session automatically.
+ *   - Prove the panel no longer asks the user for raw session and turn identifiers in the default view.
  */
 
 const fs = require("node:fs");
@@ -20,6 +20,7 @@ function FakeHTMLElement(tagName) {
   this.className = "";
   this.dataset = {};
   this.eventListeners = {};
+  this.attributes = {};
 }
 
 FakeHTMLElement.prototype.appendChild = function appendChild(child) {
@@ -36,9 +37,38 @@ FakeHTMLElement.prototype.addEventListener = function addEventListener(name, han
   this.eventListeners[name].push(handler);
 };
 
-FakeHTMLElement.prototype.dispatch = function dispatch(name) {
-  (this.eventListeners[name] || []).forEach((handler) => handler({}));
+FakeHTMLElement.prototype.dispatch = function dispatch(name, event = {}) {
+  (this.eventListeners[name] || []).forEach((handler) => handler(event));
 };
+
+FakeHTMLElement.prototype.setAttribute = function setAttribute(name, value) {
+  this.attributes[name] = value;
+};
+
+FakeHTMLElement.prototype.getAttribute = function getAttribute(name) {
+  return this.attributes[name];
+};
+
+function findByText(root, text) {
+  if (root.textContent === text) {
+    return root;
+  }
+  for (const child of root.children || []) {
+    const match = findByText(child, text);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}
+
+function collectText(root) {
+  let text = root.textContent || "";
+  for (const child of root.children || []) {
+    text += collectText(child);
+  }
+  return text;
+}
 
 function assert(condition, message) {
   if (!condition) {
@@ -53,6 +83,21 @@ global.document = {
   },
 };
 global.window = global;
+global._listeners = {};
+global.addEventListener = function addEventListener(name, handler) {
+  global._listeners[name] = global._listeners[name] || [];
+  global._listeners[name].push(handler);
+};
+global.removeEventListener = function removeEventListener(name, handler) {
+  global._listeners[name] = (global._listeners[name] || []).filter((entry) => entry !== handler);
+};
+global.dispatchEvent = function dispatchEvent(event) {
+  (global._listeners[event.type] || []).forEach((handler) => handler(event));
+};
+global.CustomEvent = function CustomEvent(type, init = {}) {
+  this.type = type;
+  this.detail = init.detail;
+};
 
 global.faithLogPanelCommon = {
   renderRecordCard(record, rows) {
@@ -62,12 +107,18 @@ global.faithLogPanelCommon = {
   },
 };
 
+let fetchedLatestSnapshot = false;
 global.fetch = async function fetch(url) {
-  assert(url === "/api/logs/effective-context/sess-1/turn-1", "Expected the effective-context fetch URL.");
+  assert(
+    url === "/api/logs/effective-context/sess-1/latest",
+    "Expected the effective-context panel to fetch the latest snapshot for the selected session.",
+  );
+  fetchedLatestSnapshot = true;
   return {
     ok: true,
     async json() {
       return {
+        session_name: "Initial Session",
         session_id: "sess-1",
         turn_id: "turn-1",
         snapshot_id: "snap-1",
@@ -88,16 +139,31 @@ vm.runInThisContext(panelSource, { filename: "effective-context-panel.js" });
 
 (async function run() {
   const target = new FakeHTMLElement("div");
-  const panel = window.faithEffectiveContextPanel.mountPanel(target, {
-    sessionId: "sess-1",
-    turnId: "turn-1",
-  });
-
-  const loadButton = target.children[0].children[2];
-  loadButton.dispatch("click");
-  for (let index = 0; index < 8; index += 1) {
+  const panel = window.faithEffectiveContextPanel.mountPanel(target, {});
+  const wrapper = target.children[0];
+  assert(
+    !JSON.stringify(wrapper).includes("Session ID") && !JSON.stringify(wrapper).includes("Turn ID"),
+    "Expected the default Effective Context panel to hide raw session and turn inputs.",
+  );
+  window.dispatchEvent(
+    new window.CustomEvent("faith:session-selected", {
+      detail: {
+        sessionId: "sess-1",
+        sessionName: "Initial Session",
+      },
+    }),
+  );
+  const loadButton = findByText(target, "Load Snapshot");
+  if (loadButton) {
+    loadButton.dispatch("click");
+  }
+  for (let index = 0; index < 12; index += 1) {
     await Promise.resolve();
   }
+  assert(
+    fetchedLatestSnapshot,
+    "Expected the panel to request the latest snapshot for the selected session.",
+  );
 
   panel.destroy();
   console.log("effective-context panel runtime checks passed");

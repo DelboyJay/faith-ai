@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import uuid
+import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +59,25 @@ def _iso(dt: datetime) -> str:
     """
 
     return dt.isoformat().replace("+00:00", "Z")
+
+
+def _normalise_session_name(value: str) -> str:
+    """Description:
+        Convert one user-facing session name into a stable short display label.
+
+    Requirements:
+        - Collapse surrounding whitespace.
+        - Fall back to `New Session` when the supplied value is empty.
+        - Keep the name reasonably short for browser panel display.
+
+    :param value: Raw proposed session name.
+    :returns: Normalized user-facing session name.
+    """
+
+    collapsed = " ".join(str(value).split()).strip()
+    if not collapsed:
+        return "New Session"
+    return collapsed[:120]
 
 
 @dataclass(slots=True)
@@ -405,7 +426,18 @@ class SessionManager:
         session_paths = [path for path in self.sessions_dir.iterdir() if path.is_dir()]
         if not session_paths:
             return None
-        return sorted(session_paths, key=lambda path: path.name)[-1]
+
+        def _sort_key(path: Path) -> tuple[str, str]:
+            meta_path = path / "session.meta.json"
+            if meta_path.exists():
+                try:
+                    payload = json.loads(meta_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError:
+                    payload = {}
+                return (str(payload.get("started_at", "")), path.name)
+            return ("", path.name)
+
+        return sorted(session_paths, key=_sort_key)[-1]
 
     def _project_agent_log_path(self, session_path: Path | None = None) -> Path:
         """Description:
@@ -545,8 +577,8 @@ class SessionManager:
         lines = [
             "# Project Agent Sessions Index",
             "",
-            "| Session ID | Status | Started | Transcript |",
-            "| --- | --- | --- | --- |",
+            "| Session ID | Name | Status | Started | Transcript |",
+            "| --- | --- | --- | --- | --- |",
         ]
         for session_path in sorted(
             [path for path in self.sessions_dir.iterdir() if path.is_dir()],
@@ -560,6 +592,7 @@ class SessionManager:
             lines.append(
                 "| "
                 f"{data.get('session_id', session_path.name)} | "
+                f"{data.get('name', 'New Session')} | "
                 f"{data.get('status', 'unknown')} | "
                 f"{data.get('started_at', '')} | "
                 f"{transcript_path.as_posix()} |"
@@ -652,6 +685,56 @@ class SessionManager:
             return latest_session.name
         data = json.loads(meta_path.read_text(encoding="utf-8"))
         return str(data.get("session_id", latest_session.name))
+
+    def _load_session_payload(self, session_id: str) -> tuple[Path, dict[str, Any]]:
+        """Description:
+            Load one persisted session metadata payload from disk.
+
+        Requirements:
+            - Resolve the session directory from the canonical persisted session identifier.
+            - Raise `FileNotFoundError` when the session metadata does not exist.
+
+        :param session_id: Persisted session identifier to load.
+        :returns: Session directory path and parsed metadata payload.
+        :raises FileNotFoundError: If the session metadata file does not exist.
+        """
+
+        session_dir = self.sessions_dir / session_id
+        meta_path = session_dir / "session.meta.json"
+        if not meta_path.exists():
+            raise FileNotFoundError(session_id)
+        return session_dir, json.loads(meta_path.read_text(encoding="utf-8"))
+
+    def activate_session(self, session_id: str) -> dict[str, Any]:
+        """Description:
+            Activate one persisted non-archived session for future PA transcript writes.
+
+        Requirements:
+            - Repoint the in-memory active-session references without ending any other persisted session.
+            - Reject archived sessions so they must be restored before resuming.
+            - Reset in-memory task caches so future work starts from the selected session cleanly.
+
+        :param session_id: Persisted session identifier to activate.
+        :returns: Activated session metadata payload.
+        :raises FileNotFoundError: If the session does not exist.
+        :raises ValueError: If the session is archived and cannot yet be resumed.
+        """
+
+        session_dir, payload = self._load_session_payload(session_id)
+        if str(payload.get("status", "")).lower() == "archived":
+            raise ValueError("archived sessions must be restored before they can be resumed")
+        self.current_session = SessionRecord(
+            session_id=str(payload.get("session_id", session_id)),
+            path=session_dir,
+            trigger=str(payload.get("trigger", "web-ui")),
+            started_at=str(payload.get("started_at", "")),
+            active_task_id=payload.get("active_task_id"),
+        )
+        self.session_id = self.current_session.session_id
+        self.session_dir = session_dir
+        self.tasks = {}
+        self._task_log_writers = {}
+        return payload
 
     def resume_latest_session(self) -> SessionRecord | None:
         """Description:
@@ -781,11 +864,12 @@ class SessionManager:
         self._task_log_writers = {}
         self._session_counter += 1
         now = _now()
-        session_id = f"sess-{self._session_counter:04d}-{now.strftime('%Y%m%d%H%M%S')}"
+        session_id = str(uuid.uuid4())
         session_path = self.sessions_dir / session_id
         (session_path / "tasks").mkdir(parents=True, exist_ok=True)
         metadata = {
             "session_id": session_id,
+            "name": "New Session",
             "workspace": str(self.project_root),
             "project_name": self.project_name,
             "status": "active",
@@ -836,6 +920,158 @@ class SessionManager:
         if self.idle_timeout_seconds:
             self._idle_task = asyncio.create_task(self._idle_monitor(), name="faith-session-idle")
         return session
+
+    def rename_session(self, session_id: str, name: str) -> dict[str, Any]:
+        """Description:
+            Rename one persisted session.
+
+        Requirements:
+            - Update the user-facing `name` field in `session.meta.json`.
+            - Rewrite the Project Agent sessions index after the rename.
+
+        :param session_id: Session identifier to rename.
+        :param name: Replacement user-facing session name.
+        :returns: Updated session metadata payload.
+        :raises FileNotFoundError: If the session does not exist.
+        """
+
+        session_dir, payload = self._load_session_payload(session_id)
+        meta_path = session_dir / "session.meta.json"
+        payload["name"] = _normalise_session_name(name)
+        meta_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self._write_project_agent_sessions_index()
+        return payload
+
+    def maybe_name_session_from_first_message(
+        self, session_id: str, message: str
+    ) -> dict[str, Any]:
+        """Description:
+            Replace the default placeholder session name with the first user inference.
+
+        Requirements:
+            - Update the session name only while it is still the default placeholder.
+            - Leave explicit user renames untouched.
+
+        :param session_id: Session identifier to inspect.
+        :param message: First user inference text.
+        :returns: Session metadata payload after the naming check.
+        :raises FileNotFoundError: If the session does not exist.
+        """
+
+        session_dir, payload = self._load_session_payload(session_id)
+        meta_path = session_dir / "session.meta.json"
+        if str(payload.get("name", "New Session")) != "New Session":
+            return payload
+        payload["name"] = _normalise_session_name(message)
+        meta_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self._write_project_agent_sessions_index()
+        return payload
+
+    def archive_session(self, session_id: str) -> dict[str, Any]:
+        """Description:
+            Mark one persisted session as archived.
+
+        Requirements:
+            - Preserve the session on disk while removing it from normal active flows.
+
+        :param session_id: Session identifier to archive.
+        :returns: Updated session metadata payload.
+        :raises FileNotFoundError: If the session does not exist.
+        """
+
+        session_dir, payload = self._load_session_payload(session_id)
+        meta_path = session_dir / "session.meta.json"
+        payload["status"] = "archived"
+        payload["archived_at"] = _iso(_now())
+        meta_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self._write_project_agent_sessions_index()
+        return payload
+
+    def restore_session(self, session_id: str) -> dict[str, Any]:
+        """Description:
+            Restore one archived session to normal active availability.
+
+        Requirements:
+            - Clear the archived marker and set the status back to `active` when appropriate.
+
+        :param session_id: Session identifier to restore.
+        :returns: Updated session metadata payload.
+        :raises FileNotFoundError: If the session does not exist.
+        """
+
+        session_dir, payload = self._load_session_payload(session_id)
+        meta_path = session_dir / "session.meta.json"
+        payload["status"] = "active"
+        payload["archived_at"] = None
+        meta_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self._write_project_agent_sessions_index()
+        return payload
+
+    def delete_session(self, session_id: str) -> None:
+        """Description:
+            Permanently delete one persisted session directory.
+
+        Requirements:
+            - Remove the session directory recursively from the host-backed sessions tree.
+            - Rewrite the Project Agent sessions index afterward.
+
+        :param session_id: Session identifier to delete.
+        :raises FileNotFoundError: If the session does not exist.
+        """
+
+        session_dir = self.sessions_dir / session_id
+        if not session_dir.exists():
+            raise FileNotFoundError(session_id)
+        for path in sorted(session_dir.rglob("*"), reverse=True):
+            if path.is_file():
+                path.unlink()
+            elif path.is_dir():
+                path.rmdir()
+        session_dir.rmdir()
+        self._write_project_agent_sessions_index()
+
+    def export_session_archive(
+        self,
+        session_id: str,
+        *,
+        mode: str,
+        storage_registry: Any | None = None,
+    ) -> Path:
+        """Description:
+            Export one persisted session into a portable zip archive.
+
+        Requirements:
+            - Always include the session metadata and persisted logs.
+            - Optionally include linked stored files for the requested session.
+
+        :param session_id: Session identifier to export.
+        :param mode: Export mode, either `session_only` or `session_with_linked_files`.
+        :param storage_registry: Optional storage registry used to include linked files.
+        :returns: Written zip-archive path.
+        :raises FileNotFoundError: If the session does not exist.
+        """
+
+        session_dir = self.sessions_dir / session_id
+        if not session_dir.exists():
+            raise FileNotFoundError(session_id)
+        export_dir = self.faith_dir / "exports"
+        export_dir.mkdir(parents=True, exist_ok=True)
+        archive_path = export_dir / f"{session_id}.zip"
+        with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for path in session_dir.rglob("*"):
+                if path.is_file():
+                    archive.write(path, arcname=Path(session_id) / path.relative_to(session_dir))
+            if mode == "session_with_linked_files" and storage_registry is not None:
+                for record in storage_registry.iter_linked_files_for_session(session_id):
+                    file_path = Path(str(record.get("path", "")))
+                    if file_path.exists():
+                        archive.write(
+                            file_path,
+                            arcname=Path(session_id)
+                            / "linked-files"
+                            / str(record.get("filename", file_path.name)),
+                        )
+        return archive_path
 
     def create_session(self, project_root: Path | None = None) -> SessionRecord:
         """Description:

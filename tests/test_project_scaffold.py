@@ -130,6 +130,39 @@ def test_web_ui_container_requirements_include_runtime_imports() -> None:
     assert "httpx" in requirements_text
 
 
+def test_pa_container_requirements_include_multipart_for_upload_routes() -> None:
+    """
+    Description:
+        Verify the PA container installs the multipart dependency required by FastAPI upload routes.
+
+    Requirements:
+        - This test is needed to prevent the PA image from crash-looping when storage
+          or upload endpoints declare `UploadFile`/form-data parameters.
+        - Verify `python-multipart` is present in `containers/pa/requirements.txt`.
+    """
+    requirements_text = (ROOT / "containers" / "pa" / "requirements.txt").read_text()
+
+    assert "python-multipart" in requirements_text
+
+
+def test_web_ui_dockerfile_copies_panel_runtime_before_build() -> None:
+    """
+    Description:
+        Verify the bundled Web UI Docker build includes the legacy panel runtime files.
+
+    Requirements:
+        - This test is needed to prevent the frontend image build from failing when
+          `web/src/main.jsx` imports browser panel modules from `web/js/`.
+        - Verify the frontend-build stage copies `web/js/` before `npm run build`.
+    """
+    dockerfile_text = (ROOT / "containers" / "web-ui" / "Dockerfile").read_text()
+
+    assert "COPY web/js/ /app/web/js/" in dockerfile_text
+    assert dockerfile_text.index("COPY web/js/ /app/web/js/") < dockerfile_text.index(
+        "RUN npm run build"
+    )
+
+
 def test_tool_python_requirements_pin_patched_lxml() -> None:
     """
     Description:

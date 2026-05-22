@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY package.json package-lock.json* ./
 COPY web/build-faith-ui.mjs /app/web/build-faith-ui.mjs
+COPY web/js/ /app/web/js/
 COPY web/src/ /app/web/src/
 
 RUN npm ci

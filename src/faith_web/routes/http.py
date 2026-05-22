@@ -9,10 +9,14 @@ Requirements:
 from __future__ import annotations
 
 import base64
+import inspect
 import json
+import os
+import tempfile
 import uuid
 from datetime import datetime, timezone
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
@@ -41,6 +45,7 @@ ACCEPTED_UPLOAD_TYPES = {
     "text/plain",
 }
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+MAX_DICTATION_BYTES = 25 * 1024 * 1024
 
 
 class UserInputRequest(BaseModel):
@@ -54,6 +59,7 @@ class UserInputRequest(BaseModel):
 
     message: str = Field(min_length=1)
     session_id: str | None = None
+    scope: str | None = None
 
 
 class UserInputResponse(BaseModel):
@@ -171,6 +177,160 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _dictation_temp_suffix(content_type: str | None, filename: str | None) -> str:
+    """Description:
+        Return a safe file suffix for one recorded dictation payload.
+
+    Requirements:
+        - Preserve a useful extension when the browser supplies one.
+        - Fall back to a web-audio friendly suffix when the MIME type is unknown.
+
+    :param content_type: Declared MIME type for the uploaded audio.
+    :param filename: Original browser filename for the uploaded audio.
+    :returns: File suffix suitable for a temporary audio file.
+    """
+
+    if filename:
+        # Keep the browser-supplied suffix if one exists.
+        suffix = Path(filename).suffix
+        if suffix:
+            return suffix
+    mime_suffixes = {
+        "audio/mpeg": ".mp3",
+        "audio/mp4": ".m4a",
+        "audio/ogg": ".ogg",
+        "audio/wav": ".wav",
+        "audio/webm": ".webm",
+    }
+    return mime_suffixes.get(content_type or "", ".webm")
+
+
+def _invoke_local_dictation_engine(
+    audio_bytes: bytes,
+    *,
+    content_type: str | None = None,
+    filename: str | None = None,
+    language: str | None = None,
+) -> str:
+    """Description:
+        Run one recorded audio payload through the configured local speech engine.
+
+    Requirements:
+        - Prefer local/free transcription engines when available.
+        - Fail cleanly when no local engine is installed instead of pretending to use a hosted API.
+
+    :param audio_bytes: Raw browser-recorded audio bytes.
+    :param content_type: Browser-declared MIME type.
+    :param filename: Browser-declared filename.
+    :param language: Optional language hint forwarded by the browser.
+    :raises HTTPException: If no local transcription engine is available or transcription fails.
+    :returns: Plain-text transcript.
+    """
+
+    model_name = os.getenv("FAITH_DICTATION_MODEL", "tiny")
+    suffix = _dictation_temp_suffix(content_type, filename)
+    temp_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(audio_bytes)
+            temp_path = temp_file.name
+
+        try:
+            from faster_whisper import WhisperModel  # type: ignore[import-not-found]
+
+            model = WhisperModel(model_name, device="cpu", compute_type="int8")
+            whisper_kwargs = {"language": language} if language else {}
+            segments, _info = model.transcribe(temp_path, **whisper_kwargs)
+            transcript = " ".join(
+                segment.text.strip() for segment in segments if segment.text.strip()
+            )
+            if transcript.strip():
+                return transcript.strip()
+        except ImportError:
+            pass
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Local dictation engine failed: {exc}",
+            ) from exc
+
+        try:
+            import whisper  # type: ignore[import-not-found]
+
+            model = whisper.load_model(model_name)
+            whisper_kwargs = {"language": language} if language else {}
+            result = model.transcribe(temp_path, **whisper_kwargs)
+            transcript = str(result.get("text", "")).strip()
+            if transcript:
+                return transcript
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Local speech transcription is not configured.",
+            ) from exc
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Local dictation engine failed: {exc}",
+            ) from exc
+    finally:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+
+    raise HTTPException(
+        status_code=503,
+        detail="Local speech transcription returned no transcript.",
+    )
+
+
+async def _run_dictation_transcriber(
+    request: Request,
+    *,
+    audio_bytes: bytes,
+    content_type: str | None,
+    filename: str | None,
+    language: str | None,
+) -> str:
+    """Description:
+        Invoke the active dictation transcriber for one browser audio payload.
+
+    Requirements:
+        - Let tests install a lightweight local transcriber on app state.
+        - Fall back to the repository's optional local transcription engines when no override exists.
+
+    :param request: Incoming FastAPI request object.
+    :param audio_bytes: Raw browser-recorded audio bytes.
+    :param content_type: Browser-declared MIME type.
+    :param filename: Browser-declared filename.
+    :param language: Optional language hint forwarded by the browser.
+    :returns: Plain-text transcript.
+    """
+
+    transcriber = getattr(request.app.state, "dictation_transcriber", None)
+    if not callable(transcriber):
+        transcriber = _invoke_local_dictation_engine
+
+    result = transcriber(
+        audio_bytes,
+        content_type=content_type,
+        filename=filename,
+        language=language,
+    )
+    if inspect.isawaitable(result):
+        result = await result
+    if isinstance(result, dict):
+        transcript = str(result.get("transcript") or result.get("text") or "").strip()
+    else:
+        transcript = str(result or "").strip()
+    if not transcript:
+        raise HTTPException(
+            status_code=503, detail="Local speech transcription returned no transcript."
+        )
+    return transcript
+
+
 def _require_redis():
     """Description:
         Return the shared Web UI Redis client or raise a service-unavailable error.
@@ -241,6 +401,7 @@ async def upload_file(
     file: UploadFile = File(...),
     message: str = Form(default=""),
     session_id: str | None = Form(default=None),
+    scope: str = Form(default="session"),
 ) -> UploadResponse:
     """Description:
         Accept one browser file upload and publish it to the PA input channel.
@@ -276,6 +437,7 @@ async def upload_file(
         "content_base64": base64.b64encode(content).decode("ascii"),
         "message": message,
         "session_id": session_id,
+        "scope": scope,
         "timestamp": _utc_now(),
     }
     await redis.publish(USER_INPUT_CHANNEL, json.dumps(payload))
@@ -288,11 +450,52 @@ async def upload_file(
     )
 
 
+@router.post("/api/dictation/transcribe")
+async def transcribe_dictation(
+    request: Request,
+    audio: UploadFile = File(...),
+    language: str | None = Form(default=None),
+) -> dict[str, object]:
+    """Description:
+        Accept one browser-recorded audio payload and return a local transcript.
+
+    Requirements:
+        - Keep dictation on the same-origin Web UI route.
+        - Use a local/free transcription engine when one is available.
+        - Fail cleanly when no local transcription path is configured.
+
+    :param request: Incoming FastAPI request object.
+    :param audio: Uploaded browser audio blob.
+    :param language: Optional browser-provided language hint.
+    :raises HTTPException: If the audio is invalid or no local transcription engine is available.
+    :returns: Transcript payload for the Input panel.
+    """
+
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="No audio provided")
+    if len(audio_bytes) > MAX_DICTATION_BYTES:
+        raise HTTPException(status_code=413, detail="Dictation audio too large")
+
+    transcript = await _run_dictation_transcriber(
+        request,
+        audio_bytes=audio_bytes,
+        content_type=audio.content_type,
+        filename=audio.filename,
+        language=language,
+    )
+    return {
+        "status": "transcribed",
+        "transcript": transcript,
+        "engine": "local",
+    }
+
+
 async def _proxy_pa_prompt_request(
     method: str,
     path: str,
     *,
-    json_body: dict[str, str] | None = None,
+    json_body: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     """Description:
         Forward one Web UI prompt request to the PA service.
@@ -331,7 +534,7 @@ async def _proxy_pa_request(
     method: str,
     path: str,
     *,
-    json_body: dict[str, str] | None = None,
+    json_body: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     """Description:
         Forward one Web UI request to the PA service with test override support.
@@ -351,6 +554,99 @@ async def _proxy_pa_request(
     if callable(proxy):
         return dict(await proxy(method, path, json_body=json_body))
     return await _proxy_pa_prompt_request(method, path, json_body=json_body)
+
+
+async def _proxy_pa_storage_upload(
+    file: UploadFile,
+    *,
+    scope: str,
+    description: str,
+    session_bindings: str,
+) -> dict[str, object]:
+    """Description:
+        Forward one browser storage upload to the PA service.
+
+    Requirements:
+        - Preserve the multipart file payload, requested scope, and session bindings.
+
+    :param file: Uploaded browser file.
+    :param scope: Requested storage scope.
+    :param description: Optional user-facing description.
+    :param session_bindings: JSON-encoded session binding list.
+    :returns: Decoded PA JSON payload.
+    """
+
+    file_bytes = await file.read()
+    try:
+        async with AsyncClient(base_url=DEFAULT_PA_URL, timeout=30.0) as client:
+            response = await client.post(
+                "/api/storage/files",
+                files={
+                    "file": (
+                        file.filename or "upload.bin",
+                        file_bytes,
+                        file.content_type or "application/octet-stream",
+                    )
+                },
+                data={
+                    "scope": scope,
+                    "description": description,
+                    "session_bindings": session_bindings,
+                },
+            )
+            response.raise_for_status()
+            return dict(response.json())
+    except HTTPStatusError as exc:
+        try:
+            detail = exc.response.json().get("detail", exc.response.text)
+        except ValueError:
+            detail = exc.response.text
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
+    except RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Project Agent service is unavailable: {exc}",
+        ) from exc
+
+
+def _decorate_storage_payload(payload: dict[str, object]) -> dict[str, object]:
+    """Description:
+        Add UI-friendly action URLs and binding labels to one storage inventory payload.
+
+    Requirements:
+        - Preserve the original PA payload while exposing same-origin action routes.
+
+    :param payload: Raw proxied PA storage payload.
+    :returns: Decorated browser-facing storage payload.
+    """
+
+    items = payload.get("items", [])
+    if not isinstance(items, list):
+        return payload
+    decorated_items: list[dict[str, object]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        file_id = str(item.get("file_id", ""))
+        bindings = item.get("session_bindings", [])
+        binding_label = (
+            "global" if item.get("scope") == "global" else ", ".join(bindings or []) or "—"
+        )
+        decorated = dict(item)
+        decorated.setdefault("sha256", decorated.get("file_id", ""))
+        decorated["binding"] = binding_label
+        if str(item.get("trashed_at") or ""):
+            decorated["actions"] = {
+                "restore": f"/api/storage/trash/{file_id}/restore",
+                "delete": f"/api/storage/trash/{file_id}",
+            }
+        else:
+            decorated["actions"] = {
+                "scope": f"/api/storage/files/{file_id}",
+                "delete": f"/api/storage/files/{file_id}",
+            }
+        decorated_items.append(decorated)
+    return {"items": decorated_items}
 
 
 @router.get("/api/pa/system-prompt")
@@ -397,6 +693,323 @@ async def start_project_agent_session(request: Request) -> dict[str, object]:
     """
 
     return await _proxy_pa_request(request, "POST", "/api/pa/session/new")
+
+
+@router.get("/api/storage/files")
+async def get_storage_inventory(request: Request) -> dict[str, object]:
+    """Description:
+        Return the browser-facing storage inventory through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the PA storage inventory while exposing same-origin action URLs.
+
+    :param request: Incoming Web UI request object.
+    :returns: Decorated storage inventory payload.
+    """
+
+    payload = await _proxy_pa_request(request, "GET", "/api/storage/files")
+    return _decorate_storage_payload(payload)
+
+
+@router.get("/api/storage/trash")
+async def get_storage_trash(request: Request) -> dict[str, object]:
+    """Description:
+        Return the browser-facing trashed-file inventory through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the PA trash inventory while exposing same-origin action URLs.
+
+    :param request: Incoming Web UI request object.
+    :returns: Decorated trash inventory payload.
+    """
+
+    payload = await _proxy_pa_request(request, "GET", "/api/storage/trash")
+    return _decorate_storage_payload(payload)
+
+
+@router.post("/api/storage/files")
+async def upload_storage_file(
+    file: UploadFile = File(...),
+    scope: str = Form(default="global"),
+    description: str = Form(default=""),
+    session_bindings: str = Form(default="[]"),
+) -> dict[str, object]:
+    """Description:
+        Persist one file in the browser-facing storage inventory through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the uploaded file bytes, requested scope, and session bindings.
+
+    :param file: Uploaded browser file.
+    :param scope: Requested storage scope.
+    :param description: Optional user-facing description.
+    :param session_bindings: JSON-encoded session binding list.
+    :returns: Stored-file payload.
+    """
+
+    return await _proxy_pa_storage_upload(
+        file,
+        scope=scope,
+        description=description,
+        session_bindings=session_bindings,
+    )
+
+
+@router.put("/api/storage/files/{file_id}")
+async def update_storage_file(
+    request: Request,
+    file_id: str,
+    body: dict[str, object],
+) -> dict[str, object]:
+    """Description:
+        Update one stored-file metadata record through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the caller-supplied storage metadata payload.
+
+    :param request: Incoming Web UI request object.
+    :param file_id: Canonical stored-file identifier.
+    :param body: Replacement metadata payload.
+    :returns: Updated stored-file payload.
+    """
+
+    return await _proxy_pa_request(request, "PUT", f"/api/storage/files/{file_id}", json_body=body)
+
+
+@router.post("/api/storage/files/bulk-delete")
+async def bulk_delete_storage_files(request: Request, body: dict[str, object]) -> dict[str, object]:
+    """Description:
+        Move multiple stored files into trash through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the selected file identifier list.
+
+    :param request: Incoming Web UI request object.
+    :param body: Bulk-selection payload.
+    :returns: Updated trash inventory payload.
+    """
+
+    return await _proxy_pa_request(
+        request, "POST", "/api/storage/files/bulk-delete", json_body=body
+    )
+
+
+@router.post("/api/storage/files/bulk-export")
+async def bulk_export_storage_files(request: Request, body: dict[str, object]) -> dict[str, object]:
+    """Description:
+        Export selected stored files through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the selected file identifier list for the PA export helper.
+
+    :param request: Incoming Web UI request object.
+    :param body: Bulk-selection payload.
+    :returns: Export archive metadata payload.
+    """
+
+    return await _proxy_pa_request(
+        request, "POST", "/api/storage/files/bulk-export", json_body=body
+    )
+
+
+@router.delete("/api/storage/files/{file_id}")
+async def delete_storage_file(request: Request, file_id: str) -> dict[str, object]:
+    """Description:
+        Trash one stored file through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the canonical file identifier path parameter.
+
+    :param request: Incoming Web UI request object.
+    :param file_id: Canonical stored-file identifier.
+    :returns: Trashed stored-file payload.
+    """
+
+    return await _proxy_pa_request(request, "DELETE", f"/api/storage/files/{file_id}")
+
+
+@router.post("/api/storage/trash/{file_id}/restore")
+async def restore_storage_file(request: Request, file_id: str) -> dict[str, object]:
+    """Description:
+        Restore one trashed file through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the canonical file identifier path parameter.
+
+    :param request: Incoming Web UI request object.
+    :param file_id: Canonical stored-file identifier.
+    :returns: Restored stored-file payload.
+    """
+
+    return await _proxy_pa_request(request, "POST", f"/api/storage/trash/{file_id}/restore")
+
+
+@router.post("/api/storage/trash/bulk-restore")
+async def bulk_restore_storage_files(
+    request: Request, body: dict[str, object]
+) -> dict[str, object]:
+    """Description:
+        Restore multiple trashed files through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the selected file identifier list.
+
+    :param request: Incoming Web UI request object.
+    :param body: Bulk-selection payload.
+    :returns: Updated active storage inventory payload.
+    """
+
+    return await _proxy_pa_request(
+        request, "POST", "/api/storage/trash/bulk-restore", json_body=body
+    )
+
+
+@router.delete("/api/storage/trash/{file_id}")
+async def hard_delete_storage_file(request: Request, file_id: str) -> dict[str, object]:
+    """Description:
+        Permanently delete one stored file through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the canonical file identifier path parameter.
+
+    :param request: Incoming Web UI request object.
+    :param file_id: Canonical stored-file identifier.
+    :returns: Deleted stored-file payload.
+    """
+
+    return await _proxy_pa_request(request, "DELETE", f"/api/storage/trash/{file_id}")
+
+
+@router.delete("/api/storage/trash/bulk-delete")
+async def bulk_hard_delete_storage_files(
+    request: Request, body: dict[str, object]
+) -> dict[str, object]:
+    """Description:
+        Permanently delete multiple trashed files through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the selected file identifier list.
+
+    :param request: Incoming Web UI request object.
+    :param body: Bulk-selection payload.
+    :returns: Updated trashed-file inventory payload.
+    """
+
+    return await _proxy_pa_request(
+        request, "DELETE", "/api/storage/trash/bulk-delete", json_body=body
+    )
+
+
+@router.post("/api/logs/sessions/{session_id}/rename")
+async def rename_session(
+    request: Request, session_id: str, body: dict[str, object]
+) -> dict[str, object]:
+    """Description:
+        Rename one persisted session through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the submitted replacement session name.
+
+    :param request: Incoming Web UI request object.
+    :param session_id: Persisted session identifier.
+    :param body: Replacement session-name payload.
+    :returns: Updated session metadata payload.
+    """
+
+    return await _proxy_pa_request(
+        request, "POST", f"/api/pa/sessions/{session_id}/rename", json_body=body
+    )
+
+
+@router.post("/api/logs/sessions/{session_id}/archive")
+async def archive_session(request: Request, session_id: str) -> dict[str, object]:
+    """Description:
+        Archive one persisted session through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the persisted session identifier path parameter.
+
+    :param request: Incoming Web UI request object.
+    :param session_id: Persisted session identifier.
+    :returns: Updated session metadata payload.
+    """
+
+    return await _proxy_pa_request(request, "POST", f"/api/pa/sessions/{session_id}/archive")
+
+
+@router.post("/api/logs/sessions/{session_id}/activate")
+async def activate_session(request: Request, session_id: str) -> dict[str, object]:
+    """Description:
+        Activate one persisted session through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the persisted session identifier path parameter.
+        - Return the activated transcript payload for immediate panel rehydration.
+
+    :param request: Incoming Web UI request object.
+    :param session_id: Persisted session identifier.
+    :returns: Activated session payload.
+    """
+
+    return await _proxy_pa_request(request, "POST", f"/api/pa/sessions/{session_id}/activate")
+
+
+@router.post("/api/logs/sessions/{session_id}/unarchive")
+async def unarchive_session(request: Request, session_id: str) -> dict[str, object]:
+    """Description:
+        Restore one archived session through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the persisted session identifier path parameter.
+
+    :param request: Incoming Web UI request object.
+    :param session_id: Persisted session identifier.
+    :returns: Updated session metadata payload.
+    """
+
+    return await _proxy_pa_request(request, "POST", f"/api/pa/sessions/{session_id}/unarchive")
+
+
+@router.delete("/api/logs/sessions/{session_id}")
+async def delete_session(request: Request, session_id: str) -> dict[str, object]:
+    """Description:
+        Delete one persisted session through a same-origin proxy route.
+
+    Requirements:
+        - Preserve the persisted session identifier path parameter.
+
+    :param request: Incoming Web UI request object.
+    :param session_id: Persisted session identifier.
+    :returns: Session-deletion acknowledgment payload.
+    """
+
+    return await _proxy_pa_request(request, "DELETE", f"/api/pa/sessions/{session_id}")
+
+
+@router.post("/api/logs/sessions/{session_id}/export")
+async def export_session(
+    request: Request, session_id: str, body: dict[str, object]
+) -> dict[str, object]:
+    """Description:
+        Export one persisted session through a same-origin proxy route.
+
+    Requirements:
+        - Translate browser export-scope labels into the PA export contract.
+
+    :param request: Incoming Web UI request object.
+    :param session_id: Persisted session identifier.
+    :param body: Browser export request payload.
+    :returns: Session-export payload.
+    """
+
+    export_scope = str(body.get("export_scope", "session-only"))
+    mode = "session_with_linked_files" if export_scope == "session+linked" else "session_only"
+    return await _proxy_pa_request(
+        request,
+        "POST",
+        f"/api/pa/sessions/{session_id}/export",
+        json_body={"mode": mode},
+    )
 
 
 @router.get("/api/user-settings")

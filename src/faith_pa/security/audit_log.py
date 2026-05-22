@@ -10,9 +10,12 @@ Requirements:
 
 from __future__ import annotations
 
+import json
 import shutil
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -103,6 +106,9 @@ class AuditEntry(BaseModel):
     channel: str | None = None
     msg_id: int | None = None
     audit_id: str = Field(default_factory=_next_audit_id)
+    session_id: str | None = None
+    tool_call_id: str | None = None
+    artifact_path: str | None = None
 
     def to_json_line(self) -> str:
         """Description:
@@ -227,6 +233,9 @@ class AuditLogger:
         decision: str = "approved",
         channel: str | None = None,
         msg_id: int | None = None,
+        session_id: str | None = None,
+        request_payload: dict[str, Any] | None = None,
+        response_payload: dict[str, Any] | None = None,
     ) -> AuditEntry:
         """Description:
             Create and write one audit entry for a tool operation.
@@ -247,6 +256,20 @@ class AuditLogger:
         :returns: Persisted audit entry.
         """
 
+        tool_call_id = None
+        artifact_path = None
+        if request_payload is not None or response_payload is not None:
+            safe_session_id = session_id or "unknown-session"
+            tool_call_id = str(uuid.uuid4())
+            artifact_path = self._write_tool_artifact(
+                session_id=safe_session_id,
+                tool_call_id=tool_call_id,
+                tool=tool,
+                action=action,
+                request_payload=request_payload or {},
+                response_payload=response_payload or {},
+            ).as_posix()
+
         entry = AuditEntry(
             agent=agent,
             tool=tool,
@@ -257,9 +280,53 @@ class AuditLogger:
             decision=decision,
             channel=channel,
             msg_id=msg_id,
+            session_id=session_id,
+            tool_call_id=tool_call_id,
+            artifact_path=artifact_path,
         )
         self.write(entry)
         return entry
+
+    def _write_tool_artifact(
+        self,
+        *,
+        session_id: str,
+        tool_call_id: str,
+        tool: str,
+        action: str,
+        request_payload: dict[str, Any],
+        response_payload: dict[str, Any],
+    ) -> Path:
+        """Description:
+            Persist one replay-friendly MCP tool request and response artifact.
+
+        Requirements:
+            - Store artifacts under `logs/audit/tools/<session_uuid>/<tool_call_id>.json`.
+            - Keep the payload bounded and JSON-serializable.
+
+        :param session_id: Owning session identifier.
+        :param tool_call_id: Stable tool-call identifier for the artifact.
+        :param tool: Tool name associated with the call.
+        :param action: Action name associated with the call.
+        :param request_payload: Structured request payload.
+        :param response_payload: Structured response payload.
+        :returns: Written artifact path.
+        """
+
+        artifact_dir = self.logs_dir / "audit" / "tools" / session_id
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        artifact_path = artifact_dir / f"{tool_call_id}.json"
+        artifact_payload = {
+            "ts": _now_iso(),
+            "session_id": session_id,
+            "tool_call_id": tool_call_id,
+            "tool": tool,
+            "action": action,
+            "request": request_payload,
+            "response": response_payload,
+        }
+        artifact_path.write_text(json.dumps(artifact_payload, indent=2), encoding="utf-8")
+        return artifact_path
 
     def log_approval_decision(self, **kwargs) -> AuditEntry:
         """Description:

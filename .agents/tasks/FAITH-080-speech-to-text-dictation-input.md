@@ -1,6 +1,6 @@
 # FAITH-080 - Speech-to-Text Dictation Input
 
-**Status:** TODO
+**Status:** DONE
 **Phase:** 8 - Web UI
 **Complexity:** M
 **Model:** Sonnet / GPT-5.4

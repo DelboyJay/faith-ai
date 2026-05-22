@@ -13,12 +13,13 @@ import asyncio
 import base64
 import json
 import os
+import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 from httpx import AsyncClient
 from pydantic import BaseModel, Field, field_validator
@@ -61,6 +62,7 @@ from faith_pa.pa.context_compaction import (
     ContextCompactionMode,
 )
 from faith_pa.pa.effective_context import ProjectAgentContextCompiler
+from faith_pa.pa.file_storage import FileStorageRegistry, StorageConflictError
 from faith_pa.pa.rule_promotion import assess_rule_promotion
 from faith_pa.pa.session import SessionManager
 from faith_pa.runtime_time_context import (
@@ -254,6 +256,100 @@ class SessionStartPayload(BaseModel):
     status: str
     started_at: str
     task_count: int = 0
+    name: str = "New Session"
+
+
+class SessionExportRequest(BaseModel):
+    """Description:
+        Validate one browser-requested session export.
+
+    Requirements:
+        - Restrict export mode to the supported session-only and linked-file options.
+    """
+
+    mode: str = Field(pattern="^(session_only|session_with_linked_files)$")
+
+
+class SessionExportPayload(BaseModel):
+    """Description:
+        Represent one completed session-export response payload.
+
+    Requirements:
+        - Preserve the session identifier, export mode, and written archive path.
+    """
+
+    session_id: str
+    mode: str
+    archive_path: str
+
+
+class SessionRenameRequest(BaseModel):
+    """Description:
+        Validate one browser-requested session rename.
+
+    Requirements:
+        - Require a non-empty replacement session name.
+    """
+
+    name: str = Field(min_length=1)
+
+
+class StorageFileRecordPayload(BaseModel):
+    """Description:
+        Represent one stored-file inventory record returned to browser clients.
+
+    Requirements:
+        - Preserve filename, description, SHA-256 identity, scope, bindings, and path details.
+    """
+
+    file_id: str
+    sha256: str
+    filename: str
+    description: str
+    scope: str
+    session_bindings: list[str] = Field(default_factory=list)
+    inference_id: str | None = None
+    created_at: str
+    updated_at: str
+    trashed_at: str | None = None
+    path: str
+    size_bytes: int
+
+
+class StorageInventoryPayload(BaseModel):
+    """Description:
+        Represent one paginated-style storage inventory payload.
+
+    Requirements:
+        - Preserve active or trashed stored-file rows under one stable `items` key.
+    """
+
+    items: list[StorageFileRecordPayload] = Field(default_factory=list)
+
+
+class StorageFileUpdate(BaseModel):
+    """Description:
+        Validate one browser-requested storage metadata update.
+
+    Requirements:
+        - Allow renaming, description updates, scope updates, and session-binding updates.
+    """
+
+    filename: str | None = None
+    description: str | None = None
+    scope: str | None = None
+    session_bindings: list[str] | None = None
+
+
+class StorageBulkSelection(BaseModel):
+    """Description:
+        Validate one bulk storage action selection.
+
+    Requirements:
+        - Preserve the selected canonical file identifiers for one bulk action.
+    """
+
+    file_ids: list[str] = Field(default_factory=list)
 
 
 class AgentModelOverridePayload(BaseModel):
@@ -1295,6 +1391,7 @@ class ProjectAgentChatRuntime:
         user_settings_store: UserSettingsStore | None = None,
         model_settings_store: ModelSettingsStore | None = None,
         session_manager: SessionManager | None = None,
+        storage_registry: FileStorageRegistry | None = None,
         token_logger: TokenLogger | None = None,
         audit_logger: AuditLogger | None = None,
         compaction_llm_client: Any | None = None,
@@ -1317,6 +1414,7 @@ class ProjectAgentChatRuntime:
         :param user_settings_store: Shared user-settings store used to load runtime user profile context.
         :param model_settings_store: Shared model-settings store used to load runtime model diagnostics.
         :param session_manager: Shared session manager used for transcript persistence and recovery.
+        :param storage_registry: Shared storage registry used for uploaded-file lifecycle management.
         :param token_logger: Shared token logger used for model-usage and cost accounting.
         :param audit_logger: Shared audit logger used for PA chat-time tool visibility.
         :param compaction_llm_client: Optional local LLM client used only for history compaction summaries.
@@ -1341,6 +1439,9 @@ class ProjectAgentChatRuntime:
         self.session_manager = session_manager or SessionManager(
             project_root=_project_agent_session_root()
         )
+        self.storage_registry = storage_registry or FileStorageRegistry(
+            project_root=_project_agent_session_root()
+        )
         self.token_logger = token_logger or _build_token_logger()
         self.audit_logger = audit_logger or _build_audit_logger()
         self.context_compiler = ProjectAgentContextCompiler(
@@ -1362,6 +1463,7 @@ class ProjectAgentChatRuntime:
         self.history: list[dict[str, str]] = []
         self.transcript_messages: list[dict[str, str]] = []
         self.compacted_history_summary = ""
+        self._pending_resume_session_id: str | None = None
         self._last_compaction_record: dict[str, Any] | None = None
         self._last_effective_context_snapshot: dict[str, Any] | None = None
         self._last_context_window_limit: int | None = (
@@ -1382,6 +1484,7 @@ class ProjectAgentChatRuntime:
         :returns: Running background task for the chat bridge.
         """
 
+        await self._ensure_active_session()
         self._running = True
         self._task = asyncio.create_task(self._run_loop(), name="project-agent-chat-runtime")
         return self._task
@@ -1472,13 +1575,24 @@ class ProjectAgentChatRuntime:
         if payload_type not in {"user_input", "user_upload"}:
             return
 
+        await self._ensure_active_session()
+        if payload_type == "user_upload":
+            self._ingest_uploaded_file(payload)
+
         user_text = self._build_user_message(payload)
         if not user_text:
             return
 
-        await self._ensure_active_session()
+        if self.session_manager.session_id is not None and payload_type == "user_input":
+            self.session_manager.maybe_name_session_from_first_message(
+                self.session_manager.session_id,
+                user_text,
+            )
         active_task = self._ensure_active_task()
         await self._publish_status("active")
+        resume_marker = self._maybe_record_resume_marker()
+        if resume_marker:
+            await self._publish_output(f"{resume_marker}\n")
         self._record_transcript_message("user", user_text)
         await self._publish_output(f"User: {user_text}\n")
 
@@ -1522,6 +1636,10 @@ class ProjectAgentChatRuntime:
             self._record_transcript_message("assistant", reply_text)
             await self._stream_assistant_reply(reply_text)
             await self._publish_status("idle")
+            if payload_type == "user_upload":
+                inference_id = str(payload.get("message_id", ""))
+                if inference_id:
+                    self.storage_registry.cleanup_one_time_files(inference_id)
         except Exception as exc:
             await self._publish_error(f"Project Agent reply failed: {exc}")
 
@@ -1541,11 +1659,27 @@ class ProjectAgentChatRuntime:
         if payload.get("type") == "user_input":
             return str(payload.get("message", "")).strip()
 
+        storage_conflict = payload.get("_storage_conflict")
+        if isinstance(storage_conflict, dict):
+            conflicts = ", ".join(storage_conflict.get("conflicts", [])) or "metadata"
+            existing = storage_conflict.get("existing_record", {})
+            existing_name = str(existing.get("filename", "existing file"))
+            return (
+                "A file upload matched existing stored content but needs user resolution before reuse. "
+                f"Conflicting fields: {conflicts}. Existing filename: {existing_name}."
+            )
+
         filename = str(payload.get("filename", "upload"))
         content_type = str(payload.get("content_type", "application/octet-stream"))
         message = str(payload.get("message", "")).strip()
         size_bytes = int(payload.get("size_bytes", 0) or 0)
         summary = f"Uploaded file '{filename}' ({content_type}, {size_bytes} bytes)."
+        storage_record = payload.get("_storage_record")
+        if isinstance(storage_record, dict):
+            summary = (
+                f"{summary}\n\nStored as scope '{storage_record.get('scope', 'session')}' "
+                f"with file id {storage_record.get('file_id', '')}."
+            )
         if content_type in {"text/plain", "text/markdown"}:
             try:
                 text_content = base64.b64decode(str(payload.get("content_base64", ""))).decode(
@@ -1560,6 +1694,55 @@ class ProjectAgentChatRuntime:
         if message:
             summary = f"{message}\n\n{summary}"
         return summary.strip()
+
+    def _ingest_uploaded_file(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        """Description:
+            Persist one browser-upload payload into the host-backed storage registry.
+
+        Requirements:
+            - Bind session-scoped uploads to the active session automatically.
+            - Remove one-time uploads after the inference round finishes by preserving the inference identifier.
+
+        :param payload: Browser-originated upload payload.
+        :returns: Stored-file record when ingestion succeeds, else `None`.
+        """
+
+        content_base64 = str(payload.get("content_base64", "")).strip()
+        if not content_base64:
+            return None
+        try:
+            content = base64.b64decode(content_base64)
+        except Exception:
+            return None
+
+        scope = str(payload.get("scope", "session") or "session").strip().lower()
+        session_bindings = payload.get("session_bindings")
+        if not isinstance(session_bindings, list):
+            session_bindings = []
+        active_session_id = self.session_manager.session_id
+        if scope in {"session", "scoped"} and active_session_id:
+            session_bindings = sorted(
+                {binding for binding in [*session_bindings, active_session_id] if binding}
+            )
+
+        try:
+            record = self.storage_registry.ingest_bytes(
+                filename=str(payload.get("filename", "upload.bin")),
+                content=content,
+                scope=scope,
+                session_bindings=session_bindings,
+                description=str(payload.get("description", "") or "").strip(),
+                inference_id=str(payload.get("message_id", "")) if scope == "one-time" else None,
+            )
+        except StorageConflictError as exc:
+            payload["_storage_conflict"] = {
+                "file_id": exc.file_id,
+                "conflicts": list(exc.conflicts),
+                "existing_record": dict(exc.existing_record),
+            }
+            return None
+        payload["_storage_record"] = record
+        return record
 
     def _build_chat_messages(
         self,
@@ -2200,6 +2383,13 @@ class ProjectAgentChatRuntime:
             action=tool_call.action,
             target=target,
             channel="pa-user",
+            session_id=self.session_manager.session_id,
+            request_payload={
+                "tool": tool_call.tool,
+                "action": tool_call.action,
+                "args": tool_call.args,
+            },
+            response_payload=tool_result,
         )
         self.session_manager.append_channel_message(
             task_id=task_id,
@@ -2336,6 +2526,7 @@ class ProjectAgentChatRuntime:
         self.transcript_messages = []
         self.history = []
         self.compacted_history_summary = ""
+        self._pending_resume_session_id = None
         self._last_compaction_record = None
         await self.session_manager.start_session(trigger="web-ui")
         self.token_logger.reset_session_total()
@@ -2343,10 +2534,40 @@ class ProjectAgentChatRuntime:
             "session_id": self.session_manager.session_id,
             "previous_session_id": previous_session_id,
             "status": "active",
+            "name": "New Session",
             "started_at": self.session_manager.current_session.started_at
             if self.session_manager.current_session is not None
             else datetime.now(timezone.utc).isoformat(),
             "task_count": 0,
+        }
+
+    async def activate_session(self, session_id: str) -> dict[str, Any]:
+        """Description:
+            Activate one persisted Project Agent session for future browser inference.
+
+        Requirements:
+            - Rehydrate the selected session transcript into runtime memory before the next turn.
+            - Preserve the persisted session name and transcript payload for browser consumers.
+            - Defer the visible resume marker until the user actually sends the next message.
+
+        :param session_id: Persisted session identifier to activate.
+        :returns: Browser-facing activated session payload.
+        :raises FileNotFoundError: If the requested session does not exist.
+        :raises ValueError: If the requested session is archived and cannot yet be resumed.
+        """
+
+        payload = self.session_manager.activate_session(session_id)
+        session_path = self.session_manager.session_path()
+        self.transcript_messages = self.session_manager.load_project_agent_transcript(session_path)
+        self.history = self.transcript_messages[-MAX_PROJECT_AGENT_HISTORY:]
+        self.compacted_history_summary = ""
+        self._pending_resume_session_id = session_id
+        return {
+            "session_id": session_id,
+            "name": str(payload.get("name", "New Session")),
+            "status": str(payload.get("status", "active")),
+            "transcript": list(self.transcript_messages),
+            "tasks": self._load_session_tasks(session_path),
         }
 
     def _ensure_active_task(self) -> Any:
@@ -2365,6 +2586,36 @@ class ProjectAgentChatRuntime:
             return active_task
         return self.session_manager.create_task("Project Agent chat", channels=["pa-user"])
 
+    def _load_session_tasks(self, session_path: Path) -> list[dict[str, Any]]:
+        """Description:
+            Load persisted task metadata for one selected session.
+
+        Requirements:
+            - Return newest-first persisted task metadata for browser session switching.
+            - Skip malformed task metadata safely.
+
+        :param session_path: Persisted session directory to inspect.
+        :returns: Persisted task metadata ordered newest-first.
+        """
+
+        tasks_dir = session_path / "tasks"
+        tasks: list[dict[str, Any]] = []
+        if not tasks_dir.exists():
+            return tasks
+        for task_dir in tasks_dir.iterdir():
+            if not task_dir.is_dir():
+                continue
+            meta_path = task_dir / "task.meta.json"
+            if not meta_path.exists():
+                continue
+            try:
+                payload = json.loads(meta_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                tasks.append(payload)
+        return sorted(tasks, key=lambda item: str(item.get("started_at", "")), reverse=True)
+
     def _record_transcript_message(self, role: str, content: str) -> None:
         """Description:
             Persist one Project Agent transcript message and mirror it into the exported UI transcript state.
@@ -2380,6 +2631,27 @@ class ProjectAgentChatRuntime:
         message = {"role": role, "content": content}
         self.transcript_messages.append(message)
         self.session_manager.append_project_agent_message(role, content)
+
+    def _maybe_record_resume_marker(self) -> str | None:
+        """Description:
+            Persist a compact session-resume marker immediately before the first resumed user turn.
+
+        Requirements:
+            - Write the marker only when the currently selected session has been resumed but not yet used.
+            - Keep the marker out of bounded LLM history so it remains audit-focused UI context.
+
+        :returns: Resume marker text when one was written, otherwise `None`.
+        """
+
+        if self._pending_resume_session_id is None:
+            return None
+        if self.session_manager.session_id != self._pending_resume_session_id:
+            return None
+        timestamp = datetime.now(timezone.utc).astimezone().strftime("%A, %d %B %Y %H:%M:%S %Z")
+        marker = f"Session resumed on {timestamp}"
+        self._pending_resume_session_id = None
+        self._record_transcript_message("assistant", marker)
+        return marker
 
     def export_transcript_messages(self) -> list[dict[str, str]]:
         """Description:
@@ -2529,7 +2801,9 @@ class ProjectAgentChatRuntime:
         :param payload: Structured frame payload.
         """
 
-        await self.redis.publish(self.output_channel, json.dumps(payload))
+        frame_payload = dict(payload)
+        frame_payload.setdefault("session_id", self.session_manager.session_id)
+        await self.redis.publish(self.output_channel, json.dumps(frame_payload))
 
 
 def _derive_runtime_category(labels: dict[str, str], container_type: str) -> str:
@@ -3122,6 +3396,25 @@ def _get_project_agent_session_manager(app: FastAPI) -> SessionManager:
     return session_manager
 
 
+def _get_project_agent_storage_registry(app: FastAPI) -> FileStorageRegistry:
+    """Description:
+        Return the shared host-backed storage registry for the PA application.
+
+    Requirements:
+        - Reuse the app-state registry when startup already created it.
+        - Create a new host-backed registry lazily for direct helper calls when needed.
+
+    :param app: FastAPI application carrying shared runtime state.
+    :returns: Shared host-backed storage registry.
+    """
+
+    registry = getattr(app.state, "project_agent_storage_registry", None)
+    if registry is None:
+        registry = FileStorageRegistry(project_root=_project_agent_session_root())
+        app.state.project_agent_storage_registry = registry
+    return registry
+
+
 def _get_user_settings_store(app: FastAPI) -> UserSettingsStore:
     """Description:
         Return the shared user-settings store for the PA application.
@@ -3226,6 +3519,9 @@ async def lifespan(app: FastAPI):
 
     app.state.project_agent_prompt_store = ProjectAgentPromptStore()
     app.state.project_agent_session_manager = SessionManager(
+        project_root=_project_agent_session_root()
+    )
+    app.state.project_agent_storage_registry = FileStorageRegistry(
         project_root=_project_agent_session_root()
     )
     app.state.user_settings_store = UserSettingsStore(
@@ -3390,8 +3686,433 @@ async def api_start_project_agent_session() -> SessionStartPayload:
         session_id=session.session_id,
         previous_session_id=previous_session_id,
         status="active",
+        name="New Session",
         started_at=session.started_at,
         task_count=0,
+    )
+
+
+@app.post("/api/pa/sessions/{session_id}/rename")
+async def api_rename_project_agent_session(
+    session_id: str,
+    body: SessionRenameRequest,
+) -> dict[str, Any]:
+    """Description:
+        Rename one persisted Project Agent session.
+
+    Requirements:
+        - Preserve the UUID session identity while updating the user-facing name.
+        - Return HTTP 404 when the requested session does not exist.
+
+    :param session_id: Persisted session identifier to rename.
+    :param body: Requested replacement name.
+    :returns: Updated session metadata payload.
+    """
+
+    session_manager = _get_project_agent_session_manager(app)
+    try:
+        return session_manager.rename_session(session_id, body.name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc
+
+
+@app.post("/api/pa/sessions/{session_id}/activate")
+async def api_activate_project_agent_session(session_id: str) -> dict[str, Any]:
+    """Description:
+        Activate one persisted Project Agent session for future browser inference.
+
+    Requirements:
+        - Rehydrate the selected transcript before returning to the browser.
+        - Reject archived sessions until they are explicitly restored.
+
+    :param session_id: Persisted session identifier to activate.
+    :returns: Activated session payload with transcript and task metadata.
+    """
+
+    chat_runtime = getattr(app.state, "project_agent_chat_runtime", None)
+    if chat_runtime is not None:
+        try:
+            return await chat_runtime.activate_session(session_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Session not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    session_manager = _get_project_agent_session_manager(app)
+    try:
+        payload = session_manager.activate_session(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {
+        "session_id": session_id,
+        "name": str(payload.get("name", "New Session")),
+        "status": str(payload.get("status", "active")),
+        "transcript": session_manager.load_project_agent_transcript(session_manager.session_path()),
+        "tasks": [],
+    }
+
+
+@app.post("/api/pa/sessions/{session_id}/archive")
+async def api_archive_project_agent_session(session_id: str) -> dict[str, Any]:
+    """Description:
+        Archive one persisted Project Agent session.
+
+    Requirements:
+        - Preserve archived sessions on disk for later inspection and restore.
+
+    :param session_id: Persisted session identifier to archive.
+    :returns: Updated session metadata payload.
+    """
+
+    session_manager = _get_project_agent_session_manager(app)
+    try:
+        return session_manager.archive_session(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc
+
+
+@app.post("/api/pa/sessions/{session_id}/unarchive")
+async def api_restore_project_agent_session(session_id: str) -> dict[str, Any]:
+    """Description:
+        Restore one archived Project Agent session to active availability.
+
+    Requirements:
+        - Return HTTP 404 when the requested session does not exist.
+
+    :param session_id: Persisted session identifier to restore.
+    :returns: Updated session metadata payload.
+    """
+
+    session_manager = _get_project_agent_session_manager(app)
+    try:
+        return session_manager.restore_session(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc
+
+
+@app.delete("/api/pa/sessions/{session_id}")
+async def api_delete_project_agent_session(session_id: str) -> dict[str, str]:
+    """Description:
+        Permanently delete one persisted Project Agent session directory.
+
+    Requirements:
+        - Keep at least one session available in the host-backed session registry.
+
+    :param session_id: Persisted session identifier to delete.
+    :returns: Simple acknowledgment payload.
+    """
+
+    session_manager = _get_project_agent_session_manager(app)
+    session_dirs = [path for path in session_manager.sessions_dir.iterdir() if path.is_dir()]
+    if len(session_dirs) <= 1:
+        raise HTTPException(status_code=400, detail="At least one session must remain available")
+    try:
+        session_manager.delete_session(session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Session not found") from exc
+    return {"status": "deleted", "session_id": session_id}
+
+
+@app.get("/api/storage/files", response_model=StorageInventoryPayload)
+async def api_list_storage_files() -> StorageInventoryPayload:
+    """Description:
+        Return the active stored-file inventory for browser storage-management panels.
+
+    Requirements:
+        - Expose filename, description, scope, bindings, and SHA-256 metadata.
+        - Remain available without depending on Redis health.
+
+    :returns: Active stored-file inventory payload.
+    """
+
+    registry = _get_project_agent_storage_registry(app)
+    return StorageInventoryPayload(items=registry.list_files())
+
+
+@app.get("/api/storage/trash", response_model=StorageInventoryPayload)
+async def api_list_storage_trash() -> StorageInventoryPayload:
+    """Description:
+        Return the trashed stored-file inventory for browser trash-management panels.
+
+    Requirements:
+        - Expose trashed records separately from the active inventory.
+
+    :returns: Trashed stored-file inventory payload.
+    """
+
+    registry = _get_project_agent_storage_registry(app)
+    return StorageInventoryPayload(items=registry.list_trash())
+
+
+@app.post("/api/storage/files", response_model=StorageFileRecordPayload)
+async def api_upload_storage_file(
+    file: UploadFile = File(...),
+    scope: str = Form(default="session"),
+    description: str = Form(default=""),
+    session_bindings: str = Form(default="[]"),
+) -> StorageFileRecordPayload:
+    """Description:
+        Persist one file in the host-backed storage inventory.
+
+    Requirements:
+        - Deduplicate identical bytes by SHA-256.
+        - Return HTTP 409 when identical content conflicts with existing metadata.
+
+    :param file: Uploaded browser file.
+    :param scope: Requested storage scope.
+    :param description: Optional user-facing description.
+    :param session_bindings: JSON list of session bindings supplied by the browser.
+    :returns: Stored-file record payload.
+    """
+
+    registry = _get_project_agent_storage_registry(app)
+    try:
+        parsed_bindings = json.loads(session_bindings)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid session_bindings payload: {exc}"
+        ) from exc
+    content = await file.read()
+    try:
+        record = registry.ingest_bytes(
+            filename=file.filename or "upload.bin",
+            content=content,
+            scope=scope,
+            session_bindings=parsed_bindings if isinstance(parsed_bindings, list) else [],
+            description=description,
+        )
+    except StorageConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "file_id": exc.file_id,
+                "conflicts": exc.conflicts,
+                "existing_record": exc.existing_record,
+            },
+        ) from exc
+    return StorageFileRecordPayload.model_validate(record)
+
+
+@app.post("/api/storage/files/bulk-delete", response_model=StorageInventoryPayload)
+async def api_bulk_trash_storage_files(body: StorageBulkSelection) -> StorageInventoryPayload:
+    """Description:
+        Move multiple active stored files into the FAITH trash inventory.
+
+    Requirements:
+        - Ignore unknown file identifiers rather than failing the entire bulk action.
+
+    :param body: Selected stored-file identifiers to trash.
+    :returns: Updated trashed-file inventory payload.
+    """
+
+    registry = _get_project_agent_storage_registry(app)
+    for file_id in body.file_ids:
+        try:
+            registry.trash_file(file_id)
+        except KeyError:
+            continue
+    return StorageInventoryPayload(items=registry.list_trash())
+
+
+@app.post("/api/storage/files/bulk-export")
+async def api_bulk_export_storage_files(body: StorageBulkSelection) -> dict[str, Any]:
+    """Description:
+        Export selected stored files into one portable archive.
+
+    Requirements:
+        - Include only files that still exist in the active inventory.
+        - Return the archive path for browser follow-up actions.
+
+    :param body: Selected stored-file identifiers to export.
+    :returns: Archive metadata payload.
+    """
+
+    registry = _get_project_agent_storage_registry(app)
+    selected = {record["file_id"]: record for record in registry.list_files()}
+    export_dir = _project_agent_session_root() / ".faith" / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = export_dir / "storage-selection.zip"
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        manifest: list[dict[str, Any]] = []
+        for file_id in body.file_ids:
+            record = selected.get(file_id)
+            if record is None:
+                continue
+            file_path = Path(str(record.get("path", "")))
+            if not file_path.exists():
+                continue
+            archive.write(file_path, arcname=record.get("filename", file_path.name))
+            manifest.append(
+                {
+                    "file_id": file_id,
+                    "filename": record.get("filename"),
+                    "scope": record.get("scope"),
+                }
+            )
+        archive.writestr("storage-selection.json", json.dumps({"items": manifest}, indent=2))
+    return {"archive_path": archive_path.as_posix(), "count": len(body.file_ids)}
+
+
+@app.put("/api/storage/files/{file_id}", response_model=StorageFileRecordPayload)
+async def api_update_storage_file(
+    file_id: str, body: StorageFileUpdate
+) -> StorageFileRecordPayload:
+    """Description:
+        Update one stored-file metadata record.
+
+    Requirements:
+        - Preserve the canonical file identity while changing user-facing metadata.
+
+    :param file_id: Canonical SHA-256 identifier to update.
+    :param body: Replacement metadata payload.
+    :returns: Updated stored-file record payload.
+    """
+
+    registry = _get_project_agent_storage_registry(app)
+    try:
+        record = registry.update_file(
+            file_id,
+            filename=body.filename,
+            description=body.description,
+            scope=body.scope,
+            session_bindings=body.session_bindings,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Stored file not found") from exc
+    return StorageFileRecordPayload.model_validate(record)
+
+
+@app.delete("/api/storage/files/{file_id}", response_model=StorageFileRecordPayload)
+async def api_trash_storage_file(file_id: str) -> StorageFileRecordPayload:
+    """Description:
+        Move one active stored file into the FAITH trash inventory.
+
+    Requirements:
+        - Remove the file from active agent availability immediately while keeping it restorable.
+
+    :param file_id: Canonical SHA-256 identifier to trash.
+    :returns: Trashed stored-file record payload.
+    """
+
+    registry = _get_project_agent_storage_registry(app)
+    try:
+        record = registry.trash_file(file_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Stored file not found") from exc
+    return StorageFileRecordPayload.model_validate(record)
+
+
+@app.post("/api/storage/trash/{file_id}/restore", response_model=StorageFileRecordPayload)
+async def api_restore_storage_file(file_id: str) -> StorageFileRecordPayload:
+    """Description:
+        Restore one trashed stored file back into the active inventory.
+
+    Requirements:
+        - Clear the trashed state and make the file available again.
+
+    :param file_id: Canonical SHA-256 identifier to restore.
+    :returns: Restored stored-file record payload.
+    """
+
+    registry = _get_project_agent_storage_registry(app)
+    try:
+        record = registry.restore_file(file_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Stored file not found in trash") from exc
+    return StorageFileRecordPayload.model_validate(record)
+
+
+@app.post("/api/storage/trash/bulk-restore", response_model=StorageInventoryPayload)
+async def api_bulk_restore_storage_files(body: StorageBulkSelection) -> StorageInventoryPayload:
+    """Description:
+        Restore multiple trashed stored files back into the active inventory.
+
+    Requirements:
+        - Ignore unknown trashed identifiers rather than failing the entire bulk action.
+
+    :param body: Selected trashed-file identifiers to restore.
+    :returns: Updated active stored-file inventory payload.
+    """
+
+    registry = _get_project_agent_storage_registry(app)
+    for file_id in body.file_ids:
+        try:
+            registry.restore_file(file_id)
+        except KeyError:
+            continue
+    return StorageInventoryPayload(items=registry.list_files())
+
+
+@app.delete("/api/storage/trash/{file_id}", response_model=StorageFileRecordPayload)
+async def api_hard_delete_storage_file(file_id: str) -> StorageFileRecordPayload:
+    """Description:
+        Permanently delete one stored file from the active inventory or trash.
+
+    Requirements:
+        - Delete the stored bytes and metadata immediately.
+
+    :param file_id: Canonical SHA-256 identifier to delete permanently.
+    :returns: Deleted stored-file record payload.
+    """
+
+    registry = _get_project_agent_storage_registry(app)
+    try:
+        record = registry.hard_delete_file(file_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Stored file not found") from exc
+    return StorageFileRecordPayload.model_validate(record)
+
+
+@app.delete("/api/storage/trash/bulk-delete", response_model=StorageInventoryPayload)
+async def api_bulk_hard_delete_storage_files(body: StorageBulkSelection) -> StorageInventoryPayload:
+    """Description:
+        Permanently delete multiple trashed stored files.
+
+    Requirements:
+        - Ignore unknown identifiers rather than failing the entire bulk action.
+
+    :param body: Selected trashed-file identifiers to delete permanently.
+    :returns: Updated trashed-file inventory payload.
+    """
+
+    registry = _get_project_agent_storage_registry(app)
+    for file_id in body.file_ids:
+        try:
+            registry.hard_delete_file(file_id)
+        except KeyError:
+            continue
+    return StorageInventoryPayload(items=registry.list_trash())
+
+
+@app.post("/api/pa/sessions/{session_id}/export", response_model=SessionExportPayload)
+async def api_export_project_agent_session(
+    session_id: str,
+    body: SessionExportRequest,
+) -> SessionExportPayload:
+    """Description:
+        Export one persisted session into a portable archive.
+
+    Requirements:
+        - Support both session-only and linked-file-inclusive export modes.
+
+    :param session_id: Persisted session identifier to export.
+    :param body: Requested export mode.
+    :returns: Written session-export payload.
+    """
+
+    session_manager = _get_project_agent_session_manager(app)
+    storage_registry = _get_project_agent_storage_registry(app)
+    archive_path = session_manager.export_session_archive(
+        session_id,
+        mode=body.mode,
+        storage_registry=storage_registry,
+    )
+    return SessionExportPayload(
+        session_id=session_id,
+        mode=body.mode,
+        archive_path=archive_path.as_posix(),
     )
 
 

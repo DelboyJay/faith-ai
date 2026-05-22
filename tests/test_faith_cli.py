@@ -192,7 +192,75 @@ def test_default_ollama_install_pulls_llama3_8b(monkeypatch) -> None:
     result = install_default_ollama_model()
 
     assert result.returncode == 0
-    assert captured_args == [(("exec", "-T", "ollama", "ollama", "pull", "llama3:8b"), False)]
+    assert captured_args == [(("exec", "-T", "ollama", "ollama", "pull", "llama3:8b"), True)]
+
+
+def test_default_ollama_install_falls_back_to_named_container_exec(monkeypatch) -> None:
+    """Description:
+        Verify default Ollama model installation falls back to direct container exec when compose service discovery is stale.
+
+    Requirements:
+        - This test is needed to prevent `faith init` from failing when the `faith-ollama` container is running but not attached to the current compose project metadata.
+        - Verify the helper retries with `docker exec faith-ollama` after a failed `compose exec`.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    """
+
+    compose_calls = []
+    direct_exec_calls = []
+
+    def _capture_run_compose(
+        *args: str,
+        capture_output: bool = False,
+    ) -> subprocess.CompletedProcess[str]:
+        """Description:
+            Simulate compose exec failing to find the Ollama service.
+
+        Requirements:
+            - Preserve the production helper signature.
+        """
+
+        compose_calls.append((args, capture_output))
+        return subprocess.CompletedProcess(
+            ["docker"],
+            1,
+            stdout="",
+            stderr='service "ollama" is not running',
+        )
+
+    def _capture_subprocess_run(
+        args: list[str],
+        *,
+        capture_output: bool,
+        text: bool,
+        encoding: str,
+        errors: str,
+        cwd: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        """Description:
+            Capture the direct Docker exec fallback call.
+
+        Requirements:
+            - Preserve the subprocess.run keyword signature used by the production helper.
+        """
+
+        del capture_output, text, encoding, errors, cwd
+        direct_exec_calls.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="pulled", stderr="")
+
+    monkeypatch.setattr(docker_module, "run_compose", _capture_run_compose)
+    monkeypatch.setattr(
+        docker_module,
+        "existing_bootstrap_containers",
+        lambda: {"faith-ollama": "running"},
+    )
+    monkeypatch.setattr(docker_module.subprocess, "run", _capture_subprocess_run)
+
+    result = install_default_ollama_model()
+
+    assert result.returncode == 0
+    assert compose_calls == [(("exec", "-T", "ollama", "ollama", "pull", "llama3:8b"), True)]
+    assert direct_exec_calls == [["docker", "exec", "faith-ollama", "ollama", "pull", "llama3:8b"]]
 
 
 def test_help_shows_available_commands() -> None:
@@ -336,6 +404,7 @@ def test_init_bootstraps_home(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("faith_cli.cli.check_python_version", lambda: None)
     monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
     monkeypatch.setattr("faith_cli.cli.check_git", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.existing_bootstrap_containers", lambda: {})
     monkeypatch.setattr(
         "faith_cli.cli.compose_up", lambda: subprocess.CompletedProcess(["docker"], 0)
     )
@@ -374,6 +443,7 @@ def test_init_installs_default_ollama_model(monkeypatch, tmp_path: Path) -> None
     monkeypatch.setattr("faith_cli.cli.check_python_version", lambda: None)
     monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
     monkeypatch.setattr("faith_cli.cli.check_git", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.existing_bootstrap_containers", lambda: {})
     monkeypatch.setattr(
         "faith_cli.cli.compose_up", lambda: subprocess.CompletedProcess(["docker"], 0)
     )
@@ -406,6 +476,7 @@ def test_init_fails_when_default_ollama_model_install_fails(monkeypatch, tmp_pat
     monkeypatch.setattr("faith_cli.cli.check_python_version", lambda: None)
     monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
     monkeypatch.setattr("faith_cli.cli.check_git", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.existing_bootstrap_containers", lambda: {})
     monkeypatch.setattr(
         "faith_cli.cli.compose_up", lambda: subprocess.CompletedProcess(["docker"], 0)
     )
@@ -439,6 +510,107 @@ def test_init_prompts_before_reinitialising(monkeypatch) -> None:
     result = runner.invoke(main, ["init"])
     assert result.exit_code == 0
     assert "cancelled" in result.output.lower()
+
+
+def test_init_reuses_running_stack_without_compose_up(monkeypatch, tmp_path: Path) -> None:
+    """Description:
+        Verify ``faith init`` does not try to recreate containers when the FAITH stack is already running.
+
+    Requirements:
+        - This test is needed to prevent re-running `faith init` from failing with Docker container-name conflicts for the already-running bootstrap services.
+        - Verify the command skips `compose_up`, still ensures the default PA model is installed, and reports the running state cleanly.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    _fake_home(monkeypatch, tmp_path)
+    monkeypatch.setattr("faith_cli.cli.is_initialised", lambda: True)
+    monkeypatch.setattr("faith_cli.cli.click.confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr("faith_cli.cli.check_python_version", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.check_git", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.is_running", lambda: True)
+    monkeypatch.setattr("faith_cli.cli.wait_and_open_browser", lambda: True)
+
+    def _unexpected_compose_up() -> subprocess.CompletedProcess[str]:
+        """Description:
+            Fail the test if init still tries to recreate the running stack.
+
+        Requirements:
+            - Preserve the zero-argument production signature.
+        """
+
+        raise AssertionError("compose_up should not be called when FAITH is already running")
+
+    installed = []
+    monkeypatch.setattr("faith_cli.cli.compose_up", _unexpected_compose_up)
+    monkeypatch.setattr(
+        "faith_cli.cli.install_default_ollama_model",
+        lambda: installed.append("ollama") or subprocess.CompletedProcess(["docker"], 0),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["init"])
+
+    assert result.exit_code == 0
+    assert "already running" in result.output.lower()
+    assert installed == ["ollama"]
+
+
+def test_init_cleans_conflicting_bootstrap_containers_before_startup(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+        Verify ``faith init`` removes stale fixed-name bootstrap containers before startup.
+
+    Requirements:
+        - This test is needed to prevent re-running `faith init` from failing when
+          old FAITH containers exist under a different Docker Compose project name.
+        - Verify init removes the conflicting containers, then starts the stack and
+          installs the default Ollama model.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    _fake_home(monkeypatch, tmp_path)
+    monkeypatch.setattr("faith_cli.cli.is_initialised", lambda: True)
+    monkeypatch.setattr("faith_cli.cli.click.confirm", lambda *args, **kwargs: True)
+    monkeypatch.setattr("faith_cli.cli.check_python_version", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.check_docker", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.check_git", lambda: None)
+    monkeypatch.setattr("faith_cli.cli.is_running", lambda: False)
+    monkeypatch.setattr(
+        "faith_cli.cli.existing_bootstrap_containers",
+        lambda: {"faith-redis": "running", "faith-mcp-registry-db": "exited"},
+    )
+    removed = []
+    started = []
+    installed = []
+    monkeypatch.setattr(
+        "faith_cli.cli.remove_bootstrap_containers",
+        lambda names: removed.append(tuple(names)) or subprocess.CompletedProcess(["docker"], 0),
+    )
+    monkeypatch.setattr(
+        "faith_cli.cli.compose_up",
+        lambda: started.append("compose_up") or subprocess.CompletedProcess(["docker"], 0),
+    )
+    monkeypatch.setattr(
+        "faith_cli.cli.install_default_ollama_model",
+        lambda: installed.append("ollama") or subprocess.CompletedProcess(["docker"], 0),
+    )
+    monkeypatch.setattr("faith_cli.cli.wait_and_open_browser", lambda: True)
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["init"])
+
+    assert result.exit_code == 0
+    assert removed == [("faith-redis", "faith-mcp-registry-db")]
+    assert started == ["compose_up"]
+    assert installed == ["ollama"]
+    assert "cleaning them up" in result.output.lower()
 
 
 def test_start_requires_initialisation(monkeypatch) -> None:
@@ -721,6 +893,29 @@ def test_editable_compose_sets_project_agent_session_root(
     environment = compose_data["services"]["pa"]["environment"]
 
     assert "FAITH_PA_SESSION_ROOT=/data/pa-runtime" in environment
+
+
+def test_editable_compose_mounts_web_ui_data_directory(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+        Verify editable-install compose generation mounts the host-backed data directory into the Web UI container.
+
+    Requirements:
+        - This test is needed to prove Session History and other Web UI data-backed panels can read persisted runtime data from the extracted FAITH home.
+        - Verify the generated Web UI service mounts the extracted data directory read-only at ``/data``.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    _fake_home(monkeypatch, tmp_path)
+
+    compose_data = yaml.safe_load(paths.editable_compose_contents())
+    volumes = compose_data["services"]["web-ui"]["volumes"]
+
+    assert f"{(tmp_path / '.faith' / 'data').as_posix()}:/data:ro" in volumes
 
 
 def test_packaged_compose_sets_default_project_agent_model() -> None:

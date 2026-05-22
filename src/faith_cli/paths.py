@@ -353,6 +353,7 @@ def editable_compose_contents() -> str:
     ports:
       - \"8080:8080\"
     volumes:
+      - {data}:/data:ro
       - {logs}:/logs:ro
     environment:
       - FAITH_PA_URL=http://pa:8000

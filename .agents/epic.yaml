@@ -429,7 +429,7 @@ phases:
         summary: 'Implement a framework-owned canonical MCP inventory that both FAITH-owned and external MCP servers register into automatically when they become enabled, installed, healthy, or reconfigured. The framework must derive per-agent visible tool manifests from that inventory subject to permissions, privacy profile, and runtime state, propagate those manifests to the PA and specialist agents without manual per-tool prompt edits, and make new MCP tools available immediately after registration/hot-reload rather than requiring bespoke chat-loop wiring.'
   - id: 8
     title: 'Web UI'
-    status: 'TODO'
+    status: 'IN PROGRESS'
     summary: 'Implement panel-level behaviour and user-facing Web UI features on top of the React + Dockview workspace. Phase 8 owns panel content, interaction UX, and feature surfaces; Phase 13 owns workspace shell, default layout mechanics, minimize/restore behaviour, and menu primitives.'
     task_count: 27
     tasks:
@@ -509,27 +509,18 @@ phases:
         name: 'Web UI Log Views'
         complexity: 'M'
         model: 'Opus / GPT-5.4 high reasoning'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-044-web-ui-log-views.md'
         dependencies: ['FAITH-021', 'FAITH-074']
         frs_reference: 'Section 8.7'
         summary: 'Implement read-only log viewer panels inside the Dockview workspace: Audit trail, Event timeline, Session history, Token usage, and Approval history. All data remains read-only, served through FastAPI endpoints, and mounted from host-backed runtime log sources without browser write paths.'
-      - id: 'FAITH-061'
-        name: 'Runtime Status Cards'
-        complexity: 'M'
-        model: 'Sonnet / GPT-5.4'
-        status: 'IN PROGRESS'
-        task_doc: 'tasks/FAITH-061-runtime-status-cards.md'
-        dependencies: ['FAITH-040', 'FAITH-058', 'FAITH-074', 'FAITH-079']
-        frs_reference: 'Section 6.4.2'
-        summary: 'Improve the System Status panel UX so FAITH-managed runtime state is shown as readable cards rather than raw JSON. Render one compact card per relevant bootstrap, agent, tool, sandbox, or runtime container with state, health, role, and human-usable URL where applicable, while keeping the dedicated Docker Runtime panel as the detailed operational view and relying on FAITH-079 for authoritative refresh cadence.'
       - id: 'FAITH-062'
         name: 'Panel Lifecycle & Deduping'
         complexity: 'S'
         model: 'Haiku / GPT-5.4-mini'
         status: 'DONE'
         task_doc: 'tasks/FAITH-062-panel-lifecycle-deduping.md'
-        dependencies: ['FAITH-074', 'FAITH-075', 'FAITH-061']
+        dependencies: ['FAITH-074', 'FAITH-075']
         frs_reference: 'Section 6.4.1, 6.10'
         summary: 'Make panel lifecycle behaviour reliable. Panels must close and reopen cleanly, singleton panels must not duplicate, and agent/tool panels must dedupe by runtime identity. If the user tries to add an already-open panel, focus the existing panel instead of creating another copy.'
       - id: 'FAITH-064'
@@ -545,7 +536,7 @@ phases:
         name: 'Theme-Aware Chat Transcript Bubbles'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-070-theme-aware-chat-transcript-bubbles.md'
         dependencies: ['FAITH-038', 'FAITH-041', 'FAITH-064', 'FAITH-069']
         frs_reference: 'Section 6.4.2, 6.6'
@@ -590,7 +581,7 @@ phases:
         name: 'Speech-to-Text Dictation Input'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'TODO'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-080-speech-to-text-dictation-input.md'
         dependencies: ['FAITH-041', 'FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.1, 6.4.2'
@@ -676,6 +667,15 @@ phases:
         dependencies: ['FAITH-015', 'FAITH-044', 'FAITH-074', 'FAITH-082']
         frs_reference: 'Section 6.4.1, 8.4, 8.7'
         summary: 'Make Session History behave like a live browser-facing session controller rather than a passive archive only. The panel must show sessions created by the first user message without needing a manual reload, offer a visible `New Session` action that ends the current PA chat session and starts a fresh one immediately, and appear by default in the upper-left workspace beside the Project Agent panel.'
+      - id: 'FAITH-125'
+        name: 'Session Selector, Session Details Panel, and Effective Context UX Cleanup'
+        complexity: 'M'
+        model: 'Sonnet / GPT-5.4'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-125-session-selector-session-details-effective-context-ux.md'
+        dependencies: ['FAITH-044', 'FAITH-099', 'FAITH-103', 'FAITH-084']
+        frs_reference: 'Section 6.4.2, 8.4, 8.7'
+        summary: 'Refine session-driven browser UX so Session History becomes a clean grouped selector with per-list search and ordering, selecting a session immediately makes it the active session for future inference, session-specific panels swap to that selection safely, archived sessions are handled explicitly, and the Effective Context panel binds to the selected session with human-facing controls instead of raw session/turn IDs.'
   - id: 9
     title: 'Logging & Observability'
     status: 'DONE'
@@ -718,6 +718,21 @@ phases:
         dependencies: ['FAITH-021', 'FAITH-045', 'FAITH-047']
         frs_reference: 'Section 8.6'
         summary: 'Implement log rotation per `.faith/system.yaml` settings. Audit/event/token logs: archive after `log_retention_days` (default 90). Session logs: archive after `session_retention_days` (default 365). Move to `logs/archive/`, never auto-delete. Notify user when archive exceeds configurable size threshold (default 1GB). The PA runtime now performs rotation checks and archive-threshold warning detection against persisted logs and session history.'
+  - id: 20
+    title: 'Interactive User Terminal & Runtime Console'
+    status: 'TODO'
+    summary: 'Add a dedicated user-facing terminal capability with explicit runtime binding, approvals, auditability, and session-aware console behaviour. This phase remains discussion-gated until the terminal execution model is defined in detail.'
+    task_count: 1
+    tasks:
+      - id: 'FAITH-126'
+        name: 'User Terminal Panel in Active Agent Runtime Context'
+        complexity: 'L'
+        model: 'Opus / GPT-5.4 high reasoning'
+        status: 'TODO'
+        task_doc: 'tasks/FAITH-126-user-terminal-panel-active-agent-runtime-context.md'
+        dependencies: ['FAITH-038', 'FAITH-041', 'FAITH-057', 'FAITH-074', 'FAITH-098']
+        frs_reference: 'Section 4.2, 5.3, 5.5, 6.4.2, 8.4'
+        summary: 'Add a dedicated user-facing terminal panel that lets the user run commands in the same runtime context used by the active agent/session, with full audit logging, session binding, and permission controls. This task is intentionally discussion-gated and must not be implemented until a later detailed requirements discussion resolves execution context, scope, approvals, persistence, and UX behaviour.'
   - id: 10
     title: 'First-Run Wizard & Setup'
     status: 'TODO'

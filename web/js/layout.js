@@ -161,12 +161,6 @@
                   model: "ollama/llama3:8b",
                 },
               },
-              {
-                id: "system-status",
-                componentType: COMPONENT_TYPES.STATUS,
-                title: "System Status",
-                componentState: {},
-              },
             ],
           },
           lowerGroup: {
@@ -433,7 +427,7 @@
         void globalScope.faithDockerRuntimePanel.mountPanel(target);
         return;
       }
-      target.replaceChildren(buildPlaceholderPanel("status", "System Status"));
+      target.replaceChildren(buildPlaceholderPanel("status", "Runtime Status"));
     });
 
     layout.registerComponentFactoryFunction(COMPONENT_TYPES.DOCKER_RUNTIME, function mountDockerRuntimePanel(container) {
@@ -590,7 +584,7 @@
    *   Decide whether two panel definitions represent the same logical panel.
    *
    * Requirements:
-   *   - Treat Input, Approvals, and System Status as singleton panels.
+   *   - Treat Input, Approvals, and Runtime Status as singleton panels.
    *   - Compare agent and tool panels by runtime identity.
    *
    * @param {string} componentType: Panel component type being compared.
@@ -845,7 +839,7 @@
     const titles = {
       [COMPONENT_TYPES.INPUT]: "Input",
       [COMPONENT_TYPES.APPROVAL]: "Approvals",
-      [COMPONENT_TYPES.STATUS]: "System Status",
+      [COMPONENT_TYPES.STATUS]: "Runtime Status",
       [COMPONENT_TYPES.DOCKER_RUNTIME]: "Docker Runtime",
       [COMPONENT_TYPES.SESSION_HISTORY]: "Session History",
       [COMPONENT_TYPES.EFFECTIVE_CONTEXT]: "Effective Context",

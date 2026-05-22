@@ -11,7 +11,9 @@
 (function initialiseFaithAgentPanel(globalScope) {
   const AGENT_WS_PATH_PREFIX = "/ws/agent/";
   const INPUT_PANEL_COMPACTION_STATE_EVENT = "faith:input-panel-compaction-state";
+  const SESSION_CHANGE_EVENT = "faith:workspace-session-change";
   const PROJECT_AGENT_TRANSCRIPT_PATH = "/api/pa/transcript";
+  const SESSION_DETAIL_PATH_PREFIX = "/api/logs/sessions/";
   const MAX_RECONNECT_DELAY_MS = 8000;
   const INITIAL_RECONNECT_DELAY_MS = 400;
 
@@ -48,6 +50,24 @@
   function buildProjectAgentTranscriptUrl() {
     const base = new URL(globalScope.location.href);
     base.pathname = PROJECT_AGENT_TRANSCRIPT_PATH;
+    base.search = "";
+    base.hash = "";
+    return base.toString();
+  }
+
+  /**
+   * Description:
+   *   Build the browser URL for one persisted session transcript.
+   *
+   * Requirements:
+   *   - Keep the session-history replay path same-origin and safely encoded.
+   *
+   * @param {string} sessionId Persisted session identifier.
+   * @returns {string} Absolute session-detail API URL.
+   */
+  function buildSessionDetailUrl(sessionId) {
+    const base = new URL(globalScope.location.href);
+    base.pathname = `${SESSION_DETAIL_PATH_PREFIX}${encodeURIComponent(sessionId)}`;
     base.search = "";
     base.hash = "";
     return base.toString();
@@ -296,6 +316,7 @@
         agentId: "project-agent",
         displayName: "Project Agent",
         model: "unknown",
+        sessionId: "",
       },
       state || {},
     );
@@ -514,6 +535,11 @@
       if (!message || typeof message !== "object") {
         return;
       }
+      if (panelState.agentId === "project-agent" && panelState.sessionId && message.session_id) {
+        if (String(message.session_id) !== String(panelState.sessionId)) {
+          return;
+        }
+      }
       if (message.type === "status") {
         panelState.model = message.model || panelState.model;
         setHeaderState(message.status || "running", panelState.model);
@@ -592,33 +618,81 @@
      *   Reconcile the saved Project Agent transcript with the currently rendered panel.
      *
      * Requirements:
-     *   - Use the same-origin transcript endpoint when `fetch` is available.
+     *   - Use the live transcript endpoint for the current active session.
+     *   - Fall back to the persisted session transcript when the selected session is not the live one.
      *   - Append only transcript entries that have not already been rendered locally.
      *   - Degrade silently when the transcript endpoint is unavailable.
+     *
+     * @returns {Promise<boolean>} Promise that resolves to `true` when the panel should stay connected live.
      */
     async function reconcileSavedTranscript() {
       if (typeof globalScope.fetch !== "function") {
-        return;
+        return true;
       }
       try {
         const response = await globalScope.fetch(buildProjectAgentTranscriptUrl());
         if (!response || response.ok !== true) {
-          return;
+          return true;
         }
         const payload = await response.json();
-        if (!payload || !Array.isArray(payload.messages)) {
-          return;
+        if (!payload || typeof payload !== "object") {
+          return true;
+        }
+        const liveSessionId = String(payload.session_id || "");
+        panelState.sessionId = liveSessionId || panelState.sessionId;
+        if (panelState.sessionId && liveSessionId && panelState.sessionId !== liveSessionId) {
+          const historicalResponse = await globalScope.fetch(buildSessionDetailUrl(panelState.sessionId));
+          if (!historicalResponse || historicalResponse.ok !== true) {
+            return false;
+          }
+          const historicalPayload = await historicalResponse.json();
+          if (!historicalPayload || !Array.isArray(historicalPayload.transcript)) {
+            return false;
+          }
+          terminal.clear();
+          historicalPayload.transcript.forEach(processSavedTranscriptMessage);
+          savedTranscriptMessageCount = historicalPayload.transcript.length;
+          scheduleScrollTranscriptToLatest();
+          return false;
+        }
+        if (!Array.isArray(payload.messages)) {
+          return true;
         }
         const nextMessages = payload.messages.slice(savedTranscriptMessageCount);
         if (nextMessages.length === 0) {
-          return;
+          return true;
         }
         nextMessages.forEach(processSavedTranscriptMessage);
         savedTranscriptMessageCount = payload.messages.length;
         scheduleScrollTranscriptToLatest();
       } catch (error) {
+        return true;
+      }
+      return true;
+    }
+
+    /**
+     * Description:
+     *   Rehydrate the Project Agent panel from one selected persisted session payload.
+     *
+     * Requirements:
+     *   - Clear the current transcript before rendering the selected session history.
+     *   - Keep the panel pinned to the latest restored message.
+     *
+     * @param {Event|object} event: Workspace-level session change event.
+     */
+    function onSessionChange(event) {
+      if (panelState.agentId !== "project-agent") {
         return;
       }
+      const detail = event && event.detail ? event.detail : event || {};
+      panelState.sessionId = String(detail.sessionId || "");
+      terminal.clear();
+      savedTranscriptMessageCount = 0;
+      const transcript = Array.isArray(detail.transcript) ? detail.transcript : [];
+      transcript.forEach(processSavedTranscriptMessage);
+      savedTranscriptMessageCount = transcript.length;
+      scheduleScrollTranscriptToLatest();
     }
 
     /**
@@ -755,7 +829,14 @@
     });
 
     if (panelState.agentId === "project-agent") {
-      void reconcileSavedTranscript().finally(connect);
+      if (typeof globalScope.addEventListener === "function") {
+        globalScope.addEventListener(SESSION_CHANGE_EVENT, onSessionChange);
+      }
+      void reconcileSavedTranscript().then(function onTranscriptSync(shouldConnectLive) {
+        if (shouldConnectLive) {
+          connect();
+        }
+      });
     } else {
       connect();
     }
@@ -781,6 +862,12 @@
       }
       if (socket && typeof socket.close === "function") {
         socket.close();
+      }
+      if (
+        panelState.agentId === "project-agent" &&
+        typeof globalScope.removeEventListener === "function"
+      ) {
+        globalScope.removeEventListener(SESSION_CHANGE_EVENT, onSessionChange);
       }
       terminal.dispose();
     }

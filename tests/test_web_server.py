@@ -22,6 +22,7 @@ from httpx import ASGITransport, AsyncClient
 import faith_web.app as web_app
 from faith_pa.utils.redis_client import SYSTEM_EVENTS_CHANNEL, USER_INPUT_CHANNEL
 from faith_web.app import APPROVAL_EVENTS_CHANNEL, APPROVAL_RESPONSES_CHANNEL, create_app
+from faith_web.version import __version__ as faith_web_version
 
 
 class FakePubSub:
@@ -286,7 +287,7 @@ def test_index_renders_visible_web_ui_version(client: TestClient) -> None:
     response = client.get("/")
     assert response.status_code == 200
     assert 'class="faith-toolbar__version"' in response.text
-    assert "v0.20.1" in response.text
+    assert f"v{faith_web_version}" in response.text
 
 
 def test_index_route_uses_non_deprecated_template_signature(client: TestClient) -> None:
@@ -424,9 +425,33 @@ def test_workspace_config_places_session_history_left_of_project_agent_by_defaul
 
     assert "upperLeftGroup" in source
     assert '"session-history"' in source
+    assert '"effective-context"' in source
     assert "upperRightGroup" in source
     assert '"project-agent"' in source
-    assert '"system-status"' in source
+    assert '"system-status"' not in source
+
+
+def test_dockview_shell_sources_thread_selected_session_state_into_session_bound_panels(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the Dockview shell source coordinates the selected session across the session-bound panels.
+
+    Requirements:
+        - This test is needed to prove the session selector can drive the Project Agent, Input, and Effective Context panels from one shared selection state.
+        - Verify the bundled React source wires a shared session-change event and no longer exposes the old system-status default panel.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    del client
+    project_root = Path(__file__).resolve().parents[1]
+    source = (project_root / "web" / "src" / "main.jsx").read_text(encoding="utf-8")
+
+    assert "faith:workspace-session-change" in source
+    assert "faithWorkspaceSessionState" in source
+    assert "sessionDrafts" in source
+    assert '"system-status"' not in source
 
 
 def test_frontend_package_manifest_pins_radix_dependencies(client: TestClient) -> None:
@@ -695,7 +720,7 @@ def test_layout_asset_uses_minimal_first_load_defaults(client: TestClient) -> No
     assert "Project Agent" in response.text
     assert 'title: "Input"' in response.text
     assert 'title: "Approvals"' in response.text
-    assert 'title: "System Status"' in response.text
+    assert 'title: "System Status"' not in response.text
     assert "Software Developer" not in response.text
     assert "QA Engineer" not in response.text
 
@@ -704,21 +729,21 @@ def test_layout_asset_stacks_system_status_with_project_agent(
     client: TestClient,
 ) -> None:
     """Description:
-        Verify the default layout tabs System Status with the Project Agent.
+        Verify the default layout keeps the top workspace focused on Session History, Effective Context, and Project Agent.
 
     Requirements:
-        - This test is needed to prove System Status no longer takes a separate lower column.
-        - Verify the default layout uses a GoldenLayout stack containing Project Agent and System Status.
+        - This test is needed to prove the default workspace no longer includes the redundant system-status panel.
+        - Verify the default layout keeps Project Agent, Input, and Approvals without System Status.
 
     :param client: FastAPI test client bound to the FAITH web app.
     """
 
     response = client.get("/static/js/layout.js")
     assert response.status_code == 200
-    assert 'type: "stack"' in response.text
     assert 'title: "Project Agent"' in response.text
-    assert 'title: "System Status"' in response.text
-    assert "System Status" in response.text.split('title: "Input"')[0]
+    assert 'title: "System Status"' not in response.text
+    assert 'title: "Session History"' in response.text
+    assert 'title: "Effective Context"' in response.text
     assert 'model: "ollama/llama3:8b"' in response.text
 
 
@@ -1056,6 +1081,72 @@ async def test_input_returns_503_when_redis_missing(app) -> None:
         assert response.status_code == 503
     finally:
         web_app.redis_pool = original
+
+
+@pytest.mark.asyncio
+async def test_dictation_transcription_uses_injected_local_transcriber(app) -> None:
+    """Description:
+        Verify the dictation endpoint forwards recorded audio to an injected local transcription hook.
+
+    Requirements:
+        - This test is needed to prove the Web UI can stay on a local/free transcription path instead of a hosted speech API.
+        - Verify the endpoint accepts recorded audio and returns the transcript payload.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    calls: list[tuple[bytes, str | None]] = []
+
+    async def _fake_transcriber(audio_bytes: bytes, content_type: str | None = None, **_kwargs):
+        """Description:
+            Return one deterministic transcript payload for the dictation proxy test.
+
+        Requirements:
+            - Preserve the audio bytes and MIME type for assertion.
+
+        :param audio_bytes: Recorded audio bytes sent by the browser.
+        :param content_type: Declared MIME type for the browser recording.
+        :returns: Deterministic transcript text.
+        """
+
+        calls.append((audio_bytes, content_type))
+        return "captured transcript"
+
+    app.state.dictation_transcriber = _fake_transcriber
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        response = await async_client.post(
+            "/api/dictation/transcribe",
+            files={"audio": ("clip.webm", b"fake-audio-bytes", "audio/webm")},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["transcript"] == "captured transcript"
+    assert calls[0][0] == b"fake-audio-bytes"
+    assert calls[0][1] == "audio/webm"
+
+
+@pytest.mark.asyncio
+async def test_dictation_transcription_returns_503_without_local_engine(app) -> None:
+    """Description:
+        Verify the dictation endpoint fails cleanly when no local transcription engine is configured.
+
+    Requirements:
+        - This test is needed to prove dictation does not silently fall back to a hosted speech API.
+        - Verify the endpoint returns HTTP 503 rather than HTTP 500 when the local path is unavailable.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        response = await async_client.post(
+            "/api/dictation/transcribe",
+            files={"audio": ("clip.webm", b"fake-audio-bytes", "audio/webm")},
+        )
+
+    assert response.status_code == 503
 
 
 @pytest.mark.asyncio
@@ -1415,6 +1506,7 @@ def test_token_usage_panel_contract_mentions_context_diagnostics() -> None:
     assert "Context/input tokens" in response.text
     assert "Inference/output tokens" in response.text
     assert "Effective-context snapshot" in response.text
+    assert "Session comparisons" in response.text
 
 
 @pytest.mark.asyncio
@@ -1449,9 +1541,9 @@ async def test_api_effective_context_returns_snapshot_payload(app, tmp_path: Pat
         ),
         encoding="utf-8",
     )
-    app.state.pa_session_root = session_root
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        app.state.pa_session_root = session_root
         response = await async_client.get("/api/logs/effective-context/sess-0001/turn-0001")
 
     assert response.status_code == 200
@@ -1461,6 +1553,60 @@ async def test_api_effective_context_returns_snapshot_payload(app, tmp_path: Pat
     assert payload["compiled_context"] == "redacted context"
     assert payload["hash"] == "abc123"
     assert payload["warnings"] == ["missing include target"]
+
+
+@pytest.mark.asyncio
+async def test_api_effective_context_returns_latest_snapshot_payload(app, tmp_path: Path) -> None:
+    """Description:
+        Verify the Web UI exposes the newest persisted effective-context snapshot for one session.
+
+    Requirements:
+        - This test is needed to prove the Effective Context panel can follow a selected session without asking the user for a raw turn ID.
+        - Verify the latest route returns the newest persisted snapshot payload for the requested session.
+
+    :param app: Test-configured Web UI application.
+    :param tmp_path: Temporary runtime root used to hold persisted effective-context snapshots.
+    """
+
+    session_root = tmp_path / "runtime"
+    effective_context_dir = session_root / ".faith" / "sessions" / "sess-0002" / "effective-context"
+    effective_context_dir.mkdir(parents=True)
+    (effective_context_dir / "20260521-100000.json").write_text(
+        json.dumps(
+            {
+                "session_id": "sess-0002",
+                "turn_id": "turn-older",
+                "context_hash": "older",
+                "redacted_context": "older snapshot",
+                "include_entries": [],
+                "warnings": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (effective_context_dir / "20260521-110000.json").write_text(
+        json.dumps(
+            {
+                "session_id": "sess-0002",
+                "turn_id": "turn-newer",
+                "context_hash": "newer",
+                "redacted_context": "newest snapshot",
+                "include_entries": [],
+                "warnings": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        app.state.pa_session_root = session_root
+        response = await async_client.get("/api/logs/effective-context/sess-0002/latest")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session_id"] == "sess-0002"
+    assert payload["turn_id"] == "turn-newer"
+    assert payload["compiled_context"] == "newest snapshot"
 
 
 def test_health_returns_503_when_redis_missing(app) -> None:
@@ -1607,6 +1753,7 @@ def test_api_routes_returns_manifest(client: TestClient) -> None:
     assert any(route["path"] == "/api/routes" for route in payload["routes"])
     assert any(route["path"] == "/ws/status" for route in payload["routes"])
     assert any(route["path"] == "/api/docker-runtime" for route in payload["routes"])
+    assert any(route["path"] == "/api/dictation/transcribe" for route in payload["routes"])
     assert any(route["path"] == "/ws/docker" for route in payload["routes"])
     assert any(
         route["path"] == "/api/routes"
@@ -1983,3 +2130,143 @@ async def test_model_settings_proxy_forwards_updates(app) -> None:
 
     assert response.status_code == 200
     assert response.json()["catalog"][0]["context_window"]["provenance"] == "user_override"
+
+
+@pytest.mark.asyncio
+async def test_upload_endpoint_preserves_scope_metadata_in_browser_payload(
+    async_client, fake_redis
+) -> None:
+    """Description:
+        Verify browser uploads preserve the requested attachment scope before forwarding into the PA channel.
+
+    Requirements:
+        - This test is needed to prove Input-panel scope selection reaches the PA runtime.
+        - Verify the published upload payload carries the explicit storage scope.
+
+    :param async_client: Async HTTP client bound to the Web UI app.
+    :param fake_redis: Healthy fake Redis client capturing published payloads.
+    """
+
+    response = await async_client.post(
+        "/upload",
+        files={"file": ("note.txt", b"hello upload\n", "text/plain")},
+        data={"message": "Review this.", "scope": "global"},
+    )
+
+    assert response.status_code == 200
+    channel, payload_text = fake_redis.published[0]
+    payload = json.loads(payload_text)
+    assert channel == USER_INPUT_CHANNEL
+    assert payload["scope"] == "global"
+
+
+@pytest.mark.asyncio
+async def test_storage_inventory_proxy_forwards_to_project_agent(app) -> None:
+    """Description:
+        Verify the Web UI exposes the storage inventory through a same-origin proxy route.
+
+    Requirements:
+        - This test is needed to prove the Storage panel can load real inventory data without direct PA-origin browser calls.
+        - Verify the proxied request targets the PA storage inventory endpoint.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    async def _fake_pa_prompt_fetcher(method: str, path: str, *, json_body=None):
+        del json_body
+        assert method == "GET"
+        assert path == "/api/storage/files"
+        return {
+            "items": [
+                {
+                    "file_id": "abc123",
+                    "filename": "notes.txt",
+                    "description": "Session notes.",
+                    "scope": "session",
+                    "session_bindings": ["sess-001"],
+                    "sha256": "abc123",
+                    "path": "E:/tmp/notes.txt",
+                    "size_bytes": 42,
+                    "created_at": "2026-05-19T10:00:00Z",
+                    "updated_at": "2026-05-19T10:00:00Z",
+                    "trashed_at": None,
+                    "inference_id": None,
+                }
+            ]
+        }
+
+    app.state.pa_prompt_request_proxy = _fake_pa_prompt_fetcher
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        response = await async_client.get("/api/storage/files")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["items"][0]["filename"] == "notes.txt"
+    assert payload["items"][0]["actions"]["delete"] == "/api/storage/files/abc123"
+
+
+@pytest.mark.asyncio
+async def test_session_history_mutation_proxy_forwards_rename_request(app) -> None:
+    """Description:
+        Verify the Web UI exposes session-history rename actions through a same-origin proxy route.
+
+    Requirements:
+        - This test is needed to prove the Session History panel can mutate persisted sessions without direct PA-origin browser calls.
+        - Verify the proxied request preserves the submitted rename payload.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    async def _fake_pa_prompt_fetcher(method: str, path: str, *, json_body=None):
+        assert method == "POST"
+        assert path == "/api/pa/sessions/sess-001/rename"
+        assert json_body == {"name": "Renamed session"}
+        return {"session_id": "sess-001", "name": "Renamed session", "status": "active"}
+
+    app.state.pa_prompt_request_proxy = _fake_pa_prompt_fetcher
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        response = await async_client.post(
+            "/api/logs/sessions/sess-001/rename",
+            json={"name": "Renamed session"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["name"] == "Renamed session"
+
+
+@pytest.mark.asyncio
+async def test_session_history_activation_proxy_forwards_activate_request(app) -> None:
+    """Description:
+        Verify the Web UI exposes session activation through a same-origin proxy route.
+
+    Requirements:
+        - This test is needed to prove the Session History selector can switch the active PA session without direct PA-origin browser calls.
+        - Verify the proxied request targets the PA session-activation route and preserves the returned transcript payload.
+
+    :param app: Test-configured Web UI application.
+    """
+
+    async def _fake_pa_prompt_fetcher(method: str, path: str, *, json_body=None):
+        assert method == "POST"
+        assert path == "/api/pa/sessions/sess-001/activate"
+        assert json_body is None
+        return {
+            "session_id": "sess-001",
+            "name": "Initial Session",
+            "transcript": [
+                {"role": "user", "content": "Hello again."},
+                {"role": "assistant", "content": "Welcome back."},
+            ],
+            "tasks": [{"task_id": "task-1-101010.000", "started_at": "2026-05-21T10:10:10Z"}],
+        }
+
+    app.state.pa_prompt_request_proxy = _fake_pa_prompt_fetcher
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+        response = await async_client.post("/api/logs/sessions/sess-001/activate")
+
+    assert response.status_code == 200
+    assert response.json()["session_id"] == "sess-001"
+    assert response.json()["transcript"][1]["content"] == "Welcome back."

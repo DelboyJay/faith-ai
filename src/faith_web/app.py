@@ -207,6 +207,15 @@ def _build_route_manifest() -> ServiceRouteManifest:
                 service="faith-web-ui",
                 protocol="http",
                 method="POST",
+                path="/api/dictation/transcribe",
+                summary="Transcribe one browser-recorded dictation payload with a local engine.",
+                expected_status_codes=[200, 400, 413, 503],
+                implementation=describe_route_implementation(http_routes.transcribe_dictation),
+            ),
+            RouteManifestEntry(
+                service="faith-web-ui",
+                protocol="http",
+                method="POST",
                 path="/approve/{request_id}",
                 summary="Submit an approval decision back to the PA.",
                 expected_status_codes=[200, 404, 422, 503],
@@ -494,6 +503,7 @@ def create_app(*, testing: bool = False) -> FastAPI:
     app.state.testing = testing
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     app.state.pa_runtime_fetcher = fetch_pa_docker_runtime
+    app.state.dictation_transcriber = None
     app.state.pending_approval_ids = set()
     app.state.approval_registry_active = False
     app.state.logs_dir = Path(os.getenv("FAITH_LOG_DIR", "/logs")).resolve()

@@ -364,6 +364,34 @@ pre {
   word-break: break-word;
 }
 
+.faith-log-panel__row--muted {
+  color: var(--muted);
+}
+
+.faith-log-panel__chart-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.faith-log-panel__chart-label {
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.faith-log-panel__chart-bar {
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.faith-log-panel__chart-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4da3ff 0%, #85c9ff 100%);
+}
+
 .faith-log-panel__footer {
   display: flex;
   align-items: center;
@@ -393,6 +421,26 @@ pre {
   border-color: rgba(88, 166, 255, 0.55);
 }
 
+.faith-session-history__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.faith-session-history__export-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 180px;
+}
+
+.faith-session-history__export-scope span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
 .faith-log-panel__channel-log {
   padding: 12px;
   border: 1px solid var(--line);
@@ -400,6 +448,103 @@ pre {
   background: rgba(13, 17, 23, 0.9);
   overflow: auto;
   max-height: 320px;
+}
+
+.faith-storage-panel,
+.faith-trash-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100%;
+  height: 100%;
+}
+
+.faith-storage-panel__header,
+.faith-trash-panel__header {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.faith-storage-panel__title,
+.faith-trash-panel__title {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.faith-storage-panel__toolbar,
+.faith-trash-panel__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.faith-storage-panel__bulk-actions,
+.faith-trash-panel__bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.faith-storage-panel__content,
+.faith-trash-panel__content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.faith-storage-panel__error,
+.faith-trash-panel__error {
+  margin: 0;
+  color: #ff7b72;
+}
+
+.faith-storage-panel__empty,
+.faith-trash-panel__empty {
+  margin: 0;
+  color: var(--muted);
+}
+
+.faith-storage-panel__table,
+.faith-trash-panel__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.faith-storage-panel__table th,
+.faith-storage-panel__table td,
+.faith-trash-panel__table th,
+.faith-trash-panel__table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.9);
+  vertical-align: top;
+  text-align: left;
+}
+
+.faith-storage-panel__sort-button,
+.faith-trash-panel__sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.faith-storage-panel__row select,
+.faith-trash-panel__row select {
+  width: 100%;
+  min-width: 140px;
+}
+
+.faith-storage-panel__row:last-child td,
+.faith-trash-panel__row:last-child td {
+  border-bottom: 0;
 }
 
 .faith-runtime-summary,
@@ -517,6 +662,28 @@ pre {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.faith-input-panel__scope {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+}
+
+.faith-input-panel__scope-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.faith-input-panel__scope-select {
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0f141b;
+  color: var(--text);
 }
 
 .faith-panel--agent-output {
@@ -734,6 +901,68 @@ pre {
   line-height: 1.45;
 }
 
+.faith-input-panel__dictation {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(88, 166, 255, 0.35);
+  border-radius: 10px;
+  background: rgba(88, 166, 255, 0.08);
+  color: #dceeff;
+  font-size: 0.88rem;
+}
+
+.faith-input-panel__dictation-indicator {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #58a6ff;
+  box-shadow: 0 0 0 0 rgba(88, 166, 255, 0.36);
+}
+
+.faith-input-panel__dictation-label {
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.faith-input-panel__dictation[data-state="recording"] {
+  border-color: rgba(212, 137, 54, 0.45);
+  background: rgba(212, 137, 54, 0.1);
+  color: #f0b76a;
+}
+
+.faith-input-panel__dictation[data-state="recording"] .faith-input-panel__dictation-indicator {
+  background: #d48936;
+  animation: faith-input-dictation-pulse 1.05s ease-in-out infinite;
+}
+
+.faith-input-panel__dictation[data-state="transcribing"] {
+  border-color: rgba(88, 166, 255, 0.45);
+  background: rgba(88, 166, 255, 0.12);
+}
+
+.faith-input-panel__dictation[data-state="success"] {
+  border-color: rgba(63, 185, 80, 0.45);
+  background: rgba(63, 185, 80, 0.1);
+  color: #a9e5b2;
+}
+
+.faith-input-panel__dictation[data-state="success"] .faith-input-panel__dictation-indicator {
+  background: #3fb950;
+}
+
+.faith-input-panel__dictation[data-state="failed"] {
+  border-color: rgba(248, 81, 73, 0.45);
+  background: rgba(248, 81, 73, 0.1);
+  color: #ffb4ae;
+}
+
+.faith-input-panel__dictation[data-state="failed"] .faith-input-panel__dictation-indicator {
+  background: #f85149;
+}
+
 .faith-input-panel__compaction[hidden],
 .faith-input-panel__compaction-diagnostic[hidden] {
   display: none;
@@ -741,6 +970,22 @@ pre {
 
 .faith-input-panel--compaction {
   box-shadow: inset 0 0 0 1px rgba(212, 137, 54, 0.42);
+}
+
+.faith-input-panel--dictating {
+  box-shadow: inset 0 0 0 1px rgba(212, 137, 54, 0.3);
+}
+
+.faith-input-panel--transcribing {
+  box-shadow: inset 0 0 0 1px rgba(88, 166, 255, 0.28);
+}
+
+.faith-input-panel--dictation-success {
+  box-shadow: inset 0 0 0 1px rgba(63, 185, 80, 0.22);
+}
+
+.faith-input-panel--dictation-failed {
+  box-shadow: inset 0 0 0 1px rgba(248, 81, 73, 0.3);
 }
 
 .faith-input-panel__error {
@@ -810,6 +1055,23 @@ pre {
   100% {
     transform: scale(0.92);
     box-shadow: 0 0 0 0 rgba(212, 137, 54, 0);
+  }
+}
+
+@keyframes faith-input-dictation-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(212, 137, 54, 0.38);
+    transform: scale(0.92);
+  }
+
+  50% {
+    box-shadow: 0 0 0 7px rgba(212, 137, 54, 0);
+    transform: scale(1);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 rgba(212, 137, 54, 0);
+    transform: scale(0.92);
   }
 }
 

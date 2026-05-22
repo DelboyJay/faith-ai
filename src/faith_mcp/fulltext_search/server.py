@@ -120,3 +120,48 @@ class FullTextSearchServer:
         :returns: Structured file-search result payload.
         """
         return (await self.runner.search_files(filename_pattern, path=path)).to_dict()
+
+    async def discover_excerpts(
+        self,
+        terms: str | list[str],
+        *,
+        paths: list[str] | None = None,
+        block_types: list[str] | None = None,
+        ignore_case: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Description:
+            Discover deterministic excerpt blocks for one or more files.
+
+        Requirements:
+            - Return a compact summary that exposes stable excerpt references.
+            - Keep the public server surface aligned with the runner helper.
+
+        :param terms: One search term or a list of literal search terms.
+        :param paths: Files to inspect for matching excerpts.
+        :param block_types: Optional block types to restrict the discovery to.
+        :param ignore_case: Whether literal matching should ignore case.
+        :returns: Structured discovery payload.
+        """
+        return (
+            await self.runner.discover_excerpts(
+                terms,
+                paths=paths or [],
+                block_types=block_types,
+                ignore_case=ignore_case,
+            )
+        ).to_dict()
+
+    async def retrieve_excerpts(self, references: list[str]) -> dict[str, Any]:
+        """
+        Description:
+            Retrieve the exact text blocks for previously discovered references.
+
+        Requirements:
+            - Preserve the stable reference contract from discovery.
+            - Return the server payload as plain JSON-safe data.
+
+        :param references: Stable excerpt references returned by discovery.
+        :returns: Structured retrieval payload.
+        """
+        return (await self.runner.retrieve_excerpts(references)).to_dict()

@@ -19,7 +19,12 @@
       { label: "Search", query: "search", placeholder: "Search token entries" },
     ],
     renderSummary(summary) {
-      return globalScope.faithLogPanelCommon.renderTokenSummary(summary);
+      return globalScope.faithLogPanelCommon.renderTokenSummary(
+        Object.assign({}, summary, {
+          agent_chart_title: "Agent usage chart",
+          session_comparison_title: "Session comparisons",
+        }),
+      );
     },
     renderItem(item) {
       return globalScope.faithLogPanelCommon.renderRecordCard(item, [

@@ -355,6 +355,185 @@
 
   /**
    * Description:
+   *   Format one aggregate token summary entry into readable plain text.
+   *
+   * Requirements:
+   *   - Keep context/input, inference/output, cache, and effective-context diagnostics together.
+   *   - Preserve optional context-file attribution when the backend supplies it.
+   *
+   * @param {string} label Summary item label.
+   * @param {object} value Structured aggregate value from the backend.
+   * @returns {string} Human-readable summary line.
+   */
+  function formatTokenSummaryLine(label, value) {
+    const contextInput = value.context_input_tokens ?? value.input_tokens ?? 0;
+    const inferenceOutput = value.inference_output_tokens ?? value.output_tokens ?? 0;
+    const total = value.total_tokens ?? contextInput + inferenceOutput;
+    const windowPct =
+      value.context_window_percentage === null || value.context_window_percentage === undefined
+        ? "unknown"
+        : `${value.context_window_percentage}%`;
+    const snapshotId = value.effective_context_snapshot_id || "—";
+    const turnId = value.effective_context_turn_id || "—";
+    const cacheSummary =
+      value.cache_hit === null || value.cache_hit === undefined
+        ? "cache unknown"
+        : value.cache_hit
+          ? `${value.cached_input_tokens || 0} cached input`
+          : "cache miss";
+    const contextFiles = Array.isArray(value.context_files)
+      ? value.context_files
+          .map(function mapContextFile(fileEntry) {
+            return `${fileEntry.path || "unknown"} (${fileEntry.tokens || 0})`;
+          })
+          .join(", ")
+      : "";
+    const calls = value.calls ? `${value.calls} calls, ` : "";
+    return `${label}: ${calls}${contextInput} context/input, ${inferenceOutput} inference/output, ${total} total, ${windowPct}, snapshot ${snapshotId}, turn ${turnId}, ${cacheSummary}${contextFiles ? `, files ${contextFiles}` : ""}`;
+  }
+
+  /**
+   * Description:
+   *   Render one summary column for a mapping-style token aggregate section.
+   *
+   * Requirements:
+   *   - Keep each aggregate section visually grouped under a heading.
+   *   - Surface a friendly empty state when no summary entries are available.
+   *
+   * @param {string} title Section heading.
+   * @param {object} entries Mapping of summary keys to aggregate values.
+   * @returns {HTMLElement} Rendered summary column.
+   */
+  function renderTokenSummaryColumn(title, entries) {
+    const column = document.createElement("section");
+    column.className = "faith-log-panel__summary-column";
+    const heading = document.createElement("h3");
+    heading.className = "faith-log-panel__summary-title";
+    heading.textContent = title;
+    column.appendChild(heading);
+
+    const summaryEntries = Object.entries(entries || {});
+    if (summaryEntries.length === 0) {
+      const emptyState = document.createElement("p");
+      emptyState.className = "faith-log-panel__row faith-log-panel__row--muted";
+      emptyState.textContent = "No summary data yet.";
+      column.appendChild(emptyState);
+      return column;
+    }
+
+    summaryEntries.forEach(function appendSummaryItem(summaryEntry) {
+      const item = document.createElement("p");
+      item.className = "faith-log-panel__row";
+      item.textContent = formatTokenSummaryLine(summaryEntry[0], summaryEntry[1]);
+      column.appendChild(item);
+    });
+    return column;
+  }
+
+  /**
+   * Description:
+   *   Render a lightweight per-agent token usage chart from aggregate totals.
+   *
+   * Requirements:
+   *   - Compare agents by total token usage without requiring a third-party chart library.
+   *   - Fall back gracefully when no agent totals are available.
+   *
+   * @param {object} summaryPayload Aggregate token summary payload from the backend.
+   * @returns {HTMLElement} Rendered chart section.
+   */
+  function renderAgentUsageChart(summaryPayload) {
+    const section = document.createElement("section");
+    section.className = "faith-log-panel__summary-column";
+    const title = document.createElement("h3");
+    title.className = "faith-log-panel__summary-title";
+    title.textContent = summaryPayload.agent_chart_title || "Agent usage chart";
+    section.appendChild(title);
+
+    const agentEntries = Object.entries(summaryPayload.by_agent || {});
+    if (agentEntries.length === 0) {
+      const emptyState = document.createElement("p");
+      emptyState.className = "faith-log-panel__row faith-log-panel__row--muted";
+      emptyState.textContent = "No agent usage yet.";
+      section.appendChild(emptyState);
+      return section;
+    }
+
+    const maxTotal = Math.max(
+      ...agentEntries.map(function mapAgentTotal(entry) {
+        return Number(entry[1] && entry[1].total_tokens ? entry[1].total_tokens : 0);
+      }),
+      1,
+    );
+    agentEntries
+      .sort(function compareAgentTotals(left, right) {
+        return Number(right[1].total_tokens || 0) - Number(left[1].total_tokens || 0);
+      })
+      .forEach(function appendAgentChartRow(entry) {
+        const row = document.createElement("div");
+        row.className = "faith-log-panel__chart-row";
+
+        const label = document.createElement("div");
+        label.className = "faith-log-panel__chart-label";
+        label.textContent = `${entry[0]} — ${entry[1].total_tokens || 0} total`;
+        row.appendChild(label);
+
+        const bar = document.createElement("div");
+        bar.className = "faith-log-panel__chart-bar";
+        const fill = document.createElement("div");
+        fill.className = "faith-log-panel__chart-fill";
+        fill.style.width = `${Math.max(
+          8,
+          Math.round((Number(entry[1].total_tokens || 0) / maxTotal) * 100),
+        )}%`;
+        bar.appendChild(fill);
+        row.appendChild(bar);
+        section.appendChild(row);
+      });
+
+    return section;
+  }
+
+  /**
+   * Description:
+   *   Render a compact session-comparison section from token aggregates.
+   *
+   * Requirements:
+   *   - Show the heaviest or most relevant sessions in a readable ranked list.
+   *   - Keep the section useful even when only one session is available.
+   *
+   * @param {object} summaryPayload Aggregate token summary payload from the backend.
+   * @returns {HTMLElement} Rendered session-comparison section.
+   */
+  function renderSessionComparisons(summaryPayload) {
+    const section = document.createElement("section");
+    section.className = "faith-log-panel__summary-column";
+    const title = document.createElement("h3");
+    title.className = "faith-log-panel__summary-title";
+    title.textContent = summaryPayload.session_comparison_title || "Session comparisons";
+    section.appendChild(title);
+
+    const comparisons = Array.isArray(summaryPayload.session_comparisons)
+      ? summaryPayload.session_comparisons
+      : [];
+    if (comparisons.length === 0) {
+      const emptyState = document.createElement("p");
+      emptyState.className = "faith-log-panel__row faith-log-panel__row--muted";
+      emptyState.textContent = "No session comparisons yet.";
+      section.appendChild(emptyState);
+      return section;
+    }
+
+    comparisons.slice(0, 5).forEach(function appendComparison(entry, index) {
+      const row = document.createElement("p");
+      row.className = "faith-log-panel__row";
+      row.textContent = `${index + 1}. ${entry.session_id || "unknown"} — ${entry.total_tokens || 0} total (${entry.context_input_tokens || 0} context/input, ${entry.inference_output_tokens || 0} inference/output)`;
+      section.appendChild(row);
+    });
+    return section;
+  }
+
+  /**
+   * Description:
    *   Create one compact summary block for token-usage aggregates.
    *
    * Requirements:
@@ -368,49 +547,13 @@
     block.className = "faith-log-panel__summary-grid";
 
     [
-      ["By model", summaryPayload.by_model || {}],
-      ["By agent", summaryPayload.by_agent || {}],
-      ["Session total", summaryPayload.session || {}],
-      ["Last message", summaryPayload.last_message || {}],
-    ].forEach(function appendSummaryColumn(entry) {
-      const column = document.createElement("section");
-      column.className = "faith-log-panel__summary-column";
-      const title = document.createElement("h3");
-      title.className = "faith-log-panel__summary-title";
-      title.textContent = entry[0];
-      column.appendChild(title);
-
-      Object.entries(entry[1]).forEach(function appendSummaryItem(summaryEntry) {
-        const item = document.createElement("p");
-        item.className = "faith-log-panel__row";
-        const value = summaryEntry[1];
-        const contextInput = value.context_input_tokens ?? value.input_tokens ?? 0;
-        const inferenceOutput = value.inference_output_tokens ?? value.output_tokens ?? 0;
-        const total = value.total_tokens ?? contextInput + inferenceOutput;
-        const windowPct =
-          value.context_window_percentage === null || value.context_window_percentage === undefined
-            ? "unknown"
-            : `${value.context_window_percentage}%`;
-        const snapshotId = value.effective_context_snapshot_id || "—";
-        const turnId = value.effective_context_turn_id || "—";
-        const cacheSummary =
-          value.cache_hit === null || value.cache_hit === undefined
-            ? "cache unknown"
-            : value.cache_hit
-              ? `${value.cached_input_tokens || 0} cached input`
-              : "cache miss";
-        const contextFiles = Array.isArray(value.context_files)
-          ? value.context_files
-              .map(function mapContextFile(fileEntry) {
-                return `${fileEntry.path || "unknown"} (${fileEntry.tokens || 0})`;
-              })
-              .join(", ")
-          : "";
-        const calls = value.calls ? `${value.calls} calls, ` : "";
-        item.textContent =
-          `${summaryEntry[0]}: ${calls}${contextInput} context/input, ${inferenceOutput} inference/output, ${total} total, ${windowPct}, snapshot ${snapshotId}, turn ${turnId}, ${cacheSummary}${contextFiles ? `, files ${contextFiles}` : ""}`;
-        column.appendChild(item);
-      });
+      renderTokenSummaryColumn("By model", summaryPayload.by_model || {}),
+      renderTokenSummaryColumn("By agent", summaryPayload.by_agent || {}),
+      renderTokenSummaryColumn("Session total", { session: summaryPayload.session || {} }),
+      renderTokenSummaryColumn("Last message", { latest: summaryPayload.last_message || {} }),
+      renderAgentUsageChart(summaryPayload),
+      renderSessionComparisons(summaryPayload),
+    ].forEach(function appendSummaryColumn(column) {
       block.appendChild(column);
     });
 

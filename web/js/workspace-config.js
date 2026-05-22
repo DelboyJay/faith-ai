@@ -16,8 +16,8 @@
    *   Return the canonical default workspace descriptor for first browser load.
    *
    * Requirements:
-   *   - Keep Session History on the upper-left beside the Project Agent workspace.
-   *   - Keep the Project Agent and System Status in the upper-right tab group.
+   *   - Keep Session History and Effective Context on the upper-left beside the Project Agent workspace.
+   *   - Keep the Project Agent in the upper-right tab group without the redundant System Status panel.
    *   - Keep Input and User Settings in one lower-left tab group.
    *   - Keep Approvals to the right of that lower-left tab group.
    *   - Preserve the Project Agent model metadata used by the current panel.
@@ -56,13 +56,6 @@
               displayName: "Project Agent",
               model: "ollama/llama3:8b",
             },
-          },
-          {
-            id: "system-status",
-            componentType: "status-panel",
-            title: "System Status",
-            size: 50,
-            componentState: {},
           },
         ],
       },

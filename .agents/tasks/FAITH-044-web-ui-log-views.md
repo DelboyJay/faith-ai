@@ -3,7 +3,7 @@
 **Phase:** 8 — Web UI
 **Complexity:** M
 **Model:** Opus / GPT-5.4 high reasoning
-**Status:** IN PROGRESS
+**Status:** DONE
 **Dependencies:** FAITH-021, FAITH-074
 **FRS Reference:** Section 8.7
 
@@ -19,11 +19,10 @@ workspace shell.
 
 Current implementation note: the read-only endpoints and Dockview-openable
 panels now exist with reverse-chronological ordering, pagination, filtering,
-and internal scrolling. Remaining gaps before the task can honestly be marked
-complete are the richer token-usage presentation expected by the FRS
-(`per-agent token chart` and `session comparisons`) and reconciliation of the
-historical `logs/sessions/` wording with the current persisted PA session root
-under the host-backed runtime data volume.
+and internal scrolling. The token usage view now includes richer aggregate
+presentation for per-agent usage and cross-session comparisons, and the session
+history wording is aligned with the host-backed PA session root used by the
+current runtime.
 
 ---
 

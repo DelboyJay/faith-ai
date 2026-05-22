@@ -50,10 +50,15 @@ def test_input_panel_asset_targets_input_and_upload_routes() -> None:
     assert response.status_code == 200
     assert '"/input"' in response.text
     assert '"/upload"' in response.text
+    assert '"/api/dictation/transcribe"' in response.text
     assert "drop" in response.text
     assert "paste" in response.text
     assert "Enter to send" in response.text
     assert "Alt+Enter" in response.text
+    assert "Dictate" in response.text
+    assert "Recording" in response.text
+    assert "Transcribing" in response.text
+    assert "Dictation failed" in response.text
     assert "faith:input-panel-compaction-state" in response.text
     assert "Compaction underway" in response.text
 
