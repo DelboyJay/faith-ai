@@ -33,6 +33,15 @@
 - HARD RULE: If a `.git/index.lock` issue appears, first assume it may be caused by concurrent or interrupted Git activity started during the current task. Check whether a live Git process is still running before taking action.
 - HARD RULE: If no Git process is running and `.git/index.lock` is confirmed to be stale, remove the stale lock and then retry the Git command sequentially.
 - HARD RULE: When reporting a failure, conflict, or regression, always explain whether the requirement, the test, or the implementation is correct, which side is wrong, and why. When possible, also give a focused recommendation for how to fix it so the user can make an informed decision.
+- HARD RULE: Always run `pre-commit` before creating a Git commit that will be pushed to GitHub so avoidable hook failures are caught locally first and tokens are not wasted on preventable retry cycles.
+- HARD RULE: Always run `git status` before starting work and again before committing so the current worktree state is known and accidental scope creep is caught early.
+- HARD RULE: If the task is only a focused bug fix, do not update planning docs, epic files, or visible version numbers unless the user-facing shipped behaviour genuinely changes or the user explicitly asks for those updates.
+- HARD RULE: Before claiming a fix works, rerun the specific failing test or check first, then run the broader verification suite.
+- HARD RULE: If a user request actually contains multiple distinct tasks, stop and call that out clearly instead of silently bundling them together.
+- HARD RULE: Do not assume a failing test is wrong until it has been checked against the FRS and the agreed user requirements.
+- HARD RULE: If the user already made a clear decision earlier in the thread, follow that decision unless the user explicitly reopens it.
+- HARD RULE: Do not restart, recreate, or tear down running services unless the current task truly requires it or the user explicitly asks for that action.
+- HARD RULE: If local audit tools and GitHub or another remote system disagree, report the mismatch plainly and inspect the source of truth instead of making blind changes.
 
 ## Hard Execution Rules
 
