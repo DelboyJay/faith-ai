@@ -3372,7 +3372,8 @@ def _get_project_agent_prompt_store(app: FastAPI) -> ProjectAgentPromptStore:
 
     prompt_store = getattr(app.state, "project_agent_prompt_store", None)
     if prompt_store is None:
-        prompt_store = ProjectAgentPromptStore()
+        desired_root = Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
+        prompt_store = ProjectAgentPromptStore(project_root=desired_root)
         app.state.project_agent_prompt_store = prompt_store
     return prompt_store
 
@@ -3525,7 +3526,9 @@ async def lifespan(app: FastAPI):
     :yields: Control back to FastAPI once startup has completed.
     """
 
-    app.state.project_agent_prompt_store = ProjectAgentPromptStore()
+    app.state.project_agent_prompt_store = ProjectAgentPromptStore(
+        project_root=Path(os.environ.get("FAITH_PROJECT_ROOT", str(PROJECT_ROOT))).resolve()
+    )
     app.state.project_agent_session_manager = SessionManager(
         project_root=_project_agent_session_root()
     )

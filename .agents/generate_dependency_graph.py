@@ -48,6 +48,9 @@ PHASE_COLOURS = {
     17: ("#3b2f18", "#d9b36c"),
     18: ("#1f3a2e", "#73d6a3"),
     19: ("#3a2338", "#d68fd0"),
+    20: ("#24303f", "#7ab6f5"),
+    21: ("#24361f", "#9dd06b"),
+    22: ("#2f233d", "#c59bff"),
 }
 
 PHASE_NAMES = {
@@ -70,6 +73,9 @@ PHASE_NAMES = {
     17: "Managed MCP Tool Acquisition & Governance",
     18: "Runtime Context Compaction & Rule Promotion",
     19: "Scoped File Storage & Deterministic Excerpt Retrieval",
+    20: "Interactive User Terminal & Runtime Console",
+    21: "Transcript Rendering Polish",
+    22: "Responsive Transcript Bubble Layout",
 }
 
 COMPLEXITY_WEIGHTS = {"S": 0.5, "M": 2.0, "L": 4.0, "XL": 6.0}

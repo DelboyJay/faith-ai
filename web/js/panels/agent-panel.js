@@ -121,6 +121,83 @@
 
     /**
      * Description:
+     *   Parse one transcript bubble body into plain-text and fenced-code segments.
+     *
+     * Requirements:
+     *   - Support triple-backtick fenced code blocks with an optional language label.
+     *   - Treat incomplete or malformed fences as plain text instead of dropping content.
+     *
+     * @param {string} rawText Bubble body text.
+     * @returns {Array<object>} Ordered transcript content segments.
+     */
+    function parseRichTranscriptSegments(rawText) {
+      const sourceText = typeof rawText === "string" ? rawText : "";
+      const segments = [];
+      const fencedCodePattern = /```([^\n`]*)\n([\s\S]*?)```/g;
+      let cursor = 0;
+      let match = fencedCodePattern.exec(sourceText);
+      while (match !== null) {
+        if (match.index > cursor) {
+          segments.push({
+            type: "text",
+            text: sourceText.slice(cursor, match.index),
+          });
+        }
+        segments.push({
+          type: "code",
+          language: String(match[1] || "").trim(),
+          code: String(match[2] || ""),
+        });
+        cursor = match.index + match[0].length;
+        match = fencedCodePattern.exec(sourceText);
+      }
+      if (cursor < sourceText.length) {
+        segments.push({
+          type: "text",
+          text: sourceText.slice(cursor),
+        });
+      }
+      if (segments.length === 0) {
+        segments.push({
+          type: "text",
+          text: sourceText,
+        });
+      }
+      return segments;
+    }
+
+    /**
+     * Description:
+     *   Collect descendant transcript text from one DOM subtree.
+     *
+     * Requirements:
+     *   - Work in the browser and in the lightweight runtime harness.
+     *   - Preserve child entry order for copy and scroll heuristics.
+     *
+     * @param {HTMLElement} rootElement DOM subtree root.
+     * @returns {string} Plain transcript text for the subtree.
+     */
+    function collectElementText(rootElement) {
+      if (!rootElement) {
+        return "";
+      }
+      let value = typeof rootElement.textContent === "string" ? rootElement.textContent : "";
+      const children = rootElement.children || [];
+      if (children.length === 0) {
+        return value;
+      }
+      return (
+        value +
+        Array.from(children)
+          .map(function mapChild(child) {
+            return collectElementText(child);
+          })
+          .join("")
+      );
+    }
+
+    /**
+     * Description:
      *   Capture whether the transcript was already pinned to the newest entry before one write mutates the DOM.
      *
      * Requirements:
@@ -165,6 +242,52 @@
 
     /**
      * Description:
+     *   Render one rich transcript body into an existing bubble entry.
+     *
+     * Requirements:
+     *   - Render fenced code blocks as dedicated code containers.
+     *   - Preserve safe plain-text rendering for non-code content.
+     *
+     * @param {HTMLElement} entry Existing bubble entry.
+     * @param {string} rawText Bubble body text.
+     * @returns {void}
+     */
+    function renderRichTranscriptEntry(entry, rawText) {
+      const segments = parseRichTranscriptSegments(rawText);
+      entry.replaceChildren();
+      entry.dataset.rawText = rawText;
+      segments.forEach(function appendSegment(segment) {
+        if (segment.type === "code") {
+          const codeContainer = document.createElement("div");
+          codeContainer.className = "faith-agent-panel__code-container";
+          if (segment.language) {
+            const languageLabel = document.createElement("span");
+            languageLabel.className = "faith-agent-panel__code-language";
+            languageLabel.textContent = segment.language;
+            codeContainer.appendChild(languageLabel);
+          }
+          const codeBlock = document.createElement("pre");
+          codeBlock.className = "faith-agent-panel__code-block";
+          const codeText = document.createElement("code");
+          codeText.className = "faith-agent-panel__code-text";
+          codeText.textContent = segment.code;
+          codeBlock.appendChild(codeText);
+          codeContainer.appendChild(codeBlock);
+          entry.appendChild(codeContainer);
+          return;
+        }
+        if (!segment.text) {
+          return;
+        }
+        const textBlock = document.createElement("div");
+        textBlock.className = "faith-agent-panel__message-text";
+        textBlock.textContent = segment.text;
+        entry.appendChild(textBlock);
+      });
+    }
+
+    /**
+     * Description:
      *   Collect plain transcript text from the message list for scroll heuristics and copy support.
      *
      * Requirements:
@@ -177,9 +300,9 @@
       if (typeof messageList.innerText === "string" && messageList.innerText) {
         return messageList.innerText;
       }
-      return (messageList.children || [])
+      return Array.from(messageList.children || [])
         .map(function mapEntry(entry) {
-          return entry.textContent || "";
+          return collectElementText(entry);
         })
         .join("\n");
     }
@@ -221,7 +344,7 @@
         const wasNearBottom = capturePinnedStateBeforeWrite();
         closeActiveAssistantStream();
         const bubble = createTranscriptEntry("faith-agent-panel__message faith-agent-panel__message--user");
-        bubble.textContent = text;
+        renderRichTranscriptEntry(bubble, text);
         notifyContentChanged(wasNearBottom);
       },
       writeAssistantMessage(text) {
@@ -230,17 +353,21 @@
         const message = createTranscriptEntry(
           "faith-agent-panel__message faith-agent-panel__message--assistant",
         );
-        message.textContent = text;
+        renderRichTranscriptEntry(message, text);
         notifyContentChanged(wasNearBottom);
       },
       appendAssistantStream(text) {
         const wasNearBottom = capturePinnedStateBeforeWrite();
         if (activeAssistantStream === null) {
-          activeAssistantStream = createTranscriptEntry(
-            "faith-agent-panel__message faith-agent-panel__message--assistant",
-          );
+          activeAssistantStream = {
+            element: createTranscriptEntry(
+              "faith-agent-panel__message faith-agent-panel__message--assistant",
+            ),
+            rawText: "",
+          };
         }
-        activeAssistantStream.textContent += text;
+        activeAssistantStream.rawText += text;
+        renderRichTranscriptEntry(activeAssistantStream.element, activeAssistantStream.rawText);
         notifyContentChanged(wasNearBottom);
       },
       writeSystemLine(text) {
@@ -395,7 +522,7 @@
     wrapper.appendChild(jumpToLatestButton);
     target.replaceChildren(wrapper);
 
-    const SCROLL_BOTTOM_THRESHOLD_PX = 24;
+    const SCROLL_BOTTOM_THRESHOLD_PX = 48;
     let hasUnreadBelow = false;
     let pendingScrollToLatest = false;
 
@@ -404,7 +531,8 @@
      *   Determine whether the transcript is already at or near the bottom.
      *
      * Requirements:
-     *   - Tolerate tiny layout differences by using a small threshold.
+     *   - Tolerate small layout differences so the panel still behaves as
+     *     "pinned" when the user remains effectively at the bottom.
      *
      * @returns {boolean} True when the newest text is already visible.
      */

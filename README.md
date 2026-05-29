@@ -33,9 +33,9 @@ repair it in place.
 
 ## License
 FAITH is source-available, not open source. Personal, non-commercial use is allowed under
-the [Business Source License 1.1](E:\ClaudeSharedFolder\AI Agent Framework\LICENSE). Company
+the [Business Source License 1.1](LICENSE). Company
 or other organizational use requires a separate commercial license. See
-[LICENSING.md](E:\ClaudeSharedFolder\AI Agent Framework\LICENSING.md).
+[LICENSING.md](LICENSING.md).
 
 Config files are monitored and loaded dynamically on change: you don't have to stop 
 and restart FAITH to make changes.
@@ -43,38 +43,74 @@ and restart FAITH to make changes.
 The Web UI polls the Project Agent and shows Redis/config status from the current 
 `config/` directory.
 
-## Initial Setup
-For FAITH to work you need docker and python 3.10+ installed. You can install these 
-packages simply by running the following:
+## Prerequisites
+You need the following on the host machine before running FAITH:
 
-### Powershell
+- Docker Engine / Docker Desktop with Docker Compose available
+- Python 3.10 or newer
+- Git
+
+Docker must be running before you use `faith init`.
+
+## Optional host prerequisite scripts
+The helper scripts install host prerequisites only. They do **not** install the FAITH
+Python package for you.
+
+### PowerShell
 ```powershell
-setup.ps1
+.\setup.ps1
 ```
 
-### Bash
+### Bash (Ubuntu / Debian)
 ```bash
-setup.sh
+sudo ./setup.sh
 ```
 
-## FAITH-CLI
-To run the faith system just run the following:
+## Install FAITH from a source checkout
+The verified source-install path is an editable install from a cloned checkout.
 
-```powershell
+### Linux / macOS
+```bash
+git clone https://github.com/DelboyJay/faith-ai.git
+cd "AI Agent Framework"
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
+faith --help
 faith init
+```
+
+### Windows PowerShell
+```powershell
+git clone https://github.com/DelboyJay/faith-ai.git
+cd "AI Agent Framework"
+py -3.10 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -e .
+faith --help
+faith init
+```
+
+`faith init` creates `~/.faith/`, copies config templates and archetypes there, starts
+the FAITH Docker Compose stack, installs the default Ollama Project Agent model, and
+opens `http://localhost:8080` when the Web UI responds.
+
+Useful follow-up commands:
+
+```bash
 faith status
 faith stop
+faith restart
+faith show-urls
 ```
 
-`faith init` creates `~/.faith/`, copies config templates and archetypes there, starts 
-the repo-backed Docker Compose stack, and opens `http://localhost:8080` when the Web 
-UI responds.
-
-`faith status` returns status information about the system such as the docker container 
-states and the Project Assistant (PA) health.
+`faith status` returns runtime information such as container state, Redis health, and
+Project Agent status.
 
 ## Configuration
 By default, the configuration files live under the /config folder.
-These configuration files can be manually changed bu the user or just ask the PA to
+These configuration files can be manually changed by the user or just ask the PA to
 modify them for you.
 

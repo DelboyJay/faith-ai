@@ -13,9 +13,52 @@ const vm = require("node:vm");
 const allElements = [];
 const animationFrameQueue = [];
 
+/**
+ * Description:
+ *   Create one lightweight HTMLCollection-style container for the fake DOM harness.
+ *
+ * Requirements:
+ *   - Behave like an indexed iterable collection without exposing array helpers such as `map`.
+ *   - Keep the runtime harness close enough to the browser DOM to catch transcript-collection regressions.
+ *
+ * @returns {object} Mutable HTMLCollection-style child container.
+ */
+function createChildrenCollection() {
+  const collection = {
+    items: [],
+    push(child) {
+      this.items.push(child);
+      this.syncIndexes();
+    },
+    replaceAll(children) {
+      this.items = Array.from(children);
+      this.syncIndexes();
+    },
+    syncIndexes() {
+      Object.keys(this)
+        .filter((key) => /^\\d+$/.test(key))
+        .forEach((key) => {
+          delete this[key];
+        });
+      this.items.forEach((child, index) => {
+        this[index] = child;
+      });
+    },
+    [Symbol.iterator]() {
+      return this.items[Symbol.iterator]();
+    },
+  };
+  Object.defineProperty(collection, "length", {
+    get() {
+      return this.items.length;
+    },
+  });
+  return collection;
+}
+
 function FakeHTMLElement(tagName) {
   this.tagName = tagName.toUpperCase();
-  this.children = [];
+  this.children = createChildrenCollection();
   this.dataset = {};
   this.style = {};
   this.hidden = false;
@@ -81,12 +124,18 @@ FakeHTMLElement.prototype.appendChild = function appendChild(child) {
 };
 
 FakeHTMLElement.prototype.replaceChildren = function replaceChildren(...children) {
-  this.children = children;
-  for (const child of children) {
+  this.children.replaceAll(children);
+  for (const child of this.children) {
     child.parentNode = this;
     child.parentElement = this;
   }
 };
+
+Object.defineProperty(FakeHTMLElement.prototype, "firstElementChild", {
+  get() {
+    return this.children.length > 0 ? this.children[0] : null;
+  },
+});
 
 FakeHTMLElement.prototype.addEventListener = function addEventListener(name, handler) {
   this.eventListeners[name] = this.eventListeners[name] || [];
@@ -167,6 +216,13 @@ function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+function countOccurrences(haystack, needle) {
+  if (!needle) {
+    return 0;
+  }
+  return haystack.split(needle).length - 1;
 }
 
 function flushAnimationFrames() {
@@ -335,7 +391,7 @@ async function main() {
   assert(restoredTerminal, "Expected the panel to render a transcript container.");
   assert(restoredUserBubble, "Expected the saved user transcript to render as a user bubble.");
   assert(
-    restoredUserBubble.textContent.includes("Recovered user message."),
+    collectText(restoredUserBubble).includes("Recovered user message."),
     "Expected the user bubble to include the saved user transcript text.",
   );
   assert(
@@ -343,7 +399,7 @@ async function main() {
     "Expected the saved assistant transcript to render as an assistant message block.",
   );
   assert(
-    restoredAssistantMessage.textContent.includes("Recovered assistant reply."),
+    collectText(restoredAssistantMessage).includes("Recovered assistant reply."),
     "Expected the assistant message block to include the saved assistant transcript text.",
   );
   assert(
@@ -353,6 +409,14 @@ async function main() {
   assert(
     !collectText(restoredTerminal).includes("PA: Recovered assistant reply."),
     "Expected saved transcript rendering to omit the literal 'PA:' prefix.",
+  );
+  assert(
+    countOccurrences(collectText(restoredUserBubble), "Recovered user message.") === 1,
+    "Expected each restored user message bubble to render its text only once.",
+  );
+  assert(
+    countOccurrences(collectText(restoredAssistantMessage), "Recovered assistant reply.") === 1,
+    "Expected each restored assistant message bubble to render its text only once.",
   );
 
   socket.emit("open", {});
@@ -382,6 +446,12 @@ async function main() {
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "reply", stream: true }) });
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "User: show me the files" }) });
   socket.emit("message", { data: JSON.stringify({ type: "output", text: "PA: here is the list" }) });
+  socket.emit("message", {
+    data: JSON.stringify({
+      type: "output",
+      text: "PA: Here is the code sample:\n```python\nprint('hello world')\n```",
+    }),
+  });
   socket.emit("message", { data: JSON.stringify([{ type: "output", text: "batch one" }, { type: "output", text: "batch two" }]) });
   flushAnimationFrames();
 
@@ -404,14 +474,32 @@ async function main() {
 
   const terminal = findByClass(target, "faith-agent-panel__fallback-terminal");
   const liveUserBubbles = findAllByClass(target, "faith-agent-panel__message--user");
+  const renderedCodeBlock = findByClass(target, "faith-agent-panel__code-block");
+  const renderedCodeLanguage = findByClass(target, "faith-agent-panel__code-language");
   assert(collectText(terminal).includes("hello world"), "Expected output frames to render into the terminal.");
   assert(collectText(terminal).includes("streamed reply"), "Expected streamed output chunks to append inline.");
   assert(
-    liveUserBubbles.some((bubble) => bubble.textContent.includes("show me the files")),
+    liveUserBubbles.some((bubble) => collectText(bubble).includes("show me the files")),
     "Expected live user output to render inside a user bubble.",
   );
   assert(!collectText(terminal).includes("User: show me the files"), "Expected live user output to omit the literal 'User:' prefix.");
   assert(!collectText(terminal).includes("PA: here is the list"), "Expected live assistant output to omit the literal 'PA:' prefix.");
+  assert(
+    liveUserBubbles.some(
+      (bubble) => countOccurrences(collectText(bubble), "show me the files") === 1,
+    ),
+    "Expected live user bubbles to render their text only once.",
+  );
+  assert(renderedCodeBlock, "Expected fenced code blocks to render as dedicated code-block elements.");
+  assert(
+    collectText(renderedCodeBlock).includes("print('hello world')"),
+    "Expected the rendered code block to preserve the fenced code content.",
+  );
+  assert(renderedCodeLanguage, "Expected fenced code blocks to render a visible language label when one is provided.");
+  assert(
+    renderedCodeLanguage.textContent === "python",
+    "Expected the rendered code block language label to match the fenced language identifier.",
+  );
   assert(collectText(terminal).includes("batch one"), "Expected multi-message frames to render every contained item.");
   assert(collectText(terminal).includes("batch two"), "Expected multi-message frames to render every contained item.");
   assert(collectText(terminal).includes("compact:task:update"), "Expected protocol frames to render into the terminal.");
@@ -430,6 +518,9 @@ async function main() {
   const terminalHost = findByClass(target, "faith-agent-panel__terminal");
   const messageList = findByClass(target, "faith-agent-panel__message-list");
   assert(terminalHost, "Expected the transcript host element to exist.");
+  const copyButton = findByText(target, "Copy");
+  copyButton.dispatch("click");
+  await Promise.resolve();
   assert(
     terminalHost.scrollTop === terminalHost.scrollHeight - terminalHost.clientHeight,
     "Expected the transcript to stay pinned to the bottom while new output arrives.",
@@ -437,6 +528,15 @@ async function main() {
   assert(
     messageList.children[messageList.children.length - 1].didScrollIntoView === true,
     "Expected the newest transcript entry to be scrolled into view while new output arrives.",
+  );
+
+  terminalHost.scrollTop = Math.max(0, terminalHost.scrollHeight - terminalHost.clientHeight - 40);
+  terminalHost.dispatch("scroll");
+  socket.emit("message", { data: JSON.stringify({ type: "output", text: "newest while near bottom" }) });
+  flushAnimationFrames();
+  assert(
+    terminalHost.scrollTop === terminalHost.scrollHeight - terminalHost.clientHeight,
+    "Expected the transcript to stay pinned when the user is still near the bottom of the chat.",
   );
 
   terminalHost.scrollTop = 0;

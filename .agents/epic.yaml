@@ -429,7 +429,7 @@ phases:
         summary: 'Implement a framework-owned canonical MCP inventory that both FAITH-owned and external MCP servers register into automatically when they become enabled, installed, healthy, or reconfigured. The framework must derive per-agent visible tool manifests from that inventory subject to permissions, privacy profile, and runtime state, propagate those manifests to the PA and specialist agents without manual per-tool prompt edits, and make new MCP tools available immediately after registration/hot-reload rather than requiring bespoke chat-loop wiring.'
   - id: 8
     title: 'Web UI'
-    status: 'IN PROGRESS'
+    status: 'DONE'
     summary: 'Implement panel-level behaviour and user-facing Web UI features on top of the React + Dockview workspace. Phase 8 owns panel content, interaction UX, and feature surfaces; Phase 13 owns workspace shell, default layout mechanics, minimize/restore behaviour, and menu primitives.'
     task_count: 27
     tasks:
@@ -443,14 +443,14 @@ phases:
         frs_reference: 'Section 6.3'
         summary: 'Build the `src/faith_web/` package that consumes the PA API. Serve `index.html` via Jinja2/fast static hosting as appropriate for the chosen implementation. HTTP endpoints exposed by the UI service include `POST /input`, `POST /upload`, `POST /approve/{request_id}` as client-facing actions, backed by PA API calls/WebSockets. WebSocket endpoints include `/ws/agent/{agent_id}`, `/ws/tool/{tool_id}`, `/ws/approvals`, `/ws/status`. The user-facing message relay flow remains: user → UI action → PA API/Redis → agent → Redis/PA API → UI WebSocket → browser.'
       - id: 'FAITH-038'
-        name: 'Agent Panel Component (xterm.js + React)'
+        name: 'Agent Panel Component (Rich Transcript + React)'
         complexity: 'M'
         model: 'Sonnet / GPT-5.4'
-        status: 'IN PROGRESS'
+        status: 'DONE'
         task_doc: 'tasks/FAITH-038-agent-panel-component.md'
         dependencies: ['FAITH-074', 'FAITH-078']
         frs_reference: 'Section 6.4.2'
-        summary: 'React-based Project Agent or specialist-agent panel using xterm.js inside the Dockview shell. Render streamed output from `/ws/agent/{agent_id}`, show runtime-aware status and model metadata, expose local clear/copy/pause/pin actions, and keep reconnect, scrollback, and transcript-state behaviour reliable inside the bundled frontend.'
+        summary: 'React-based Project Agent or specialist-agent panel inside the Dockview shell. Render streamed output from `/ws/agent/{agent_id}` into a readable rich transcript with fenced code block support, show runtime-aware status and model metadata, expose local clear/copy/pause/pin actions, and keep reconnect, scrollback, and transcript-state behaviour reliable inside the bundled frontend.'
       - id: 'FAITH-039'
         name: 'Approval Panel Component'
         complexity: 'M'
@@ -1252,6 +1252,36 @@ phases:
         dependencies: ['FAITH-021', 'FAITH-098', 'FAITH-120']
         frs_reference: 'Section 4.16, 5.5'
         summary: 'Persist per-call MCP audit artifacts under `logs/audit/tools/<session_uuid>/<tool_call_id>.json`, keep the main audit log as an index, and preserve enough request/response detail for user and PA inspection without bloating the primary log stream.'
+  - id: 21
+    title: 'Transcript Rendering Polish'
+    status: 'DONE'
+    summary: 'Polish Project Agent transcript presentation so fenced code blocks read as clearly distinct code with a fixed-width font and stronger visual treatment inside message bubbles.'
+    task_count: 1
+    tasks:
+      - id: 'FAITH-127'
+        name: 'Project Agent Fenced Code Block Styling Polish'
+        complexity: 'S'
+        model: 'Haiku / GPT-5.4-mini'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-127-project-agent-fenced-code-block-styling-polish.md'
+        dependencies: ['FAITH-038']
+        frs_reference: 'Section 6.4.2'
+        summary: 'Ensure triple-backtick code blocks in the Project Agent transcript use an unmistakable code presentation with a fixed-width font, visible block chrome, and optional language label styling that remains readable inside chat bubbles.'
+  - id: 22
+    title: 'Responsive Transcript Bubble Layout'
+    status: 'DONE'
+    summary: 'Make Project Agent transcript bubbles adapt more intelligently to the current resizable panel width while preserving good wrapping and compression on narrow layouts.'
+    task_count: 1
+    tasks:
+      - id: 'FAITH-128'
+        name: 'Project Agent Responsive Bubble Width Behaviour'
+        complexity: 'S'
+        model: 'Haiku / GPT-5.4-mini'
+        status: 'DONE'
+        task_doc: 'tasks/FAITH-128-project-agent-responsive-bubble-width-behaviour.md'
+        dependencies: ['FAITH-038', 'FAITH-127']
+        frs_reference: 'Section 6.4.2'
+        summary: 'Adjust Project Agent transcript bubble sizing so bubbles stay pleasantly compressed on narrow panels but expand more appropriately on wider panel widths using responsive layout rules rather than fixed narrow caps.'
 
 
 

@@ -82,6 +82,19 @@ def test_bootstrap_templates_and_framework_assets_exist() -> None:
     assert not missing, f"Missing bootstrap assets: {missing}"
 
 
+def test_project_root_agents_md_exists() -> None:
+    """
+    Description:
+        Verify the repository root keeps the always-on AGENTS.md control file.
+
+    Requirements:
+        - This test is needed to prevent the PA project-instruction editor from loading an empty prompt because the repository root control file was removed.
+        - Verify `AGENTS.md` exists at the project root.
+    """
+
+    assert (ROOT / "AGENTS.md").exists()
+
+
 def test_model_prices_default_json_is_valid() -> None:
     """
     Description:
@@ -195,3 +208,19 @@ def test_compose_provides_mcp_registry_database() -> None:
     assert "MCP_REGISTRY_DATABASE_URL" in compose_text
     assert "MCP_REGISTRY_JWT_PRIVATE_KEY" in compose_text
     assert "postgres:16-alpine" in compose_text
+
+
+def test_compose_mounts_project_root_for_pa_prompt_and_context_files() -> None:
+    """
+    Description:
+        Verify the repository compose stack mounts the project root into the PA container.
+
+    Requirements:
+        - This test is needed to prevent the PA prompt editor and effective-context compiler from seeing an empty `/app` workspace.
+        - Verify the compose file mounts the repository root at `/workspace`.
+        - Verify the PA environment points `FAITH_PROJECT_ROOT` at the mounted workspace.
+    """
+    compose_text = (ROOT / "docker-compose.yml").read_text()
+
+    assert "- .:/workspace" in compose_text
+    assert "FAITH_PROJECT_ROOT=/workspace" in compose_text

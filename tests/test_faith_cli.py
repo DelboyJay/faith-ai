@@ -918,6 +918,33 @@ def test_editable_compose_mounts_web_ui_data_directory(
     assert f"{(tmp_path / '.faith' / 'data').as_posix()}:/data:ro" in volumes
 
 
+def test_editable_compose_mounts_project_root_for_pa_prompt_and_context_files(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """
+    Description:
+        Verify editable-install compose generation mounts the project root into the PA container.
+
+    Requirements:
+        - This test is needed to prevent the PA prompt editor and effective-context compiler from reading an empty in-container project root.
+        - Verify the generated PA service mounts the resolved source root at `/workspace`.
+        - Verify the generated PA environment points `FAITH_PROJECT_ROOT` at `/workspace`.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary workspace root.
+    """
+
+    _fake_home(monkeypatch, tmp_path)
+
+    compose_data = yaml.safe_load(paths.editable_compose_contents())
+    volumes = compose_data["services"]["pa"]["volumes"]
+    environment = compose_data["services"]["pa"]["environment"]
+
+    assert f"{paths.source_root().as_posix()}:/workspace" in volumes
+    assert "FAITH_PROJECT_ROOT=/workspace" in environment
+
+
 def test_packaged_compose_sets_default_project_agent_model() -> None:
     """Description:
         Verify the packaged compose file declares the default local PA model.

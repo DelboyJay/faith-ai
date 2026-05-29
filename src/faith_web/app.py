@@ -10,7 +10,7 @@ from typing import Any
 
 import redis.asyncio as aioredis
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from httpx import AsyncClient
@@ -468,6 +468,20 @@ async def api_status() -> JSONResponse:
     return await health()
 
 
+async def favicon() -> Response:
+    """Description:
+        Return a no-content favicon response for the browser shell.
+
+    Requirements:
+        - Prevent routine browser favicon requests from generating a noisy 404.
+        - Remain lightweight until a branded favicon asset is introduced.
+
+    :returns: Empty successful favicon response.
+    """
+
+    return Response(status_code=204)
+
+
 async def api_routes() -> ServiceRouteManifest:
     """Description:
         Return the machine-readable Web UI route manifest.
@@ -511,6 +525,7 @@ def create_app(*, testing: bool = False) -> FastAPI:
         os.getenv("FAITH_PA_SESSION_ROOT", "/data/pa-runtime")
     ).resolve()
     app.add_api_route("/health", health, methods=["GET"])
+    app.add_api_route("/favicon.ico", favicon, methods=["GET"])
     app.add_api_route("/api/status", api_status, methods=["GET"])
     app.add_api_route(
         "/api/routes", api_routes, methods=["GET"], response_model=ServiceRouteManifest

@@ -300,6 +300,7 @@ def editable_compose_contents() -> str:
       - \"8000:8000\"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - {root}:/workspace
       - {config}:/config:ro
       - {data}:/data
       - {logs}:/logs
@@ -308,6 +309,7 @@ def editable_compose_contents() -> str:
       - FAITH_LOG_DIR=/logs
       - FAITH_DATA_DIR=/data
       - FAITH_PA_SESSION_ROOT=/data/pa-runtime
+      - FAITH_PROJECT_ROOT=/workspace
       - FAITH_REDIS_URL=redis://redis:6379/0
       - FAITH_PROJECT_AGENT_MODEL=ollama/llama3:8b
       - MCP_REGISTRY_URL=http://mcp-registry:8080

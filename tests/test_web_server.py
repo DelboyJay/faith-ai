@@ -329,6 +329,21 @@ def test_health_returns_ok(client: TestClient) -> None:
     assert response.json()["service"] == "faith-web-ui"
 
 
+def test_favicon_route_avoids_browser_404_noise(client: TestClient) -> None:
+    """Description:
+        Verify the browser favicon request does not return a missing-file error.
+
+    Requirements:
+        - This test is needed to prevent routine browser startup from logging a distracting favicon 404.
+        - Verify the favicon route responds successfully even when no custom icon asset is shipped yet.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/favicon.ico")
+    assert response.status_code == 204
+
+
 def test_static_assets_are_served(client: TestClient) -> None:
     """Description:
         Verify the bundled static CSS and JavaScript assets are served successfully.
@@ -387,6 +402,29 @@ def test_index_cache_busts_local_static_assets(client: TestClient) -> None:
     assert "/static/css/theme.css?v=" in response.text
     assert "/static/dist/faith-ui.css?v=" in response.text
     assert "/static/dist/faith-ui.js?v=" in response.text
+
+
+def test_index_defines_stylesheet_fallback_before_cdn_stylesheet_link(client: TestClient) -> None:
+    """Description:
+        Verify the browser shell defines the stylesheet fallback helper before the CDN stylesheet can fail.
+
+    Requirements:
+        - This test is needed to prevent the startup shell from throwing when the external xterm stylesheet fails before the fallback helper exists.
+        - Verify the fallback helper definition appears earlier in the HTML than the CDN stylesheet link that calls it.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    fallback_definition_index = response.text.index(
+        "window.faithSwapStylesheetFallback = function faithSwapStylesheetFallback"
+    )
+    stylesheet_link_index = response.text.index(
+        'href="https://cdn.jsdelivr.net/npm/xterm@5.5.0/css/xterm.min.css"'
+    )
+    assert fallback_definition_index < stylesheet_link_index
 
 
 def test_dockview_bundle_assets_are_served(client: TestClient) -> None:
@@ -452,6 +490,32 @@ def test_dockview_shell_sources_thread_selected_session_state_into_session_bound
     assert "faithWorkspaceSessionState" in source
     assert "sessionDrafts" in source
     assert '"system-status"' not in source
+
+
+def test_project_agent_panel_is_not_remounted_by_selected_session_prop(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the React workspace shell does not remount the Project Agent panel on selected-session changes.
+
+    Requirements:
+        - This test is needed to prevent the Project Agent transcript from flashing correctly and then being cleared by an unnecessary remount during session selection sync.
+        - Verify the Project Agent `LegacyPanelBridge` mount does not pass `selectedSessionId` as a direct prop.
+        - Verify the Input panel remains session-bound through the shared `selectedSessionId` prop.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    del client
+    source = (Path(__file__).resolve().parents[1] / "web" / "src" / "main.jsx").read_text(
+        encoding="utf-8"
+    )
+
+    project_agent_section = source.split('namespace="faithAgentPanel"', 1)[1].split("/>", 1)[0]
+    input_panel_section = source.split('namespace="faithInputPanel"', 1)[1].split("/>", 1)[0]
+
+    assert "sessionId={selectedSessionId}" not in project_agent_section
+    assert "sessionId={selectedSessionId}" in input_panel_section
 
 
 def test_frontend_package_manifest_pins_radix_dependencies(client: TestClient) -> None:
@@ -1013,6 +1077,52 @@ def test_title_bar_close_affordance_is_styled(client: TestClient) -> None:
     assert ".faith-panel__fallback-header" in response.text
 
 
+def test_theme_styles_project_agent_code_blocks_with_monospace_font(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the Project Agent transcript stylesheet renders fenced code blocks as clear monospace blocks.
+
+    Requirements:
+        - This test is needed to prevent triple-backtick transcript content from looking like ordinary prose inside chat bubbles.
+        - Verify the stylesheet includes dedicated code-block selectors and a fixed-width font stack for rendered code.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/css/theme.css")
+
+    assert response.status_code == 200
+    assert ".faith-agent-panel__code-block" in response.text
+    assert ".faith-agent-panel__code-text" in response.text
+    code_text_block = response.text.split(".faith-agent-panel__code-text", 1)[1].split("}", 1)[0]
+    assert "font-family" in code_text_block or "font:" in code_text_block
+    assert "Cascadia Code" in code_text_block
+    assert "monospace" in code_text_block
+
+
+def test_theme_uses_container_aware_responsive_project_agent_bubble_width_rules(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the Project Agent transcript bubbles adapt their maximum width to the panel width.
+
+    Requirements:
+        - This test is needed to prevent Project Agent bubbles from staying overly narrow when the panel is resized wider.
+        - Verify the transcript host opts into inline-size container queries.
+        - Verify the stylesheet includes responsive container-query rules for transcript bubble width.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/static/css/theme.css")
+
+    assert response.status_code == 200
+    assert "container-type: inline-size;" in response.text
+    assert "@container" in response.text
+    assert "width: fit-content;" in response.text
+
+
 def test_layout_support_files_exist() -> None:
     """Description:
         Verify the FAITH-037 support files exist in the repository.
@@ -1033,6 +1143,27 @@ def test_layout_support_files_exist() -> None:
     assert vendor_base_css.exists()
     assert vendor_theme_css.exists()
     assert layout_harness.exists()
+
+
+def test_index_defines_stylesheet_fallback_before_external_stylesheet_link(
+    client: TestClient,
+) -> None:
+    """Description:
+        Verify the main page defines the stylesheet fallback helper before any external stylesheet can call it.
+
+    Requirements:
+        - This test is needed to prevent `window.faithSwapStylesheetFallback is not a function` when the CDN stylesheet fails before the helper script is parsed.
+        - Verify the inline helper definition appears before the xterm stylesheet link.
+
+    :param client: FastAPI test client bound to the FAITH web app.
+    """
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert response.text.index("window.faithSwapStylesheetFallback") < response.text.index(
+        "https://cdn.jsdelivr.net/npm/xterm@5.5.0/css/xterm.min.css"
+    )
 
 
 @pytest.mark.asyncio

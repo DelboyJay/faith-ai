@@ -11,7 +11,11 @@
 
 ## Objective
 
-Implement the agent output panel for the React-based Web UI. The panel renders live agent output in xterm.js, connects to `WS /ws/agent/{agent_id}`, shows the current agent status and model in the panel header, and provides panel-local actions for clear, copy, pause, and pin.
+Implement the agent output panel for the React-based Web UI. The Project Agent
+panel renders live output as a rich transcript with readable bubbles and fenced
+code blocks, connects to `WS /ws/agent/{agent_id}`, shows the current agent
+status and model in the panel header, and provides panel-local actions for
+clear, copy, pause, and pin.
 
 The implementation must follow the current FRS web architecture:
 - FastAPI + Jinja shell in `src/faith_web/`
@@ -48,8 +52,10 @@ web/
 
 1. Register an `agent-panel` Dockview/React panel in the bundled frontend workspace.
 2. Open a dedicated WebSocket to `WS /ws/agent/{agent_id}`.
-3. Render streamed output into xterm.js with ANSI handling.
-4. Render compact protocol messages in a dimmed visual treatment distinct from natural-language output.
+3. Render streamed output into the rich transcript surface, including fenced
+   code blocks from triple-backtick markdown.
+4. Render compact protocol messages in a dimmed visual treatment distinct from
+   natural-language output.
 5. Show in the panel header:
 - agent name
 - current status badge
@@ -62,7 +68,8 @@ web/
 - Pin / Unpin
 7. Reconnect automatically on WebSocket drop with bounded exponential backoff.
 8. Resize correctly when the Dockview pane resizes.
-9. Dispose the terminal, timers, and WebSocket cleanly when the panel is destroyed.
+9. Dispose the transcript runtime, timers, and WebSocket cleanly when the panel
+   is destroyed.
 
 ---
 
@@ -82,11 +89,15 @@ The implementation must use the bundled React frontend stack and integrate clean
 Add request-style and browser-contract coverage that proves the panel can rely on the backend contract without generating a server error.
 
 Minimum test coverage:
-- `WS /ws/agent/{agent_id}` emits parseable messages for output, protocol, status, and error events.
+- `WS /ws/agent/{agent_id}` emits parseable messages for output, protocol,
+  status, and error events.
 - Disconnect and reconnect behaviour is exercised.
 - The panel handles multiple messages in one frame.
 - Status and model updates are reflected in the panel state.
-- A regression test exists for malformed payload handling so a bad frame does not crash the panel.
+- Fenced code blocks render as dedicated code blocks without crashing the
+  panel.
+- A regression test exists for malformed payload handling so a bad frame does
+  not crash the panel.
 
 If browser-level automation is used, keep it focused on:
 - terminal mount
@@ -99,7 +110,7 @@ If browser-level automation is used, keep it focused on:
 ## Acceptance Criteria
 
 1. The Web UI can open one agent panel per agent.
-2. Output streams into xterm.js in real time without a page refresh.
+2. Output streams into the rich transcript in real time without a page refresh.
 3. Status and model updates are shown reactively in the header.
 4. Pause stops processing incoming output without closing the WebSocket.
 5. Copy and clear actions work from the panel toolbar.
@@ -111,6 +122,11 @@ If browser-level automation is used, keep it focused on:
 
 ## Notes
 
-- This task is intentionally frontend-focused. The WebSocket bridge itself belongs to FAITH-036.
+- This task is intentionally frontend-focused. The WebSocket bridge itself
+  belongs to FAITH-036.
 - Reuse the shared theme tokens and panel chrome from FAITH-042 rather than introducing panel-specific styling systems.
-- Keep the component format consistent with the current bundled React shell: panel modules are registered from `web/src/main.jsx` and consumed through the existing frontend build pipeline rather than a second runtime path.
+- Keep the component format consistent with the current bundled React shell:
+  panel modules are registered from `web/src/main.jsx` and consumed through the
+  existing frontend build pipeline rather than a second runtime path.
+- A future dedicated terminal panel may still use terminal-style rendering, but
+  the Project Agent transcript should optimise for conversation readability.

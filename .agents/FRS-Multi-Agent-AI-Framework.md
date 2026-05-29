@@ -2727,15 +2727,19 @@ Phase ownership is split intentionally:
 
 **Agent Panel**
 
-One panel per agent. Renders the agent's output as a terminal using xterm.js.
+One panel per agent. The Project Agent uses a rich transcript panel optimised
+for conversation readability, while a future dedicated terminal panel may use
+terminal-style rendering where true shell semantics are needed.
 
 - Panel header shows: agent name, current status badge (`idle` / `active` / `blocked` / `waiting`), assigned model name.
 - For runtime-backed agents or services shown in the workspace, visible status badges must be derived from authoritative backend/runtime status rather than only local UI connection state.
 - If the backing container or service stops, the corresponding badge must change to a degraded or disconnected state within 10 seconds of the next runtime refresh cycle.
-- Output is streamed character-by-character from the agent's WebSocket feed.
-- Supports ANSI colour codes — agent output can use colour to distinguish message types (tasks, responses, protocol messages, errors).
-- Scrollback buffer retained in-browser (configurable depth).
-- Compact protocol messages rendered in a dimmed colour; natural language in full brightness.
+- Output is streamed from the agent's WebSocket feed into the active transcript
+  surface.
+- Compact protocol and runtime status messages render in a dimmed/system style
+  distinct from the main conversation bubbles.
+- Transcript history remains retained in-browser and scrollable within the
+  panel.
 - Small toolbar per panel: `Clear`, `Copy`, `Pause stream`, `Pin to top`.
 
 For the Project Agent's interactive chat view, the transcript must be rendered as a readable conversation rather than raw terminal labels:
@@ -2743,6 +2747,13 @@ For the Project Agent's interactive chat view, the transcript must be rendered a
 - The UI must not display literal `User:` or `PA:` prefixes as the primary visual distinction between speakers.
 - User messages must appear as right-aligned message bubbles. The text colour should use a blue-accent theme token rather than a hard-coded colour.
 - PA messages must appear as readable assistant bubbles or assistant message blocks with white/light themed text.
+- Triple-backtick fenced code blocks must render as proper code blocks inside
+  transcript bubbles, with an optional visible language label when one is
+  supplied, a fixed-width font, and a clearly distinct visual treatment so
+  code does not read like ordinary prose.
+- Transcript bubble widths must adapt to the current resizable Project Agent
+  panel width so wider panels can use space more effectively while narrow
+  panels still wrap and compress cleanly.
 - Colours must be defined through CSS theme variables and respect the browser/OS colour-scheme where feasible, so future light/dark theme changes do not require rewriting component logic.
 - Streaming PA responses must append into the active assistant bubble instead of producing disconnected raw fragments.
 - If the PA sends prior conversation context back to the model, the visible transcript must either show that retained context or clearly indicate the retained summary being used. The UI must not appear to remember hidden previous text with no user-visible explanation.

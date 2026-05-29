@@ -1044,6 +1044,31 @@ def test_pa_system_prompt_store_uses_project_root_agents_md_when_runtime_volume_
     assert payload["path"].endswith("workspace/AGENTS.md")
 
 
+def test_project_agent_prompt_store_getter_honours_faith_project_root_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Description:
+    Verify the shared PA prompt-store getter honours the configured project-root override.
+
+    Requirements:
+    - This test is needed to prevent the live PA API from falling back to `/app/AGENTS.md` inside the container when the real workspace is mounted elsewhere.
+    - Verify the lazy getter points the prompt store at `FAITH_PROJECT_ROOT/AGENTS.md`.
+
+    :param monkeypatch: Pytest monkeypatch fixture.
+    :param tmp_path: Temporary project root used to simulate the mounted workspace.
+    """
+
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir(parents=True)
+    monkeypatch.setenv("FAITH_PROJECT_ROOT", str(workspace_root))
+    monkeypatch.setattr(pa_app_module.app.state, "project_agent_prompt_store", None, raising=False)
+
+    store = pa_app_module._get_project_agent_prompt_store(pa_app_module.app)
+
+    assert store.prompt_path == workspace_root / "AGENTS.md"
+
+
 def test_user_settings_store_uses_host_backed_runtime_volume_when_configured(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

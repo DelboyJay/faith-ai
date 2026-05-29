@@ -1,6 +1,6 @@
 {
   "name": "faith-web-ui",
-  "version": "0.22.1",
+  "version": "0.23.2",
   "private": true,
   "description": "Bundled React + Dockview frontend for the FAITH Web UI.",
   "scripts": {

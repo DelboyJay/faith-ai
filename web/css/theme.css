@@ -743,6 +743,7 @@ pre {
   padding: 8px;
   background: #0d1117;
   overflow: auto;
+  container-type: inline-size;
 }
 
 .faith-agent-panel__thinking {
@@ -787,6 +788,7 @@ pre {
 }
 
 .faith-agent-panel__message {
+  width: fit-content;
   max-width: min(78ch, 82%);
   padding: 10px 12px;
   border: 1px solid var(--line);
@@ -809,6 +811,49 @@ pre {
   color: var(--text);
 }
 
+.faith-agent-panel__message-text {
+  white-space: pre-wrap;
+}
+
+.faith-agent-panel__code-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.faith-agent-panel__code-language {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(88, 166, 255, 0.08);
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
+
+.faith-agent-panel__code-block {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(48, 54, 61, 0.95);
+  border-radius: 10px;
+  background: rgba(13, 17, 23, 0.96);
+  box-shadow: inset 3px 0 0 rgba(88, 166, 255, 0.32);
+  overflow: auto;
+}
+
+.faith-agent-panel__code-text {
+  display: block;
+  color: #dceeff;
+  white-space: pre;
+  font-family: Consolas, "Cascadia Code", "Fira Code", monospace;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
 .faith-agent-panel__system-line {
   color: #9ad1ff;
   white-space: pre-wrap;
@@ -829,6 +874,24 @@ pre {
 
 .faith-agent-panel__jump[hidden] {
   display: none;
+}
+
+@container (max-width: 32rem) {
+  .faith-agent-panel__message {
+    max-width: min(94%, 74ch);
+  }
+}
+
+@container (min-width: 48rem) {
+  .faith-agent-panel__message {
+    max-width: min(88%, 86ch);
+  }
+}
+
+@container (min-width: 72rem) {
+  .faith-agent-panel__message {
+    max-width: min(82%, 96ch);
+  }
 }
 
 @keyframes faith-thinking-pulse {

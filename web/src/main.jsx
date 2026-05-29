@@ -1407,7 +1407,6 @@ function FaithWorkspaceApp() {
                   namespace="faithAgentPanel"
                   panelId={panelId}
                   params={props.params}
-                  sessionId={selectedSessionId}
                 />
               </PanelActionFrame>
             );
