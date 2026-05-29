@@ -15,6 +15,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import tomllib
+from packaging.requirements import Requirement
+from packaging.version import Version
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -126,6 +130,137 @@ def test_pyproject_uses_src_layout_for_packages() -> None:
 
     assert "package-dir" in pyproject_text or 'where = ["src"]' in pyproject_text
     assert 'faith = "faith_cli.cli:main"' in pyproject_text
+
+
+def _load_pyproject_dependencies() -> list[str]:
+    """
+    Description:
+        Load the runtime dependency declarations from `pyproject.toml`.
+
+    Requirements:
+        - This helper is needed so packaging-floor tests can inspect the
+          declared runtime dependency ranges without relying on string
+          substring checks.
+        - Return the `project.dependencies` list exactly as declared.
+
+    :returns: Runtime dependency declarations from `pyproject.toml`.
+    """
+
+    payload = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    return list(payload["project"]["dependencies"])
+
+
+def _load_requirements_lines(path: Path) -> list[str]:
+    """
+    Description:
+        Load concrete requirement lines from a container requirements file.
+
+    Requirements:
+        - This helper is needed so dependency-floor checks can compare package
+          specifiers across the Python packaging metadata and container build
+          manifests consistently.
+        - Ignore blank lines and comments.
+
+    :param path: Requirements file to read.
+    :returns: Clean requirement lines for the given file.
+    """
+
+    return [
+        line.strip()
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
+
+def _find_requirement(requirements: list[str], package_name: str) -> Requirement:
+    """
+    Description:
+        Find and parse a specific package requirement from a manifest list.
+
+    Requirements:
+        - This helper is needed so the dependency-floor regression test can
+          verify exact lower bounds for security-sensitive packages.
+        - Raise an assertion if the requested package is not present.
+
+    :param requirements: Raw requirement strings from a manifest.
+    :param package_name: Normalized package name to locate.
+    :returns: Parsed requirement object for the requested package.
+    """
+
+    for requirement_text in requirements:
+        requirement = Requirement(requirement_text)
+        if requirement.name == package_name:
+            return requirement
+    raise AssertionError(f"Expected requirement for {package_name!r} was not found.")
+
+
+def _assert_minimum_floor(requirements: list[str], package_name: str, expected_floor: str) -> None:
+    """
+    Description:
+        Assert that a dependency manifest does not allow versions below a
+        required security floor.
+
+    Requirements:
+        - This helper is needed to prevent GitHub or other scanners from
+          flagging manifests that still allow known-vulnerable package ranges.
+        - Verify there is at least one `>=` or `==` bound that meets or exceeds
+          the required floor.
+
+    :param requirements: Raw requirement strings from a manifest.
+    :param package_name: Package whose lower bound must be checked.
+    :param expected_floor: Minimum acceptable version string.
+    """
+
+    requirement = _find_requirement(requirements, package_name)
+    floor = Version(expected_floor)
+    candidate_floors = []
+    for specifier in requirement.specifier:
+        if specifier.operator in {">=", "=="}:
+            candidate_floors.append(Version(specifier.version))
+    assert candidate_floors, f"{package_name!r} does not declare a lower bound."
+    assert any(candidate >= floor for candidate in candidate_floors), (
+        f"{package_name!r} must be constrained at or above {expected_floor}, "
+        f"but found {requirement.specifier!s}."
+    )
+
+
+def test_dependency_manifests_pin_security_patched_floors() -> None:
+    """
+    Description:
+        Verify the main Python dependency manifests no longer allow known
+        vulnerable package versions.
+
+    Requirements:
+        - This test is needed to prevent GitHub and other manifest-based
+          scanners from continuing to report dependency alerts after the safe
+          installed environment has been verified.
+        - Verify the Python runtime manifests keep `python-dotenv`,
+          `python-multipart`, `requests`, and the FastAPI/Starlette stack at or
+          above the agreed safe floors.
+    """
+
+    pyproject_requirements = _load_pyproject_dependencies()
+    pa_requirements = _load_requirements_lines(ROOT / "containers" / "pa" / "requirements.txt")
+    web_ui_requirements = _load_requirements_lines(
+        ROOT / "containers" / "web-ui" / "requirements.txt"
+    )
+    tool_python_requirements = _load_requirements_lines(
+        ROOT / "containers" / "tool-python" / "requirements.txt"
+    )
+
+    _assert_minimum_floor(pyproject_requirements, "python-dotenv", "1.2.2")
+    _assert_minimum_floor(pyproject_requirements, "python-multipart", "0.0.29")
+    _assert_minimum_floor(pyproject_requirements, "requests", "2.34.2")
+    _assert_minimum_floor(pyproject_requirements, "starlette", "1.2.0")
+
+    _assert_minimum_floor(pa_requirements, "python-dotenv", "1.2.2")
+    _assert_minimum_floor(pa_requirements, "python-multipart", "0.0.29")
+    _assert_minimum_floor(pa_requirements, "starlette", "1.2.0")
+
+    _assert_minimum_floor(web_ui_requirements, "python-multipart", "0.0.29")
+    _assert_minimum_floor(web_ui_requirements, "starlette", "1.2.0")
+
+    _assert_minimum_floor(tool_python_requirements, "requests", "2.34.2")
 
 
 def test_web_ui_container_requirements_include_runtime_imports() -> None:
